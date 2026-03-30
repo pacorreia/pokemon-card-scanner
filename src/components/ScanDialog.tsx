@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useCallback, useEffect, type ChangeEvent, type FormEvent } from 'react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -96,6 +96,7 @@ function fileToDataUrl(file: File): Promise<string> {
 
 export function ScanDialog({ open, onOpenChange, onCardScanned }: ScanDialogProps) {
   const [mode, setMode] = useState<Mode>('idle')
+  const [videoReady, setVideoReady] = useState(false)
   const [manualForm, setManualForm] = useState({
     name: '',
     set: '',
@@ -121,16 +122,20 @@ export function ScanDialog({ open, onOpenChange, onCardScanned }: ScanDialogProp
     if (!open) {
       stopCamera()
       setMode('idle')
+      setVideoReady(false)
     }
   }, [open, stopCamera])
 
-  const handleClose = () => {
-    stopCamera()
-    onOpenChange(false)
+  const handleClose = (nextOpen: boolean) => {
+    if (!nextOpen) {
+      stopCamera()
+    }
+    onOpenChange(nextOpen)
   }
 
   const handleBack = () => {
     stopCamera()
+    setVideoReady(false)
     setMode('idle')
   }
 
@@ -165,7 +170,7 @@ export function ScanDialog({ open, onOpenChange, onCardScanned }: ScanDialogProp
     }
   }
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
       handleUpload(file)
@@ -182,6 +187,7 @@ export function ScanDialog({ open, onOpenChange, onCardScanned }: ScanDialogProp
       streamRef.current = stream
       if (videoRef.current) {
         videoRef.current.srcObject = stream
+        videoRef.current.onloadedmetadata = () => setVideoReady(true)
       }
     } catch (err) {
       const isDenied = err instanceof DOMException && (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError')
@@ -198,6 +204,7 @@ export function ScanDialog({ open, onOpenChange, onCardScanned }: ScanDialogProp
     if (!videoRef.current || !canvasRef.current) return
     const video = videoRef.current
     const canvas = canvasRef.current
+    if (!video.videoWidth || !video.videoHeight) return
     canvas.width = video.videoWidth
     canvas.height = video.videoHeight
     const ctx = canvas.getContext('2d')
@@ -205,6 +212,7 @@ export function ScanDialog({ open, onOpenChange, onCardScanned }: ScanDialogProp
     ctx.drawImage(video, 0, 0)
     const dataUrl = canvas.toDataURL('image/jpeg', 0.9)
     stopCamera()
+    setVideoReady(false)
     setMode('analyzing')
     try {
       const cardData = await analyzeCardImage(dataUrl)
@@ -220,7 +228,7 @@ export function ScanDialog({ open, onOpenChange, onCardScanned }: ScanDialogProp
     }
   }
 
-  const handleManualSubmit = (e: React.FormEvent) => {
+  const handleManualSubmit = (e: FormEvent) => {
     e.preventDefault()
     if (!manualForm.name || !manualForm.set || !manualForm.rarity || !manualForm.type) {
       toast.error('Please fill in all required fields.')
@@ -308,15 +316,21 @@ export function ScanDialog({ open, onOpenChange, onCardScanned }: ScanDialogProp
                 className="w-full h-full object-cover"
               />
               <div className="absolute inset-0 border-2 border-accent/50 rounded-lg pointer-events-none" />
+              {!videoReady && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/70">
+                  <p className="text-white text-sm">Camera warming up…</p>
+                </div>
+              )}
             </div>
             <canvas ref={canvasRef} className="hidden" />
             <Button
               size="lg"
               className="w-full bg-accent hover:bg-accent/90 text-accent-foreground font-display font-semibold"
               onClick={capturePhoto}
+              disabled={!videoReady}
             >
               <Camera className="w-5 h-5 mr-2" />
-              Capture Card
+              {videoReady ? 'Capture Card' : 'Waiting for camera…'}
             </Button>
           </div>
         )}
@@ -383,7 +397,6 @@ export function ScanDialog({ open, onOpenChange, onCardScanned }: ScanDialogProp
                   <Select
                     value={manualForm.type}
                     onValueChange={v => setManualForm(f => ({ ...f, type: v }))}
-                    required
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Type" />
@@ -401,7 +414,6 @@ export function ScanDialog({ open, onOpenChange, onCardScanned }: ScanDialogProp
                 <Select
                   value={manualForm.rarity}
                   onValueChange={v => setManualForm(f => ({ ...f, rarity: v }))}
-                  required
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select rarity" />
