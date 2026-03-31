@@ -329,7 +329,7 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
             </SheetHeader>
 
             <ScrollArea className="flex-1">
-              <div className="px-6 py-4 space-y-6">
+              <div className="px-6 py-4 pb-8 space-y-6">
                 <div className="bg-muted rounded-lg overflow-hidden">
                   {selectedCard.images?.large ? (
                     <img
