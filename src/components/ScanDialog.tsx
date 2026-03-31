@@ -8,6 +8,7 @@ import { Camera, Upload, Sparkle, PencilSimple, ArrowLeft } from '@phosphor-icon
 import { motion } from 'framer-motion'
 import { toast } from 'sonner'
 import type { PokemonCard } from '@/lib/types'
+import { useTCGDatabase } from '@/lib/tcg-database'
 
 interface ScanDialogProps {
   open: boolean
@@ -20,40 +21,7 @@ type Mode = 'idle' | 'camera' | 'analyzing' | 'manual'
 const RARITIES = ['Common', 'Uncommon', 'Rare', 'Holo Rare', 'Ultra Rare', 'Secret Rare']
 const TYPES = ['Fire', 'Water', 'Grass', 'Electric', 'Psychic', 'Fighting', 'Darkness', 'Metal', 'Dragon', 'Fairy', 'Colorless']
 
-async function searchTCGCard(name: string, setName: string, cardNumber: string): Promise<string | null> {
-  try {
-    const searchQuery = `name:"${name}"${setName !== 'Unknown Set' ? ` set.name:"${setName}"` : ''}${cardNumber !== '?' ? ` number:"${cardNumber.split('/')[0]}"` : ''}`
-    const response = await fetch(
-      `https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(searchQuery)}&pageSize=1`
-    )
-    
-    if (!response.ok) return null
-    
-    const data = await response.json()
-    if (data.data && data.data.length > 0) {
-      return data.data[0].images.large || data.data[0].images.small
-    }
-    
-    const fallbackQuery = `name:"${name}"`
-    const fallbackResponse = await fetch(
-      `https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(fallbackQuery)}&pageSize=1`
-    )
-    
-    if (!fallbackResponse.ok) return null
-    
-    const fallbackData = await fallbackResponse.json()
-    if (fallbackData.data && fallbackData.data.length > 0) {
-      return fallbackData.data[0].images.large || fallbackData.data[0].images.small
-    }
-    
-    return null
-  } catch (error) {
-    console.error('TCG API error:', error)
-    return null
-  }
-}
-
-async function analyzeCardImage(imageDataUrl: string): Promise<Omit<PokemonCard, 'id' | 'quantity' | 'dateAdded'>> {
+async function analyzeCardImage(imageDataUrl: string, findCard: (name: string, setName?: string, cardNumber?: string) => any): Promise<Omit<PokemonCard, 'id' | 'quantity' | 'dateAdded'>> {
   const body = {
     messages: [
       {
@@ -113,8 +81,8 @@ If this is not a Pokémon card or the image is too unclear to read, return: {"er
   const rarity = RARITIES.includes(parsed.rarity) ? parsed.rarity : 'Common'
   const type = TYPES.includes(parsed.type) ? parsed.type : 'Colorless'
 
-  const tcgImageUrl = await searchTCGCard(name, set, cardNumber)
-  const imageUrl = tcgImageUrl || `https://placehold.co/400x560/88ccee/ffffff?text=${encodeURIComponent(name)}`
+  const tcgCard = findCard(name, set, cardNumber)
+  const imageUrl = tcgCard?.images?.large || tcgCard?.images?.small || `https://placehold.co/400x560/88ccee/ffffff?text=${encodeURIComponent(name)}`
 
   return {
     name,
@@ -147,6 +115,7 @@ export function ScanDialog({ open, onOpenChange, onCardScanned }: ScanDialogProp
     imageUrl: '',
   })
 
+  const { findCard } = useTCGDatabase()
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -198,7 +167,7 @@ export function ScanDialog({ open, onOpenChange, onCardScanned }: ScanDialogProp
     setMode('analyzing')
     try {
       const dataUrl = await fileToDataUrl(file)
-      const cardData = await analyzeCardImage(dataUrl)
+      const cardData = await analyzeCardImage(dataUrl, findCard)
       processCard(cardData)
     } catch (error) {
       toast.error('Could not identify the card. Try manual entry instead.', {
@@ -256,7 +225,7 @@ export function ScanDialog({ open, onOpenChange, onCardScanned }: ScanDialogProp
     setVideoReady(false)
     setMode('analyzing')
     try {
-      const cardData = await analyzeCardImage(dataUrl)
+      const cardData = await analyzeCardImage(dataUrl, findCard)
       processCard(cardData)
     } catch (error) {
       toast.error('Could not identify the card. Try manual entry instead.', {

@@ -1,16 +1,18 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useKV } from '@github/spark/hooks'
 import { Toaster } from '@/components/ui/sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
-import { Camera, MagnifyingGlass, Copy } from '@phosphor-icons/react'
+import { Camera, MagnifyingGlass, Copy, Database } from '@phosphor-icons/react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ScanDialog } from '@/components/ScanDialog'
 import { CardItem } from '@/components/CardItem'
 import { CardDetailsSheet } from '@/components/CardDetailsSheet'
 import { EmptyState } from '@/components/EmptyState'
+import { DatabaseManager } from '@/components/DatabaseManager'
+import { useTCGDatabase } from '@/lib/tcg-database'
 import type { PokemonCard, ViewMode } from '@/lib/types'
 import { toast } from 'sonner'
 
@@ -21,6 +23,15 @@ function App() {
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [viewMode, setViewMode] = useState<ViewMode>('all')
+  const [dbManagerOpen, setDbManagerOpen] = useState(false)
+  
+  const { isLoaded: isDatabaseLoaded } = useTCGDatabase()
+
+  useEffect(() => {
+    if (!isDatabaseLoaded) {
+      setDbManagerOpen(true)
+    }
+  }, [])
 
   const handleCardScanned = (card: PokemonCard) => {
     setCards((currentCards) => {
@@ -112,7 +123,7 @@ function App() {
       <div className="container mx-auto px-4 py-6 max-w-7xl">
         <header className="mb-8">
           <div className="flex items-center justify-between mb-6">
-            <div>
+            <div className="flex-1">
               <h1 className="text-4xl font-bold font-display tracking-tight mb-2">
                 PokéDex Scanner
               </h1>
@@ -126,6 +137,14 @@ function App() {
                 )}
               </p>
             </div>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setDbManagerOpen(true)}
+              className="shrink-0"
+            >
+              <Database className="w-5 h-5" />
+            </Button>
           </div>
 
           {(cards || []).length > 0 && (
@@ -216,6 +235,11 @@ function App() {
         onOpenChange={setDetailsOpen}
         onUpdateQuantity={handleUpdateQuantity}
         onDelete={handleDeleteCard}
+      />
+
+      <DatabaseManager
+        open={dbManagerOpen}
+        onOpenChange={setDbManagerOpen}
       />
 
       <Toaster position="top-center" />
