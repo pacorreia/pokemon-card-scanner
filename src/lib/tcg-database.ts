@@ -297,7 +297,7 @@ export function useTCGDatabase() {
     }
     
     loadCardsFromChunks()
-  }, [metadata])
+  }, [metadata, cards, setCards])
 
   useEffect(() => {
     console.log('[TCG Database] Current state:', {
