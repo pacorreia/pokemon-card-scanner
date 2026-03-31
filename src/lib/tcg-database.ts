@@ -101,105 +101,112 @@ export interface DatabaseMetadata {
   setCount: number
 }
 
-const GITHUB_API_BASE = 'https://api.github.com/repos/PokemonTCG/pokemon-tcg-data/contents'
-const GITHUB_RAW_BASE = 'https://raw.githubusercontent.com/PokemonTCG/pokemon-tcg-data/master'
+const GITHUB_RELEASE_API = 'https://api.github.com/repos/PokemonTCG/pokemon-tcg-data/releases/latest'
 
-async function fetchGitHubDirectory(path: string): Promise<Array<{ name: string; path: string; download_url: string }>> {
-  const response = await fetch(`${GITHUB_API_BASE}/${path}`, {
+interface ZipEntry {
+  name: string
+  getData: (writer: any) => Promise<any>
+}
+
+async function fetchLatestRelease(): Promise<string> {
+  const response = await fetch(GITHUB_RELEASE_API, {
     headers: {
       'Accept': 'application/vnd.github.v3+json',
     },
   })
   if (!response.ok) {
-    const errorText = await response.text()
-    console.error('GitHub API Error:', response.status, errorText)
-    throw new Error(`Failed to fetch directory (${response.status}): ${response.statusText}`)
+    throw new Error(`Failed to fetch latest release: ${response.statusText}`)
   }
-  return response.json()
+  const data = await response.json()
+  
+  const zipAsset = data.assets?.find((asset: any) => 
+    asset.name.endsWith('.zip') && asset.name.includes('cards')
+  )
+  
+  if (!zipAsset) {
+    throw new Error('No ZIP file found in latest release')
+  }
+  
+  return zipAsset.browser_download_url
 }
 
-async function fetchJSON<T>(url: string): Promise<T> {
-  const response = await fetch(url, {
-    headers: {
-      'Accept': 'application/json',
-    },
-  })
+async function unzipAndExtractJSON(zipUrl: string, onProgress?: (current: number, total: number, message: string) => void): Promise<{ cards: TCGCard[]; sets: TCGSet[] }> {
+  const { default: JSZip } = await import('jszip')
+  
+  onProgress?.(5, 100, 'Downloading card database...')
+  
+  const response = await fetch(zipUrl)
   if (!response.ok) {
-    const errorText = await response.text()
-    console.error('Fetch Error:', response.status, errorText)
-    throw new Error(`Failed to fetch JSON (${response.status}): ${response.statusText}`)
+    throw new Error(`Failed to download ZIP: ${response.statusText}`)
   }
-  return response.json()
+  
+  const blob = await response.blob()
+  onProgress?.(30, 100, 'Extracting files...')
+  
+  const zip = await JSZip.loadAsync(blob)
+  
+  const cards: TCGCard[] = []
+  const sets: TCGSet[] = []
+  
+  const files = Object.keys(zip.files).filter(name => name.endsWith('.json'))
+  onProgress?.(40, 100, `Found ${files.length} JSON files`)
+  
+  for (let i = 0; i < files.length; i++) {
+    const fileName = files[i]
+    const file = zip.files[fileName]
+    
+    if (file.dir) continue
+    
+    try {
+      const content = await file.async('text')
+      const data = JSON.parse(content)
+      
+      if (fileName.includes('/sets/') || fileName.includes('\\sets\\')) {
+        if (Array.isArray(data)) {
+          sets.push(...data)
+        } else {
+          sets.push(data)
+        }
+      } else if (fileName.includes('/cards/') || fileName.includes('\\cards\\')) {
+        if (Array.isArray(data)) {
+          cards.push(...data)
+        } else {
+          cards.push(data)
+        }
+      }
+      
+      const progress = 40 + ((i + 1) / files.length) * 50
+      onProgress?.(progress, 100, `Processing files... ${i + 1}/${files.length}`)
+    } catch (error) {
+      console.error(`Failed to parse ${fileName}:`, error)
+    }
+  }
+  
+  return { cards, sets }
 }
 
 export async function downloadCardDatabase(
   onProgress?: (current: number, total: number, message: string) => void
 ): Promise<{ cards: TCGCard[]; sets: TCGSet[] }> {
   try {
-    onProgress?.(0, 100, 'Fetching set list...')
-
-    let setsFiles: Array<{ name: string; path: string; download_url: string }>
-    try {
-      setsFiles = await fetchGitHubDirectory('sets/en')
-    } catch (error) {
-      console.error('Error fetching sets directory:', error)
-      throw new Error('Unable to access card database. Please check your internet connection.')
-    }
-
-    const setJsonFiles = setsFiles.filter(f => f.name.endsWith('.json'))
-    onProgress?.(10, 100, `Found ${setJsonFiles.length} sets`)
-
-    const sets: TCGSet[] = []
-    for (let i = 0; i < setJsonFiles.length; i++) {
-      try {
-        const setData = await fetchJSON<TCGSet>(setJsonFiles[i].download_url)
-        sets.push(setData)
-        onProgress?.(10 + (i / setJsonFiles.length) * 10, 100, `Loading set ${i + 1}/${setJsonFiles.length}`)
-      } catch (error) {
-        console.error(`Failed to load set ${setJsonFiles[i].name}:`, error)
-      }
-    }
-
-    onProgress?.(20, 100, 'Fetching card data...')
-
-    let cardsDir: Array<{ name: string; path: string; download_url: string }>
-    try {
-      cardsDir = await fetchGitHubDirectory('cards/en')
-    } catch (error) {
-      console.error('Error fetching cards directory:', error)
-      throw new Error('Unable to access card database. Please check your internet connection.')
-    }
-
-    const cardFiles = cardsDir.filter(f => f.name.endsWith('.json'))
-    onProgress?.(30, 100, `Found ${cardFiles.length} card files`)
-
-    const allCards: TCGCard[] = []
-    let successCount = 0
-    let failCount = 0
+    onProgress?.(0, 100, 'Fetching latest release...')
     
-    for (let i = 0; i < cardFiles.length; i++) {
-      try {
-        const cardsData = await fetchJSON<TCGCard[]>(cardFiles[i].download_url)
-        allCards.push(...cardsData)
-        successCount++
-        const progress = 30 + (i / cardFiles.length) * 60
-        onProgress?.(progress, 100, `Loading cards ${i + 1}/${cardFiles.length} (${allCards.length} cards)`)
-      } catch (error) {
-        failCount++
-        console.error(`Failed to load cards from ${cardFiles[i].name}:`, error)
-      }
+    const zipUrl = await fetchLatestRelease()
+    onProgress?.(2, 100, 'Found database release')
+    
+    const { cards, sets } = await unzipAndExtractJSON(zipUrl, onProgress)
+    
+    onProgress?.(95, 100, 'Finalizing...')
+    
+    if (cards.length === 0) {
+      throw new Error('No cards were loaded from the database. Please try again.')
     }
-
-    onProgress?.(90, 100, 'Processing data...')
-
-    if (allCards.length === 0) {
-      throw new Error('No cards were loaded. Please try again.')
-    }
-
-    console.log(`Database download complete: ${allCards.length} cards, ${sets.length} sets`)
-    console.log(`Success: ${successCount}, Failed: ${failCount}`)
-
-    return { cards: allCards, sets }
+    
+    console.log(`Database download complete: ${cards.length} cards, ${sets.length} sets`)
+    
+    onProgress?.(100, 100, 'Complete!')
+    
+    return { cards, sets }
   } catch (error) {
     console.error('Failed to download card database:', error)
     throw error

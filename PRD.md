@@ -20,11 +20,11 @@ A mobile-first Pokémon card collection manager that uses AI vision to scan and 
 - **Success criteria**: Card is correctly identified with 90%+ accuracy, matched with local database artwork, and added to inventory within 5 seconds
 
 ### Database Management
-- **Functionality**: Downloads and caches the complete Pokemon TCG card database from GitHub on-demand with progress tracking, storing all card images and metadata locally
-- **Purpose**: Enables offline card recognition and provides accurate, up-to-date card information without relying on external APIs
+- **Functionality**: Downloads and caches the complete Pokemon TCG card database from GitHub releases (ZIP file) on-demand with progress tracking, storing all card images and metadata locally using JSZip for extraction
+- **Purpose**: Enables offline card recognition and provides accurate, up-to-date card information without relying on external APIs or individual file downloads
 - **Trigger**: Automatic on first launch if no database exists, or manual via database button in header
-- **Progression**: Click database icon → View database status → Tap refresh → Download progress displayed → Database cached locally → Success notification
-- **Success criteria**: Full database downloads successfully (10-20MB), all cards searchable, and lookup performs within 100ms
+- **Progression**: Click database icon → View database status → Tap refresh → Fetch latest release → Download ZIP file → Extract and parse JSON files → Database cached locally → Success notification
+- **Success criteria**: Full database downloads successfully from GitHub releases (10-20MB ZIP), extracts all sets and cards, all cards searchable, and lookup performs within 100ms
 
 ### Inventory Management
 - **Functionality**: Displays all collected cards in a grid/list view with card images, names, and quantities
