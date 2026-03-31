@@ -193,55 +193,79 @@ async function fetchJSONFilesDirectly(onProgress?: (current: number, total: numb
   const sets: TCGSet[] = []
   let processedFiles = 0
   
-  onProgress?.(25, 100, `Downloading ${setsList.length} set files...`)
+  const DOWNLOAD_PARALLEL_LIMIT = 15
   
-  for (const setFile of setsList) {
-    try {
-      const url = `${setsBaseUrl}/${setFile}`
-      const response = await fetch(url)
+  onProgress?.(25, 100, `Downloading ${setsList.length} set files in parallel...`)
+  
+  const downloadFileBatch = async <T>(
+    fileList: string[],
+    baseUrl: string,
+    validator: (item: any) => boolean,
+    type: 'sets' | 'cards'
+  ): Promise<T[]> => {
+    const results: T[] = []
+    
+    const downloadBatch = async (startIndex: number, batchSize: number): Promise<void> => {
+      const endIndex = Math.min(startIndex + batchSize, fileList.length)
+      const batchPromises: Promise<void>[] = []
       
-      if (response.ok) {
-        const data = await response.json()
-        if (Array.isArray(data)) {
-          const validSets = data.filter(item => item && typeof item === 'object')
-          sets.push(...validSets)
-        } else if (data && typeof data === 'object') {
-          sets.push(data)
-        }
+      for (let i = startIndex; i < endIndex; i++) {
+        const file = fileList[i]
+        const downloadPromise = (async () => {
+          try {
+            const url = `${baseUrl}/${file}`
+            const response = await fetch(url)
+            
+            if (response.ok) {
+              const data = await response.json()
+              if (Array.isArray(data)) {
+                const validItems = data.filter(validator)
+                results.push(...validItems)
+              } else if (validator(data)) {
+                results.push(data)
+              }
+            }
+          } catch (error) {
+            console.error(`Failed to fetch ${type} file ${file}:`, error)
+          }
+          
+          processedFiles++
+          const progress = 25 + (processedFiles / totalFiles) * 70
+          onProgress?.(progress, 100, `Downloaded ${processedFiles}/${totalFiles} files...`)
+        })()
+        
+        batchPromises.push(downloadPromise)
       }
-    } catch (error) {
-      console.error(`Failed to fetch set file ${setFile}:`, error)
+      
+      await Promise.all(batchPromises)
     }
     
-    processedFiles++
-    const progress = 25 + (processedFiles / totalFiles) * 70
-    onProgress?.(progress, 100, `Downloading sets... ${processedFiles}/${setsList.length}`)
-  }
-  
-  onProgress?.(50, 100, `Downloading ${cardsList.length} card files...`)
-  
-  for (const cardFile of cardsList) {
-    try {
-      const url = `${cardsBaseUrl}/${cardFile}`
-      const response = await fetch(url)
-      
-      if (response.ok) {
-        const data = await response.json()
-        if (Array.isArray(data)) {
-          const validCards = data.filter(item => item && typeof item === 'object' && item.id && item.name)
-          cards.push(...validCards)
-        } else if (data && typeof data === 'object' && data.id && data.name) {
-          cards.push(data)
-        }
-      }
-    } catch (error) {
-      console.error(`Failed to fetch card file ${cardFile}:`, error)
+    for (let batchStart = 0; batchStart < fileList.length; batchStart += DOWNLOAD_PARALLEL_LIMIT) {
+      await downloadBatch(batchStart, DOWNLOAD_PARALLEL_LIMIT)
     }
     
-    processedFiles++
-    const progress = 25 + (processedFiles / totalFiles) * 70
-    onProgress?.(progress, 100, `Downloading cards... ${setsList.length + (processedFiles - setsList.length)}/${cardsList.length}`)
+    return results
   }
+  
+  const setValidator = (item: any) => item && typeof item === 'object'
+  const downloadedSets = await downloadFileBatch<TCGSet>(
+    setsList,
+    setsBaseUrl,
+    setValidator,
+    'sets'
+  )
+  sets.push(...downloadedSets)
+  
+  onProgress?.(50, 100, `Downloading ${cardsList.length} card files in parallel...`)
+  
+  const cardValidator = (item: any) => item && typeof item === 'object' && item.id && item.name
+  const downloadedCards = await downloadFileBatch<TCGCard>(
+    cardsList,
+    cardsBaseUrl,
+    cardValidator,
+    'cards'
+  )
+  cards.push(...downloadedCards)
   
   return { cards, sets }
 }
@@ -469,10 +493,11 @@ export function useTCGDatabase() {
         throw new Error(`Failed to save sets data: ${error instanceof Error ? error.message : 'Unknown error'}`)
       }
       
-      onProgress?.(97, 100, `Saving chunk 0/${cardChunks.length}...`)
+      onProgress?.(97, 100, `Saving ${cardChunks.length} chunks in parallel...`)
       
       const chunkStartTime = Date.now()
-      const chunkTimes: number[] = []
+      let savedChunks = 0
+      const failedChunks: Array<{ index: number; error: any }> = []
       
       const saveChunkWithRetry = async (chunkKey: string, chunkData: TCGCard[], retries = 3): Promise<void> => {
         for (let attempt = 0; attempt <= retries; attempt++) {
@@ -490,47 +515,67 @@ export function useTCGDatabase() {
         }
       }
       
-      for (let i = 0; i < cardChunks.length; i++) {
-        const chunkKey = `tcg-database-cards-chunk-${i}`
-        const chunkNumber = i + 1
-        const percentComplete = Math.round((chunkNumber / cardChunks.length) * 100)
-        let timeMessage = ''
+      const PARALLEL_LIMIT = 10
+      
+      const saveChunkBatch = async (startIndex: number, batchSize: number): Promise<void> => {
+        const endIndex = Math.min(startIndex + batchSize, cardChunks.length)
+        const batchPromises: Promise<void>[] = []
         
-        if (chunkTimes.length > 0) {
-          const avgTimePerChunk = chunkTimes.reduce((a, b) => a + b, 0) / chunkTimes.length
-          const chunksRemaining = cardChunks.length - chunkNumber
-          const estimatedSecondsRemaining = Math.ceil((avgTimePerChunk * chunksRemaining) / 1000)
-          
-          if (estimatedSecondsRemaining < 60) {
-            timeMessage = ` • ~${estimatedSecondsRemaining}s remaining`
-          } else {
-            const minutes = Math.floor(estimatedSecondsRemaining / 60)
-            const seconds = estimatedSecondsRemaining % 60
-            timeMessage = ` • ~${minutes}m ${seconds}s remaining`
-          }
-        }
-        
-        onProgress?.(97 + (percentComplete / 100) * 2.5, 100, `Saving chunk ${chunkNumber}/${cardChunks.length}${timeMessage}...`)
-        
-        const chunkSaveStart = Date.now()
-        try {
+        for (let i = startIndex; i < endIndex; i++) {
+          const chunkKey = `tcg-database-cards-chunk-${i}`
           const chunkData = cardChunks[i]
-          const testSerialize = JSON.stringify(chunkData)
-          const sizeInMB = (testSerialize.length / (1024 * 1024)).toFixed(2)
           
-          await saveChunkWithRetry(chunkKey, chunkData, 3)
-          const chunkSaveTime = Date.now() - chunkSaveStart
-          chunkTimes.push(chunkSaveTime)
-          console.log(`[TCG Database] ✓ Saved chunk ${chunkNumber}/${cardChunks.length} (${chunkData.length} cards, ${sizeInMB}MB, ${chunkSaveTime}ms)`)
-        } catch (error) {
-          console.error(`[TCG Database] ✗ Failed to save chunk ${chunkNumber}:`, error)
-          console.error(`[TCG Database] Chunk ${chunkNumber} sample:`, cardChunks[i].slice(0, 2))
-          throw new Error(`Failed to save data chunk ${chunkNumber}/${cardChunks.length}: ${error instanceof Error ? error.message : 'Unknown error'}`)
+          const savePromise = (async () => {
+            const chunkSaveStart = Date.now()
+            try {
+              const testSerialize = JSON.stringify(chunkData)
+              const sizeInMB = (testSerialize.length / (1024 * 1024)).toFixed(2)
+              
+              await saveChunkWithRetry(chunkKey, chunkData, 3)
+              const chunkSaveTime = Date.now() - chunkSaveStart
+              
+              savedChunks++
+              const percentComplete = Math.round((savedChunks / cardChunks.length) * 100)
+              
+              const avgTimePerChunk = (Date.now() - chunkStartTime) / savedChunks
+              const chunksRemaining = cardChunks.length - savedChunks
+              const estimatedSecondsRemaining = Math.ceil((avgTimePerChunk * chunksRemaining) / 1000)
+              
+              let timeMessage = ''
+              if (estimatedSecondsRemaining < 60) {
+                timeMessage = ` • ~${estimatedSecondsRemaining}s remaining`
+              } else {
+                const minutes = Math.floor(estimatedSecondsRemaining / 60)
+                const seconds = estimatedSecondsRemaining % 60
+                timeMessage = ` • ~${minutes}m ${seconds}s remaining`
+              }
+              
+              onProgress?.(97 + (percentComplete / 100) * 2.5, 100, `Saved ${savedChunks}/${cardChunks.length} chunks${timeMessage}`)
+              
+              console.log(`[TCG Database] ✓ Saved chunk ${i + 1}/${cardChunks.length} (${chunkData.length} cards, ${sizeInMB}MB, ${chunkSaveTime}ms)`)
+            } catch (error) {
+              console.error(`[TCG Database] ✗ Failed to save chunk ${i + 1}:`, error)
+              failedChunks.push({ index: i, error })
+            }
+          })()
+          
+          batchPromises.push(savePromise)
         }
+        
+        await Promise.all(batchPromises)
+      }
+      
+      for (let batchStart = 0; batchStart < cardChunks.length; batchStart += PARALLEL_LIMIT) {
+        await saveChunkBatch(batchStart, PARALLEL_LIMIT)
+      }
+      
+      if (failedChunks.length > 0) {
+        console.error(`[TCG Database] ${failedChunks.length} chunks failed to save`)
+        throw new Error(`Failed to save ${failedChunks.length} chunks. First error: ${failedChunks[0].error instanceof Error ? failedChunks[0].error.message : 'Unknown error'}`)
       }
       
       const totalChunkSaveTime = Date.now() - chunkStartTime
-      console.log(`[TCG Database] Total chunk save time: ${(totalChunkSaveTime / 1000).toFixed(1)}s`)
+      console.log(`[TCG Database] Total chunk save time: ${(totalChunkSaveTime / 1000).toFixed(1)}s (using ${PARALLEL_LIMIT} parallel operations)`)
       
       onProgress?.(99.5, 100, `Saving metadata...`)
       
