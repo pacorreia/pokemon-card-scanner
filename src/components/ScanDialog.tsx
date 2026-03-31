@@ -182,7 +182,7 @@ export function ScanDialog({ open, onOpenChange, onCardScanned }: ScanDialogProp
     setMode('camera')
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+        video: { facingMode: 'environment', width: { ideal: 720 }, height: { ideal: 1280 } },
       })
       streamRef.current = stream
       if (videoRef.current) {
@@ -307,7 +307,7 @@ export function ScanDialog({ open, onOpenChange, onCardScanned }: ScanDialogProp
               </Button>
               <h2 className="text-xl font-bold font-display">Point at a Card</h2>
             </div>
-            <div className="relative rounded-lg overflow-hidden bg-black aspect-video">
+            <div className="relative rounded-lg overflow-hidden bg-black aspect-[9/16]">
               <video
                 ref={videoRef}
                 autoPlay
