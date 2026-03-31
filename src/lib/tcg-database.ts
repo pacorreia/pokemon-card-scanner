@@ -103,46 +103,66 @@ export interface DatabaseMetadata {
 
 async function unzipAndExtractJSON(onProgress?: (current: number, total: number, message: string) => void): Promise<{ cards: TCGCard[]; sets: TCGSet[] }> {
   const { default: JSZip } = await import('jszip')
+  const { Octokit } = await import('octokit')
   
   onProgress?.(5, 100, 'Fetching latest release info...')
   
-  const releaseResponse = await fetch('https://api.github.com/repos/PokemonTCG/pokemon-tcg-data/releases/latest', {
-    headers: {
-      'Accept': 'application/vnd.github.v3+json'
-    }
-  })
+  const octokit = new Octokit()
   
-  if (!releaseResponse.ok) {
-    throw new Error(`Failed to fetch release info: ${releaseResponse.statusText}`)
+  let releaseData
+  try {
+    const response = await octokit.rest.repos.getLatestRelease({
+      owner: 'PokemonTCG',
+      repo: 'pokemon-tcg-data'
+    })
+    releaseData = response.data
+  } catch (error) {
+    console.error('Failed to fetch release:', error)
+    throw new Error(`Failed to fetch release info: ${error instanceof Error ? error.message : 'Unknown error'}`)
   }
   
-  const releaseData = await releaseResponse.json()
-  const zipballUrl = releaseData.zipball_url
+  console.log('Release info:', { tag: releaseData.tag_name, tarball: releaseData.tarball_url })
   
-  if (!zipballUrl) {
-    throw new Error('No zipball URL found in release')
+  const tarballUrl = releaseData.tarball_url
+  
+  if (!tarballUrl) {
+    throw new Error('No tarball URL found in release data')
   }
   
-  onProgress?.(15, 100, 'Downloading card database...')
+  onProgress?.(15, 100, 'Downloading card database (this may take a minute)...')
   
-  const zipResponse = await fetch(zipballUrl, {
-    redirect: 'follow'
-  })
+  let zipResponse
+  try {
+    zipResponse = await fetch(tarballUrl, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/gzip, application/x-gzip, application/octet-stream, */*'
+      }
+    })
+  } catch (fetchError) {
+    console.error('Fetch error:', fetchError)
+    throw new Error(`Network error while downloading: ${fetchError instanceof Error ? fetchError.message : 'Unknown error'}`)
+  }
   
   if (!zipResponse.ok) {
-    throw new Error(`Failed to download database: ${zipResponse.statusText}`)
+    const errorText = await zipResponse.text().catch(() => 'No error details available')
+    console.error('Response not OK:', zipResponse.status, zipResponse.statusText, errorText)
+    throw new Error(`Download failed: ${zipResponse.status} ${zipResponse.statusText}. Details: ${errorText}`)
   }
   
-  onProgress?.(40, 100, 'Extracting files...')
+  onProgress?.(40, 100, 'Reading downloaded data...')
   
-  const blob = await zipResponse.blob()
-  const zip = await JSZip.loadAsync(blob)
+  const arrayBuffer = await zipResponse.arrayBuffer()
+  
+  onProgress?.(50, 100, 'Extracting archive...')
+  
+  const zip = await JSZip.loadAsync(arrayBuffer)
   
   const cards: TCGCard[] = []
   const sets: TCGSet[] = []
   
   const files = Object.keys(zip.files).filter(name => name.endsWith('.json'))
-  onProgress?.(40, 100, `Found ${files.length} JSON files`)
+  onProgress?.(50, 100, `Found ${files.length} JSON files`)
   
   for (let i = 0; i < files.length; i++) {
     const fileName = files[i]
@@ -168,7 +188,7 @@ async function unzipAndExtractJSON(onProgress?: (current: number, total: number,
         }
       }
       
-      const progress = 40 + ((i + 1) / files.length) * 50
+      const progress = 50 + ((i + 1) / files.length) * 45
       onProgress?.(progress, 100, `Processing files... ${i + 1}/${files.length}`)
     } catch (error) {
       console.error(`Failed to parse ${fileName}:`, error)
