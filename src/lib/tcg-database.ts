@@ -119,15 +119,11 @@ async function fetchLatestRelease(): Promise<string> {
   }
   const data = await response.json()
   
-  const zipAsset = data.assets?.find((asset: any) => 
-    asset.name.endsWith('.zip') && asset.name.includes('cards')
-  )
-  
-  if (!zipAsset) {
-    throw new Error('No ZIP file found in latest release')
+  if (data.zipball_url) {
+    return data.zipball_url
   }
   
-  return zipAsset.browser_download_url
+  throw new Error('No source code ZIP found in latest release')
 }
 
 async function unzipAndExtractJSON(zipUrl: string, onProgress?: (current: number, total: number, message: string) => void): Promise<{ cards: TCGCard[]; sets: TCGSet[] }> {
