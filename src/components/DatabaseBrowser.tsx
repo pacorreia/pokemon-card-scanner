@@ -178,8 +178,8 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
                   </Tabs>
                 </div>
 
-                <ScrollArea className="flex-1 overflow-y-auto h-0">
-                  <div className="px-6 py-4 pb-24">
+                <ScrollArea className="flex-1">
+                  <div className="px-6 py-4 pb-32">
                     {selectedTab === 'cards' && (
                       <div className="space-y-6">
                         {filteredCards.length === 0 ? (
@@ -330,8 +330,8 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
               <SheetDescription>{selectedCard.set?.name || 'Unknown Set'}</SheetDescription>
             </SheetHeader>
 
-            <ScrollArea className="flex-1 overflow-y-auto h-0">
-              <div className="px-6 py-4 space-y-6 pb-24">
+            <ScrollArea className="flex-1">
+              <div className="px-6 py-4 space-y-6 pb-32">
                 <div className="bg-muted rounded-lg overflow-hidden">
                   {selectedCard.images?.large ? (
                     <img
