@@ -301,7 +301,7 @@ export function useTCGDatabase() {
   const [metadata, setMetadata] = useKV<DatabaseMetadata | null>('tcg-database-metadata', null)
 
   useEffect(() => {
-    const loadCardsFromChunks = async () => {
+    const loadDataFromChunks = async () => {
       if (metadata && metadata.cardCount > 0 && (!cards || cards.length === 0)) {
         console.log('[TCG Database] Loading cards from chunks...')
         const chunkCount = await spark.kv.get<number>('tcg-database-chunk-count')
@@ -320,10 +320,29 @@ export function useTCGDatabase() {
           setCards(() => allCards)
         }
       }
+      
+      if (metadata && metadata.setCount > 0 && (!sets || sets.length === 0)) {
+        console.log('[TCG Database] Loading sets from chunks...')
+        const setChunkCount = await spark.kv.get<number>('tcg-database-sets-chunk-count')
+        
+        if (setChunkCount && setChunkCount > 0) {
+          const allSets: TCGSet[] = []
+          
+          for (let i = 0; i < setChunkCount; i++) {
+            const chunk = await spark.kv.get<TCGSet[]>(`tcg-database-sets-chunk-${i}`)
+            if (chunk) {
+              allSets.push(...chunk)
+            }
+          }
+          
+          console.log(`[TCG Database] Loaded ${allSets.length} sets from ${setChunkCount} chunks`)
+          setSets(() => allSets)
+        }
+      }
     }
     
-    loadCardsFromChunks()
-  }, [metadata, cards, setCards])
+    loadDataFromChunks()
+  }, [metadata, cards, sets, setCards, setSets])
 
   useEffect(() => {
     console.log('[TCG Database] Current state:', {
@@ -335,6 +354,8 @@ export function useTCGDatabase() {
   }, [cards, sets, metadata])
 
   const updateDatabase = async (onProgress?: (current: number, total: number, message: string) => void) => {
+    let keysToRollback: string[] = []
+    
     try {
       const { cards: newCards, sets: newSets } = await downloadCardDatabase(onProgress)
       
@@ -342,6 +363,31 @@ export function useTCGDatabase() {
         cardsCount: newCards.length,
         setsCount: newSets.length
       })
+      
+      onProgress?.(95, 100, 'Cleaning up any incomplete previous downloads...')
+      
+      try {
+        const allKeys = await spark.kv.keys()
+        const oldDatabaseKeys = allKeys.filter(key => 
+          key.startsWith('tcg-database-cards-chunk-') ||
+          key.startsWith('tcg-database-sets-chunk-') ||
+          key === 'tcg-database-sets' ||
+          key === 'tcg-database-cards' ||
+          key === 'tcg-database-metadata' ||
+          key === 'tcg-database-chunk-count' ||
+          key === 'tcg-database-sets-chunk-count'
+        )
+        
+        console.log(`[TCG Database] Found ${oldDatabaseKeys.length} old database keys to clean`)
+        
+        for (const key of oldDatabaseKeys) {
+          await spark.kv.delete(key)
+        }
+        
+        console.log(`[TCG Database] ✓ Cleaned up all old database keys`)
+      } catch (error) {
+        console.warn('[TCG Database] Could not clean old data:', error)
+      }
       
       const cleanCards = newCards.map(card => {
         const cleaned: any = {
@@ -468,54 +514,55 @@ export function useTCGDatabase() {
         cardChunks.push(cleanCards.slice(i, i + CHUNK_SIZE))
       }
       
-      console.log(`[TCG Database] Splitting cards into ${cardChunks.length} chunks of ${CHUNK_SIZE} cards each`)
-      onProgress?.(95, 100, `Preparing to save ${cardChunks.length} chunks...`)
+      const SET_CHUNK_SIZE = 50
+      const setChunks: TCGSet[][] = []
       
-      try {
-        const allKeys = await spark.kv.keys()
-        const oldChunkKeys = allKeys.filter(key => key.startsWith('tcg-database-cards-chunk-'))
-        onProgress?.(96, 100, `Cleaning up ${oldChunkKeys.length} old chunks...`)
-        for (const key of oldChunkKeys) {
-          await spark.kv.delete(key)
-        }
-        console.log(`[TCG Database] Deleted ${oldChunkKeys.length} old chunk keys`)
-      } catch (error) {
-        console.warn('[TCG Database] Could not clean old chunks (this is OK for first install):', error)
+      for (let i = 0; i < cleanSets.length; i += SET_CHUNK_SIZE) {
+        setChunks.push(cleanSets.slice(i, i + SET_CHUNK_SIZE))
       }
       
-      onProgress?.(97, 100, `Saving sets data...`)
+      console.log(`[TCG Database] Chunking data: ${cardChunks.length} card chunks, ${setChunks.length} set chunks`)
+      onProgress?.(96, 100, `Saving ${setChunks.length} set chunks...`)
       
-      try {
-        await spark.kv.set('tcg-database-sets', cleanSets)
-        console.log(`[TCG Database] ✓ Saved ${cleanSets.length} sets`)
-      } catch (error) {
-        console.error('[TCG Database] ✗ Failed to save sets:', error)
-        throw new Error(`Failed to save sets data: ${error instanceof Error ? error.message : 'Unknown error'}`)
-      }
-      
-      onProgress?.(97, 100, `Saving ${cardChunks.length} chunks in parallel...`)
-      
-      const chunkStartTime = Date.now()
-      let savedChunks = 0
-      const failedChunks: Array<{ index: number; error: any }> = []
-      
-      const saveChunkWithRetry = async (chunkKey: string, chunkData: TCGCard[], retries = 3): Promise<void> => {
+      const saveChunkWithRetry = async (chunkKey: string, chunkData: any, retries = 3): Promise<void> => {
         for (let attempt = 0; attempt <= retries; attempt++) {
           try {
             await spark.kv.set(chunkKey, chunkData)
+            keysToRollback.push(chunkKey)
             return
           } catch (error) {
             if (attempt === retries) {
               throw error
             }
-            const delay = Math.pow(2, attempt) * 100
+            const delay = Math.pow(2, attempt) * 200
             console.warn(`[TCG Database] Retry ${attempt + 1}/${retries} for ${chunkKey} after ${delay}ms delay`)
             await new Promise(resolve => setTimeout(resolve, delay))
           }
         }
       }
       
-      const PARALLEL_LIMIT = 10
+      for (let i = 0; i < setChunks.length; i++) {
+        const chunkKey = `tcg-database-sets-chunk-${i}`
+        const chunkData = setChunks[i]
+        
+        try {
+          await saveChunkWithRetry(chunkKey, chunkData, 3)
+          console.log(`[TCG Database] ✓ Saved set chunk ${i + 1}/${setChunks.length} (${chunkData.length} sets)`)
+        } catch (error) {
+          console.error(`[TCG Database] ✗ Failed to save set chunk ${i + 1}:`, error)
+          throw new Error(`Failed to save set chunk ${i + 1}: ${error instanceof Error ? error.message : 'Unknown error'}`)
+        }
+      }
+      
+      console.log(`[TCG Database] ✓ All set chunks saved`)
+      
+      onProgress?.(97, 100, `Saving ${cardChunks.length} card chunks...`)
+      
+      const chunkStartTime = Date.now()
+      let savedChunks = 0
+      const failedChunks: Array<{ index: number; error: any }> = []
+      
+      const PARALLEL_LIMIT = 8
       
       const saveChunkBatch = async (startIndex: number, batchSize: number): Promise<void> => {
         const endIndex = Math.min(startIndex + batchSize, cardChunks.length)
@@ -528,9 +575,6 @@ export function useTCGDatabase() {
           const savePromise = (async () => {
             const chunkSaveStart = Date.now()
             try {
-              const testSerialize = JSON.stringify(chunkData)
-              const sizeInMB = (testSerialize.length / (1024 * 1024)).toFixed(2)
-              
               await saveChunkWithRetry(chunkKey, chunkData, 3)
               const chunkSaveTime = Date.now() - chunkSaveStart
               
@@ -550,11 +594,11 @@ export function useTCGDatabase() {
                 timeMessage = ` • ~${minutes}m ${seconds}s remaining`
               }
               
-              onProgress?.(97 + (percentComplete / 100) * 2.5, 100, `Saved ${savedChunks}/${cardChunks.length} chunks${timeMessage}`)
+              onProgress?.(97 + (percentComplete / 100) * 2.5, 100, `Saved ${savedChunks}/${cardChunks.length} card chunks${timeMessage}`)
               
-              console.log(`[TCG Database] ✓ Saved chunk ${i + 1}/${cardChunks.length} (${chunkData.length} cards, ${sizeInMB}MB, ${chunkSaveTime}ms)`)
+              console.log(`[TCG Database] ✓ Saved card chunk ${i + 1}/${cardChunks.length} (${chunkData.length} cards, ${chunkSaveTime}ms)`)
             } catch (error) {
-              console.error(`[TCG Database] ✗ Failed to save chunk ${i + 1}:`, error)
+              console.error(`[TCG Database] ✗ Failed to save card chunk ${i + 1}:`, error)
               failedChunks.push({ index: i, error })
             }
           })()
@@ -570,8 +614,8 @@ export function useTCGDatabase() {
       }
       
       if (failedChunks.length > 0) {
-        console.error(`[TCG Database] ${failedChunks.length} chunks failed to save`)
-        throw new Error(`Failed to save ${failedChunks.length} chunks. First error: ${failedChunks[0].error instanceof Error ? failedChunks[0].error.message : 'Unknown error'}`)
+        console.error(`[TCG Database] ${failedChunks.length} card chunks failed to save`)
+        throw new Error(`Failed to save ${failedChunks.length} card chunks. First error: ${failedChunks[0].error instanceof Error ? failedChunks[0].error.message : 'Unknown error'}`)
       }
       
       const totalChunkSaveTime = Date.now() - chunkStartTime
@@ -586,9 +630,10 @@ export function useTCGDatabase() {
       }
       
       try {
-        await spark.kv.set('tcg-database-metadata', newMetadata)
-        await spark.kv.set('tcg-database-chunk-count', cardChunks.length)
-        console.log(`[TCG Database] ✓ Saved metadata and chunk count`)
+        await saveChunkWithRetry('tcg-database-metadata', newMetadata, 3)
+        await saveChunkWithRetry('tcg-database-chunk-count', cardChunks.length, 3)
+        await saveChunkWithRetry('tcg-database-sets-chunk-count', setChunks.length, 3)
+        console.log(`[TCG Database] ✓ Saved metadata and chunk counts`)
       } catch (error) {
         console.error('[TCG Database] ✗ Failed to save metadata:', error)
         throw new Error(`Failed to save metadata: ${error instanceof Error ? error.message : 'Unknown error'}`)
@@ -603,6 +648,19 @@ export function useTCGDatabase() {
       return { success: true }
     } catch (error) {
       console.error('Database update failed:', error)
+      
+      if (keysToRollback.length > 0) {
+        console.log(`[TCG Database] Rolling back ${keysToRollback.length} saved keys...`)
+        try {
+          for (const key of keysToRollback) {
+            await spark.kv.delete(key)
+          }
+          console.log('[TCG Database] ✓ Rollback complete')
+        } catch (rollbackError) {
+          console.error('[TCG Database] ✗ Rollback failed:', rollbackError)
+        }
+      }
+      
       return { success: false, error }
     }
   }
