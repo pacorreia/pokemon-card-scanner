@@ -21,7 +21,7 @@ type Mode = 'idle' | 'camera' | 'analyzing' | 'manual'
 const RARITIES = ['Common', 'Uncommon', 'Rare', 'Holo Rare', 'Ultra Rare', 'Secret Rare']
 const TYPES = ['Fire', 'Water', 'Grass', 'Electric', 'Psychic', 'Fighting', 'Darkness', 'Metal', 'Dragon', 'Fairy', 'Colorless']
 
-async function analyzeCardImage(imageDataUrl: string, findCard: (name: string, setName?: string, cardNumber?: string) => any): Promise<Omit<PokemonCard, 'id' | 'quantity' | 'dateAdded'>> {
+async function analyzeCardImage(imageDataUrl: string, findCard: (name: string, setName?: string, cardNumber?: string) => Promise<any>): Promise<Omit<PokemonCard, 'id' | 'quantity' | 'dateAdded'>> {
   const body = {
     messages: [
       {
@@ -81,7 +81,7 @@ If this is not a Pokémon card or the image is too unclear to read, return: {"er
   const rarity = RARITIES.includes(parsed.rarity) ? parsed.rarity : 'Common'
   const type = TYPES.includes(parsed.type) ? parsed.type : 'Colorless'
 
-  const tcgCard = findCard(name, set, cardNumber)
+  const tcgCard = await findCard(name, set, cardNumber)
   const imageUrl = tcgCard?.images?.large || tcgCard?.images?.small || `https://placehold.co/400x560/88ccee/ffffff?text=${encodeURIComponent(name)}`
 
   const prices = tcgCard?.tcgplayer || tcgCard?.cardmarket ? {

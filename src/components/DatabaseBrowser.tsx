@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -16,10 +16,29 @@ interface DatabaseBrowserProps {
 }
 
 export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
-  const { cards, sets, isLoaded } = useTCGDatabase()
+  const { getAllCards, sets, isLoaded } = useTCGDatabase()
+  const [cards, setCards] = useState<TCGCard[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedTab, setSelectedTab] = useState<'cards' | 'sets'>('cards')
   const [selectedCard, setSelectedCard] = useState<TCGCard | null>(null)
+  const [isLoadingCards, setIsLoadingCards] = useState(false)
+
+  useEffect(() => {
+    const loadCards = async () => {
+      if (open && isLoaded && cards.length === 0) {
+        setIsLoadingCards(true)
+        try {
+          const allCards = await getAllCards()
+          setCards(allCards)
+        } catch (error) {
+          console.error('Failed to load cards:', error)
+        } finally {
+          setIsLoadingCards(false)
+        }
+      }
+    }
+    loadCards()
+  }, [open, isLoaded, cards.length, getAllCards])
 
   const filteredCards = useMemo(() => {
     if (!cards || cards.length === 0) return []
