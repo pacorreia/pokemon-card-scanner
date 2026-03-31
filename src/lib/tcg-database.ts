@@ -239,7 +239,7 @@ async function fetchJSONFilesDirectly(onProgress?: (current: number, total: numb
     return results
   }
   
-  const setValidator = (item: any) => item && typeof item === 'object'
+  const setValidator = (item: any) => item && typeof item === 'object' && item.id && item.name
   const downloadedSets = await downloadFileBatch<TCGSet>(
     setsList,
     setsBaseUrl,
@@ -247,6 +247,8 @@ async function fetchJSONFilesDirectly(onProgress?: (current: number, total: numb
     'sets'
   )
   sets.push(...downloadedSets)
+  
+  console.log(`Successfully downloaded ${sets.length} sets`)
   
   onProgress?.(50, 100, `Downloading ${cardsList.length} card files in parallel...`)
   
@@ -258,6 +260,8 @@ async function fetchJSONFilesDirectly(onProgress?: (current: number, total: numb
     'cards'
   )
   cards.push(...downloadedCards)
+  
+  console.log(`Successfully downloaded ${cards.length} cards`)
   
   return { cards, sets }
 }

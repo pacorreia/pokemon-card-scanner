@@ -16,7 +16,7 @@ interface DatabaseBrowserProps {
 }
 
 export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
-  const { getAllCards, sets, isLoaded } = useTCGDatabase()
+  const { getAllCards, sets, isLoaded, metadata } = useTCGDatabase()
   const [cards, setCards] = useState<TCGCard[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedTab, setSelectedTab] = useState<'cards' | 'sets'>('cards')
@@ -30,8 +30,9 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
         try {
           const allCards = await getAllCards()
           setCards(allCards)
+          console.log('[DatabaseBrowser] Loaded cards:', allCards.length)
         } catch (error) {
-          console.error('Failed to load cards:', error)
+          console.error('[DatabaseBrowser] Failed to load cards:', error)
         } finally {
           setIsLoadingCards(false)
         }
@@ -39,6 +40,16 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
     }
     loadCards()
   }, [open, isLoaded, cards.length, getAllCards])
+  
+  useEffect(() => {
+    console.log('[DatabaseBrowser] State:', { 
+      open, 
+      isLoaded, 
+      cardsLength: cards.length, 
+      setsLength: sets.length,
+      metadata 
+    })
+  }, [open, isLoaded, cards.length, sets.length, metadata])
 
   const filteredCards = useMemo(() => {
     if (!cards || cards.length === 0) return []
