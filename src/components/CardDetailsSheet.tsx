@@ -58,8 +58,8 @@ export function CardDetailsSheet({
             <SheetTitle className="font-display text-2xl">{card.name}</SheetTitle>
           </SheetHeader>
           
-          <ScrollArea className="flex-1 px-4">
-            <div className="pb-6 space-y-6">
+          <ScrollArea className="flex-1 overflow-y-auto">
+            <div className="px-4 pb-6 space-y-6">
               <div className="flex justify-center pt-2">
                 <button 
                   onClick={() => setZoomOpen(true)}
