@@ -101,25 +101,23 @@ export interface DatabaseMetadata {
   setCount: number
 }
 
-const GITHUB_ARCHIVE_URL = 'https://github.com/PokemonTCG/pokemon-tcg-data/archive/refs/heads/master.zip'
-
-interface ZipEntry {
-  name: string
-  getData: (writer: any) => Promise<any>
-}
-
-async function unzipAndExtractJSON(zipUrl: string, onProgress?: (current: number, total: number, message: string) => void): Promise<{ cards: TCGCard[]; sets: TCGSet[] }> {
+async function unzipAndExtractJSON(onProgress?: (current: number, total: number, message: string) => void): Promise<{ cards: TCGCard[]; sets: TCGSet[] }> {
   const { default: JSZip } = await import('jszip')
   
-  onProgress?.(5, 100, 'Downloading card database...')
+  onProgress?.(5, 100, 'Fetching latest release...')
   
-  const response = await fetch(zipUrl)
-  if (!response.ok) {
-    throw new Error(`Failed to download ZIP: ${response.statusText}`)
+  const apiResponse = await fetch('https://api.github.com/repos/PokemonTCG/pokemon-tcg-data/zipball/master', {
+    redirect: 'follow'
+  })
+  
+  if (!apiResponse.ok) {
+    throw new Error(`Failed to download database: ${apiResponse.statusText}`)
   }
   
-  const blob = await response.blob()
-  onProgress?.(30, 100, 'Extracting files...')
+  onProgress?.(30, 100, 'Downloading card database...')
+  
+  const blob = await apiResponse.blob()
+  onProgress?.(50, 100, 'Extracting files...')
   
   const zip = await JSZip.loadAsync(blob)
   
@@ -169,7 +167,7 @@ export async function downloadCardDatabase(
   try {
     onProgress?.(0, 100, 'Preparing to download...')
     
-    const { cards, sets } = await unzipAndExtractJSON(GITHUB_ARCHIVE_URL, onProgress)
+    const { cards, sets } = await unzipAndExtractJSON(onProgress)
     
     onProgress?.(95, 100, 'Finalizing...')
     
