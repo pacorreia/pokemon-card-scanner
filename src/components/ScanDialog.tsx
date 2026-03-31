@@ -20,7 +20,7 @@ type Mode = 'idle' | 'camera' | 'analyzing' | 'manual'
 const RARITIES = ['Common', 'Uncommon', 'Rare', 'Holo Rare', 'Ultra Rare', 'Secret Rare']
 const TYPES = ['Fire', 'Water', 'Grass', 'Electric', 'Psychic', 'Fighting', 'Darkness', 'Metal', 'Dragon', 'Fairy', 'Colorless']
 
-async function analyzeCardImage(imageDataUrl: string): Promise<Omit<PokemonCard, 'id' | 'quantity' | 'dateAdded'>> {
+async function analyzeCardImage(imageDataUrl: string): Promise<Omit<PokemonCard, 'id' | 'quantity' | 'dateAdded' | 'imageUrl'>> {
   const body = {
     messages: [
       {
@@ -35,11 +35,10 @@ async function analyzeCardImage(imageDataUrl: string): Promise<Omit<PokemonCard,
             text: `Analyze this Pokémon card image and return a JSON object with these fields:
 {
   "name": "Exact Pokémon name on the card",
-  "set": "Set name (e.g., Base Set, Jungle, Fossil, Team Rocket, Sword & Shield, etc.)",
+  "set": "Set name (e.g., Base Set, Jungle, Fossil, Team Rocket, Sword & Shield, Scarlet & Violet, etc.)",
   "cardNumber": "Card number as shown (e.g., 25/102)",
   "rarity": "One of: Common, Uncommon, Rare, Holo Rare, Ultra Rare, Secret Rare",
-  "type": "One of: Fire, Water, Grass, Electric, Psychic, Fighting, Darkness, Metal, Dragon, Fairy, Colorless",
-  "imageUrl": "Leave empty string if unknown"
+  "type": "One of: Fire, Water, Grass, Electric, Psychic, Fighting, Darkness, Metal, Dragon, Fairy, Colorless"
 }
 If this is not a Pokémon card or the image is too unclear to read, return: {"error": "Unable to identify card"}`,
           },
@@ -81,7 +80,6 @@ If this is not a Pokémon card or the image is too unclear to read, return: {"er
     cardNumber: parsed.cardNumber || '?',
     rarity: RARITIES.includes(parsed.rarity) ? parsed.rarity : 'Common',
     type: TYPES.includes(parsed.type) ? parsed.type : 'Colorless',
-    imageUrl: parsed.imageUrl || '',
   }
 }
 
@@ -158,7 +156,7 @@ export function ScanDialog({ open, onOpenChange, onCardScanned }: ScanDialogProp
     try {
       const dataUrl = await fileToDataUrl(file)
       const cardData = await analyzeCardImage(dataUrl)
-      processCard(cardData)
+      processCard({ ...cardData, imageUrl: dataUrl })
     } catch (error) {
       toast.error('Could not identify the card. Try manual entry instead.', {
         action: {
@@ -216,7 +214,7 @@ export function ScanDialog({ open, onOpenChange, onCardScanned }: ScanDialogProp
     setMode('analyzing')
     try {
       const cardData = await analyzeCardImage(dataUrl)
-      processCard(cardData)
+      processCard({ ...cardData, imageUrl: dataUrl })
     } catch (error) {
       toast.error('Could not identify the card. Try manual entry instead.', {
         action: {
