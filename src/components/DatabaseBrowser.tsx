@@ -177,146 +177,144 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
                 </Tabs>
               </div>
 
-              <div className="flex-1 overflow-hidden">
-                <ScrollArea className="h-full">
-                  <div className="px-6 py-4 pb-6">
-                    {selectedTab === 'cards' && (
-                      <div className="space-y-6">
-                        {filteredCards.length === 0 ? (
-                          <div className="text-center py-12">
-                            <p className="text-muted-foreground">No cards found</p>
-                          </div>
-                        ) : (
-                          <>
-                            {searchQuery ? (
-                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                                {filteredCards.map((card) => (
-                                  <button
-                                    key={card.id}
-                                    onClick={() => setSelectedCard(card)}
-                                    className="group relative bg-card rounded-lg overflow-hidden border hover:border-primary transition-all hover:shadow-lg"
-                                  >
-                                    <div className="aspect-[2/3] bg-muted">
-                                      {card.images?.small ? (
-                                        <img
-                                          src={card.images.small}
-                                          alt={card.name}
-                                          className="w-full h-full object-cover"
-                                        />
-                                      ) : (
-                                        <div className="w-full h-full flex items-center justify-center text-muted-foreground">
-                                          No Image
-                                        </div>
-                                      )}
-                                    </div>
-                                    <div className="p-2">
-                                      <p className="text-xs font-semibold truncate">{card.name}</p>
-                                      <p className="text-xs text-muted-foreground truncate">{card.set?.name || 'Unknown Set'}</p>
-                                    </div>
-                                  </button>
-                                ))}
+              <ScrollArea className="flex-1">
+                <div className="px-6 py-4">
+                  {selectedTab === 'cards' && (
+                    <div className="space-y-6">
+                      {filteredCards.length === 0 ? (
+                        <div className="text-center py-12">
+                          <p className="text-muted-foreground">No cards found</p>
+                        </div>
+                      ) : (
+                        <>
+                          {searchQuery ? (
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                              {filteredCards.map((card) => (
+                                <button
+                                  key={card.id}
+                                  onClick={() => setSelectedCard(card)}
+                                  className="group relative bg-card rounded-lg overflow-hidden border hover:border-primary transition-all hover:shadow-lg"
+                                >
+                                  <div className="aspect-[2/3] bg-muted">
+                                    {card.images?.small ? (
+                                      <img
+                                        src={card.images.small}
+                                        alt={card.name}
+                                        className="w-full h-full object-cover"
+                                      />
+                                    ) : (
+                                      <div className="w-full h-full flex items-center justify-center text-muted-foreground">
+                                        No Image
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div className="p-2">
+                                    <p className="text-xs font-semibold truncate">{card.name}</p>
+                                    <p className="text-xs text-muted-foreground truncate">{card.set?.name || 'Unknown Set'}</p>
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
+                          ) : (
+                            Object.entries(groupedByType).map(([type, typeCards]) => (
+                              <div key={type}>
+                                <h3 className="font-display font-semibold text-lg mb-3 flex items-center gap-2">
+                                  {type}
+                                  <Badge variant="outline">{typeCards.length}</Badge>
+                                </h3>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                  {typeCards.slice(0, 12).map((card) => (
+                                    <button
+                                      key={card.id}
+                                      onClick={() => setSelectedCard(card)}
+                                      className="group relative bg-card rounded-lg overflow-hidden border hover:border-primary transition-all hover:shadow-lg"
+                                    >
+                                      <div className="aspect-[2/3] bg-muted">
+                                        {card.images?.small ? (
+                                          <img
+                                            src={card.images.small}
+                                            alt={card.name}
+                                            className="w-full h-full object-cover"
+                                          />
+                                        ) : (
+                                          <div className="w-full h-full flex items-center justify-center text-muted-foreground text-xs">
+                                            No Image
+                                          </div>
+                                        )}
+                                      </div>
+                                      <div className="p-2">
+                                        <p className="text-xs font-semibold truncate">{card.name}</p>
+                                        <p className="text-xs text-muted-foreground truncate">{card.set?.name || 'Unknown Set'}</p>
+                                      </div>
+                                    </button>
+                                  ))}
+                                </div>
                               </div>
-                            ) : (
-                              Object.entries(groupedByType).map(([type, typeCards]) => (
-                                <div key={type}>
-                                  <h3 className="font-display font-semibold text-lg mb-3 flex items-center gap-2">
-                                    {type}
-                                    <Badge variant="outline">{typeCards.length}</Badge>
-                                  </h3>
-                                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                                    {typeCards.slice(0, 12).map((card) => (
-                                      <button
-                                        key={card.id}
-                                        onClick={() => setSelectedCard(card)}
-                                        className="group relative bg-card rounded-lg overflow-hidden border hover:border-primary transition-all hover:shadow-lg"
-                                      >
-                                        <div className="aspect-[2/3] bg-muted">
-                                          {card.images?.small ? (
-                                            <img
-                                              src={card.images.small}
-                                              alt={card.name}
-                                              className="w-full h-full object-cover"
-                                            />
-                                          ) : (
-                                            <div className="w-full h-full flex items-center justify-center text-muted-foreground text-xs">
-                                              No Image
-                                            </div>
+                            ))
+                          )}
+                          {!searchQuery && (
+                            <p className="text-xs text-muted-foreground text-center pt-2">
+                              Showing first 100 cards. Use search to find specific cards.
+                            </p>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {selectedTab === 'sets' && (
+                    <div className="space-y-6">
+                      {filteredSets.length === 0 ? (
+                        <div className="text-center py-12">
+                          <p className="text-muted-foreground">No sets found</p>
+                        </div>
+                      ) : (
+                        Object.entries(groupedBySeries).map(([series, seriesSets]) => (
+                          <div key={series}>
+                            <h3 className="font-display font-semibold text-lg mb-3 flex items-center gap-2">
+                              {series}
+                              <Badge variant="outline">{seriesSets.length}</Badge>
+                            </h3>
+                            <div className="space-y-2">
+                              {seriesSets.map((set) => (
+                                <Card key={set.id} className="hover:border-primary transition-colors">
+                                  <CardContent className="p-4">
+                                    <div className="flex items-start gap-4">
+                                      <div className="w-12 h-12 bg-muted rounded-lg flex items-center justify-center shrink-0">
+                                        <img
+                                          src={set.images.symbol}
+                                          alt={set.name}
+                                          className="w-8 h-8 object-contain"
+                                        />
+                                      </div>
+                                      <div className="flex-1 min-w-0">
+                                        <h4 className="font-semibold truncate">{set.name}</h4>
+                                        <div className="flex flex-wrap items-center gap-2 mt-1">
+                                          <Badge variant="secondary" className="text-xs">
+                                            {set.total} cards
+                                          </Badge>
+                                          <span className="text-xs text-muted-foreground">
+                                            {new Date(set.releaseDate).toLocaleDateString()}
+                                          </span>
+                                          {set.ptcgoCode && (
+                                            <Badge variant="outline" className="text-xs">
+                                              {set.ptcgoCode}
+                                            </Badge>
                                           )}
                                         </div>
-                                        <div className="p-2">
-                                          <p className="text-xs font-semibold truncate">{card.name}</p>
-                                          <p className="text-xs text-muted-foreground truncate">{card.set?.name || 'Unknown Set'}</p>
-                                        </div>
-                                      </button>
-                                    ))}
-                                  </div>
-                                </div>
-                              ))
-                            )}
-                            {!searchQuery && (
-                              <p className="text-xs text-muted-foreground text-center pt-2">
-                                Showing first 100 cards. Use search to find specific cards.
-                              </p>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    )}
-
-                    {selectedTab === 'sets' && (
-                      <div className="space-y-6">
-                        {filteredSets.length === 0 ? (
-                          <div className="text-center py-12">
-                            <p className="text-muted-foreground">No sets found</p>
-                          </div>
-                        ) : (
-                          Object.entries(groupedBySeries).map(([series, seriesSets]) => (
-                            <div key={series}>
-                              <h3 className="font-display font-semibold text-lg mb-3 flex items-center gap-2">
-                                {series}
-                                <Badge variant="outline">{seriesSets.length}</Badge>
-                              </h3>
-                              <div className="space-y-2">
-                                {seriesSets.map((set) => (
-                                  <Card key={set.id} className="hover:border-primary transition-colors">
-                                    <CardContent className="p-4">
-                                      <div className="flex items-start gap-4">
-                                        <div className="w-12 h-12 bg-muted rounded-lg flex items-center justify-center shrink-0">
-                                          <img
-                                            src={set.images.symbol}
-                                            alt={set.name}
-                                            className="w-8 h-8 object-contain"
-                                          />
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                          <h4 className="font-semibold truncate">{set.name}</h4>
-                                          <div className="flex flex-wrap items-center gap-2 mt-1">
-                                            <Badge variant="secondary" className="text-xs">
-                                              {set.total} cards
-                                            </Badge>
-                                            <span className="text-xs text-muted-foreground">
-                                              {new Date(set.releaseDate).toLocaleDateString()}
-                                            </span>
-                                            {set.ptcgoCode && (
-                                              <Badge variant="outline" className="text-xs">
-                                                {set.ptcgoCode}
-                                              </Badge>
-                                            )}
-                                          </div>
-                                        </div>
                                       </div>
-                                    </CardContent>
-                                  </Card>
-                                ))}
-                              </div>
+                                    </div>
+                                  </CardContent>
+                                </Card>
+                              ))}
                             </div>
-                          ))
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </ScrollArea>
-              </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+              </ScrollArea>
             </>
           )}
         </SheetContent>
@@ -324,108 +322,106 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
 
       {selectedCard && (
         <Sheet open={!!selectedCard} onOpenChange={(open) => !open && setSelectedCard(null)}>
-          <SheetContent side="right" className="w-full sm:max-w-md p-0 flex flex-col h-full">
+          <SheetContent side="right" className="w-full sm:max-w-md p-0 flex flex-col">
             <SheetHeader className="px-6 pt-6 pb-4 border-b shrink-0">
               <SheetTitle className="font-display">{selectedCard.name}</SheetTitle>
               <SheetDescription>{selectedCard.set?.name || 'Unknown Set'}</SheetDescription>
             </SheetHeader>
 
-            <div className="flex-1 overflow-hidden">
-              <ScrollArea className="h-full">
-                <div className="px-6 py-4 space-y-6 pb-6">
-                  <div className="bg-muted rounded-lg overflow-hidden">
-                    {selectedCard.images?.large ? (
-                      <img
-                        src={selectedCard.images.large}
-                        alt={selectedCard.name}
-                        className="w-full"
-                      />
-                    ) : (
-                      <div className="w-full aspect-[2/3] flex items-center justify-center text-muted-foreground">
-                        No Image Available
+            <ScrollArea className="flex-1">
+              <div className="px-6 py-4 space-y-6">
+                <div className="bg-muted rounded-lg overflow-hidden">
+                  {selectedCard.images?.large ? (
+                    <img
+                      src={selectedCard.images.large}
+                      alt={selectedCard.name}
+                      className="w-full"
+                    />
+                  ) : (
+                    <div className="w-full aspect-[2/3] flex items-center justify-center text-muted-foreground">
+                      No Image Available
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="text-sm font-semibold text-muted-foreground mb-2">Details</h4>
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Type</span>
+                        <span className="font-medium">{selectedCard.supertype}</span>
                       </div>
-                    )}
+                      {selectedCard.types && selectedCard.types.length > 0 && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Types</span>
+                          <div className="flex gap-1">
+                            {selectedCard.types.map(type => (
+                              <Badge key={type} variant="secondary">{type}</Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {selectedCard.hp && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">HP</span>
+                          <span className="font-medium">{selectedCard.hp}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Number</span>
+                        <span className="font-medium">{selectedCard.number}/{selectedCard.set?.total || '?'}</span>
+                      </div>
+                      {selectedCard.rarity && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Rarity</span>
+                          <span className="font-medium">{selectedCard.rarity}</span>
+                        </div>
+                      )}
+                      {selectedCard.artist && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Artist</span>
+                          <span className="font-medium">{selectedCard.artist}</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
-                  <div className="space-y-4">
+                  {selectedCard.attacks && selectedCard.attacks.length > 0 && (
                     <div>
-                      <h4 className="text-sm font-semibold text-muted-foreground mb-2">Details</h4>
-                      <div className="space-y-2">
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Type</span>
-                          <span className="font-medium">{selectedCard.supertype}</span>
-                        </div>
-                        {selectedCard.types && selectedCard.types.length > 0 && (
-                          <div className="flex justify-between text-sm">
-                            <span className="text-muted-foreground">Types</span>
-                            <div className="flex gap-1">
-                              {selectedCard.types.map(type => (
-                                <Badge key={type} variant="secondary">{type}</Badge>
-                              ))}
+                      <h4 className="text-sm font-semibold text-muted-foreground mb-2">Attacks</h4>
+                      <div className="space-y-3">
+                        {selectedCard.attacks.map((attack, idx) => (
+                          <div key={idx} className="p-3 bg-muted rounded-lg">
+                            <div className="flex justify-between items-start mb-1">
+                              <span className="font-semibold">{attack.name}</span>
+                              <span className="font-bold">{attack.damage}</span>
                             </div>
+                            {attack.text && (
+                              <p className="text-xs text-muted-foreground">{attack.text}</p>
+                            )}
                           </div>
-                        )}
-                        {selectedCard.hp && (
-                          <div className="flex justify-between text-sm">
-                            <span className="text-muted-foreground">HP</span>
-                            <span className="font-medium">{selectedCard.hp}</span>
-                          </div>
-                        )}
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Number</span>
-                          <span className="font-medium">{selectedCard.number}/{selectedCard.set?.total || '?'}</span>
-                        </div>
-                        {selectedCard.rarity && (
-                          <div className="flex justify-between text-sm">
-                            <span className="text-muted-foreground">Rarity</span>
-                            <span className="font-medium">{selectedCard.rarity}</span>
-                          </div>
-                        )}
-                        {selectedCard.artist && (
-                          <div className="flex justify-between text-sm">
-                            <span className="text-muted-foreground">Artist</span>
-                            <span className="font-medium">{selectedCard.artist}</span>
-                          </div>
-                        )}
+                        ))}
                       </div>
                     </div>
+                  )}
 
-                    {selectedCard.attacks && selectedCard.attacks.length > 0 && (
-                      <div>
-                        <h4 className="text-sm font-semibold text-muted-foreground mb-2">Attacks</h4>
-                        <div className="space-y-3">
-                          {selectedCard.attacks.map((attack, idx) => (
-                            <div key={idx} className="p-3 bg-muted rounded-lg">
-                              <div className="flex justify-between items-start mb-1">
-                                <span className="font-semibold">{attack.name}</span>
-                                <span className="font-bold">{attack.damage}</span>
-                              </div>
-                              {attack.text && (
-                                <p className="text-xs text-muted-foreground">{attack.text}</p>
-                              )}
-                            </div>
-                          ))}
-                        </div>
+                  {selectedCard.abilities && selectedCard.abilities.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-semibold text-muted-foreground mb-2">Abilities</h4>
+                      <div className="space-y-3">
+                        {selectedCard.abilities.map((ability, idx) => (
+                          <div key={idx} className="p-3 bg-muted rounded-lg">
+                            <div className="font-semibold mb-1">{ability.name}</div>
+                            <p className="text-xs text-muted-foreground">{ability.text}</p>
+                          </div>
+                        ))}
                       </div>
-                    )}
-
-                    {selectedCard.abilities && selectedCard.abilities.length > 0 && (
-                      <div>
-                        <h4 className="text-sm font-semibold text-muted-foreground mb-2">Abilities</h4>
-                        <div className="space-y-3">
-                          {selectedCard.abilities.map((ability, idx) => (
-                            <div key={idx} className="p-3 bg-muted rounded-lg">
-                              <div className="font-semibold mb-1">{ability.name}</div>
-                              <p className="text-xs text-muted-foreground">{ability.text}</p>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
-              </ScrollArea>
-            </div>
+              </div>
+            </ScrollArea>
           </SheetContent>
         </Sheet>
       )}
