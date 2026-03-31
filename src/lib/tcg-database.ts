@@ -1,6 +1,15 @@
 import { useKV } from '@github/spark/hooks'
 import { useEffect } from 'react'
 
+declare const spark: {
+  kv: {
+    get: <T>(key: string) => Promise<T | undefined>
+    set: <T>(key: string, value: T) => Promise<void>
+    delete: (key: string) => Promise<void>
+    keys: () => Promise<string[]>
+  }
+}
+
 export interface TCGCard {
   id: string
   name: string
@@ -283,7 +292,7 @@ export function useTCGDatabase() {
         setsCount: newSets.length
       })
       
-      const newMetadata = {
+      const newMetadata: DatabaseMetadata = {
         lastUpdated: Date.now(),
         cardCount: newCards.length,
         setCount: newSets.length
@@ -291,13 +300,25 @@ export function useTCGDatabase() {
       
       console.log('[TCG Database] Saving to KV storage...')
       
+      await spark.kv.set('tcg-database-cards', newCards)
+      await spark.kv.set('tcg-database-sets', newSets)
+      await spark.kv.set('tcg-database-metadata', newMetadata)
+      
       setCards(() => newCards)
       setSets(() => newSets)
       setMetadata(() => newMetadata)
       
-      await new Promise(resolve => setTimeout(resolve, 100))
-      
       console.log('[TCG Database] Data saved to KV storage')
+      
+      const verifyCards = await spark.kv.get<TCGCard[]>('tcg-database-cards')
+      const verifySets = await spark.kv.get<TCGSet[]>('tcg-database-sets')
+      const verifyMetadata = await spark.kv.get<DatabaseMetadata>('tcg-database-metadata')
+      
+      console.log('[TCG Database] Verification:', {
+        cardsStored: verifyCards?.length ?? 0,
+        setsStored: verifySets?.length ?? 0,
+        metadataStored: verifyMetadata
+      })
       
       return { success: true }
     } catch (error) {
