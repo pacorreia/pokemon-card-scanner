@@ -275,6 +275,31 @@ export function useTCGDatabase() {
   const [metadata, setMetadata] = useKV<DatabaseMetadata | null>('tcg-database-metadata', null)
 
   useEffect(() => {
+    const loadCardsFromChunks = async () => {
+      if (metadata && metadata.cardCount > 0 && (!cards || cards.length === 0)) {
+        console.log('[TCG Database] Loading cards from chunks...')
+        const chunkCount = await spark.kv.get<number>('tcg-database-chunk-count')
+        
+        if (chunkCount && chunkCount > 0) {
+          const allCards: TCGCard[] = []
+          
+          for (let i = 0; i < chunkCount; i++) {
+            const chunk = await spark.kv.get<TCGCard[]>(`tcg-database-cards-chunk-${i}`)
+            if (chunk) {
+              allCards.push(...chunk)
+            }
+          }
+          
+          console.log(`[TCG Database] Loaded ${allCards.length} cards from ${chunkCount} chunks`)
+          setCards(() => allCards)
+        }
+      }
+    }
+    
+    loadCardsFromChunks()
+  }, [metadata])
+
+  useEffect(() => {
     console.log('[TCG Database] Current state:', {
       cardsLength: cards?.length ?? 0,
       setsLength: sets?.length ?? 0,
@@ -292,17 +317,47 @@ export function useTCGDatabase() {
         setsCount: newSets.length
       })
       
+      const CHUNK_SIZE = 100
+      const cardChunks: TCGCard[][] = []
+      
+      for (let i = 0; i < newCards.length; i += CHUNK_SIZE) {
+        cardChunks.push(newCards.slice(i, i + CHUNK_SIZE))
+      }
+      
+      console.log(`[TCG Database] Splitting cards into ${cardChunks.length} chunks`)
+      onProgress?.(95, 100, `Saving ${cardChunks.length} chunks to storage...`)
+      
+      const allKeys = await spark.kv.keys()
+      const oldChunkKeys = allKeys.filter(key => key.startsWith('tcg-database-cards-chunk-'))
+      for (const key of oldChunkKeys) {
+        await spark.kv.delete(key)
+      }
+      console.log(`[TCG Database] Deleted ${oldChunkKeys.length} old chunk keys`)
+      
+      for (let i = 0; i < cardChunks.length; i++) {
+        const chunkKey = `tcg-database-cards-chunk-${i}`
+        try {
+          await spark.kv.set(chunkKey, cardChunks[i])
+          console.log(`[TCG Database] Saved chunk ${i + 1}/${cardChunks.length} (${cardChunks[i].length} cards)`)
+        } catch (error) {
+          console.error(`[TCG Database] Failed to save chunk ${i}:`, error)
+          throw new Error(`Failed to save data chunk ${i + 1}/${cardChunks.length}`)
+        }
+        
+        if ((i + 1) % 10 === 0 || i === cardChunks.length - 1) {
+          onProgress?.(95 + ((i + 1) / cardChunks.length) * 4, 100, `Saved ${i + 1}/${cardChunks.length} chunks...`)
+        }
+      }
+      
       const newMetadata: DatabaseMetadata = {
         lastUpdated: Date.now(),
         cardCount: newCards.length,
         setCount: newSets.length
       }
       
-      console.log('[TCG Database] Saving to KV storage...')
-      
-      await spark.kv.set('tcg-database-cards', newCards)
       await spark.kv.set('tcg-database-sets', newSets)
       await spark.kv.set('tcg-database-metadata', newMetadata)
+      await spark.kv.set('tcg-database-chunk-count', cardChunks.length)
       
       setCards(() => newCards)
       setSets(() => newSets)
@@ -310,15 +365,7 @@ export function useTCGDatabase() {
       
       console.log('[TCG Database] Data saved to KV storage')
       
-      const verifyCards = await spark.kv.get<TCGCard[]>('tcg-database-cards')
-      const verifySets = await spark.kv.get<TCGSet[]>('tcg-database-sets')
-      const verifyMetadata = await spark.kv.get<DatabaseMetadata>('tcg-database-metadata')
-      
-      console.log('[TCG Database] Verification:', {
-        cardsStored: verifyCards?.length ?? 0,
-        setsStored: verifySets?.length ?? 0,
-        metadataStored: verifyMetadata
-      })
+      onProgress?.(100, 100, 'Database saved successfully!')
       
       return { success: true }
     } catch (error) {
