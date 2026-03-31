@@ -1,3 +1,38 @@
+export interface CardPrices {
+  tcgplayer?: {
+    url?: string
+    updatedAt?: string
+    normal?: number
+    holofoil?: number
+    reverseHolofoil?: number
+    '1stEditionHolofoil'?: number
+    '1stEditionNormal'?: number
+    market?: number
+    low?: number
+    mid?: number
+    high?: number
+  }
+  cardmarket?: {
+    url?: string
+    updatedAt?: string
+    averageSellPrice?: number
+    lowPrice?: number
+    trendPrice?: number
+    germanProLow?: number
+    suggestedPrice?: number
+    reverseHoloSell?: number
+    reverseHoloLow?: number
+    reverseHoloTrend?: number
+    lowPriceExPlus?: number
+    avg1?: number
+    avg7?: number
+    avg30?: number
+    reverseHoloAvg1?: number
+    reverseHoloAvg7?: number
+    reverseHoloAvg30?: number
+  }
+}
+
 export interface PokemonCard {
   id: string
   name: string
@@ -8,6 +43,8 @@ export interface PokemonCard {
   imageUrl: string
   quantity: number
   dateAdded: number
+  prices?: CardPrices
+  tcgCardId?: string
 }
 
 export type ViewMode = 'all' | 'duplicates'

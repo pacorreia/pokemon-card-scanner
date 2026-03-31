@@ -84,6 +84,40 @@ If this is not a Pokémon card or the image is too unclear to read, return: {"er
   const tcgCard = findCard(name, set, cardNumber)
   const imageUrl = tcgCard?.images?.large || tcgCard?.images?.small || `https://placehold.co/400x560/88ccee/ffffff?text=${encodeURIComponent(name)}`
 
+  const prices = tcgCard?.tcgplayer || tcgCard?.cardmarket ? {
+    tcgplayer: tcgCard.tcgplayer ? {
+      url: tcgCard.tcgplayer.url,
+      updatedAt: tcgCard.tcgplayer.updatedAt,
+      ...(tcgCard.tcgplayer.prices?.normal?.market && { market: tcgCard.tcgplayer.prices.normal.market }),
+      ...(tcgCard.tcgplayer.prices?.normal?.low && { low: tcgCard.tcgplayer.prices.normal.low }),
+      ...(tcgCard.tcgplayer.prices?.normal?.mid && { mid: tcgCard.tcgplayer.prices.normal.mid }),
+      ...(tcgCard.tcgplayer.prices?.normal?.high && { high: tcgCard.tcgplayer.prices.normal.high }),
+      ...(tcgCard.tcgplayer.prices?.holofoil?.market && { holofoil: tcgCard.tcgplayer.prices.holofoil.market }),
+      ...(tcgCard.tcgplayer.prices?.reverseHolofoil?.market && { reverseHolofoil: tcgCard.tcgplayer.prices.reverseHolofoil.market }),
+      ...(tcgCard.tcgplayer.prices?.['1stEditionHolofoil']?.market && { '1stEditionHolofoil': tcgCard.tcgplayer.prices['1stEditionHolofoil'].market }),
+      ...(tcgCard.tcgplayer.prices?.['1stEditionNormal']?.market && { '1stEditionNormal': tcgCard.tcgplayer.prices['1stEditionNormal'].market }),
+    } : undefined,
+    cardmarket: tcgCard.cardmarket ? {
+      url: tcgCard.cardmarket.url,
+      updatedAt: tcgCard.cardmarket.updatedAt,
+      ...(tcgCard.cardmarket.prices?.averageSellPrice && { averageSellPrice: tcgCard.cardmarket.prices.averageSellPrice }),
+      ...(tcgCard.cardmarket.prices?.lowPrice && { lowPrice: tcgCard.cardmarket.prices.lowPrice }),
+      ...(tcgCard.cardmarket.prices?.trendPrice && { trendPrice: tcgCard.cardmarket.prices.trendPrice }),
+      ...(tcgCard.cardmarket.prices?.germanProLow && { germanProLow: tcgCard.cardmarket.prices.germanProLow }),
+      ...(tcgCard.cardmarket.prices?.suggestedPrice && { suggestedPrice: tcgCard.cardmarket.prices.suggestedPrice }),
+      ...(tcgCard.cardmarket.prices?.reverseHoloSell && { reverseHoloSell: tcgCard.cardmarket.prices.reverseHoloSell }),
+      ...(tcgCard.cardmarket.prices?.reverseHoloLow && { reverseHoloLow: tcgCard.cardmarket.prices.reverseHoloLow }),
+      ...(tcgCard.cardmarket.prices?.reverseHoloTrend && { reverseHoloTrend: tcgCard.cardmarket.prices.reverseHoloTrend }),
+      ...(tcgCard.cardmarket.prices?.lowPriceExPlus && { lowPriceExPlus: tcgCard.cardmarket.prices.lowPriceExPlus }),
+      ...(tcgCard.cardmarket.prices?.avg1 && { avg1: tcgCard.cardmarket.prices.avg1 }),
+      ...(tcgCard.cardmarket.prices?.avg7 && { avg7: tcgCard.cardmarket.prices.avg7 }),
+      ...(tcgCard.cardmarket.prices?.avg30 && { avg30: tcgCard.cardmarket.prices.avg30 }),
+      ...(tcgCard.cardmarket.prices?.reverseHoloAvg1 && { reverseHoloAvg1: tcgCard.cardmarket.prices.reverseHoloAvg1 }),
+      ...(tcgCard.cardmarket.prices?.reverseHoloAvg7 && { reverseHoloAvg7: tcgCard.cardmarket.prices.reverseHoloAvg7 }),
+      ...(tcgCard.cardmarket.prices?.reverseHoloAvg30 && { reverseHoloAvg30: tcgCard.cardmarket.prices.reverseHoloAvg30 }),
+    } : undefined
+  } : undefined
+
   return {
     name,
     set,
@@ -91,6 +125,8 @@ If this is not a Pokémon card or the image is too unclear to read, return: {"er
     rarity,
     type,
     imageUrl,
+    prices,
+    tcgCardId: tcgCard?.id
   }
 }
 

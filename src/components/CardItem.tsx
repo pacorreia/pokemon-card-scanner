@@ -191,9 +191,21 @@ export function CardItem({ card, onClick, onUpdateQuantity, onDelete, isSelectio
               {card.type}
             </Badge>
           </div>
-          <p className="text-xs text-muted-foreground">
-            {card.set} • #{card.cardNumber}
-          </p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs text-muted-foreground truncate">
+              {card.set} • #{card.cardNumber}
+            </p>
+            {(card.prices?.tcgplayer?.market || card.prices?.cardmarket?.trendPrice) && (
+              <Badge variant="outline" className="text-xs font-semibold bg-green-50 text-green-700 border-green-200 shrink-0">
+                {card.prices.tcgplayer?.market 
+                  ? `$${card.prices.tcgplayer.market.toFixed(2)}`
+                  : card.prices.cardmarket?.trendPrice
+                  ? `€${card.prices.cardmarket.trendPrice.toFixed(2)}`
+                  : null
+                }
+              </Badge>
+            )}
+          </div>
         </div>
       </Card>
     </motion.div>

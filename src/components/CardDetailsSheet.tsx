@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
-import { Plus, Minus, Trash, X } from '@phosphor-icons/react'
+import { Plus, Minus, Trash, X, TrendUp, CurrencyDollar, ArrowSquareOut } from '@phosphor-icons/react'
 import type { PokemonCard } from '@/lib/types'
 
 interface CardDetailsSheetProps {
@@ -111,6 +111,135 @@ export function CardDetailsSheet({
               </div>
 
               <Separator />
+
+              {(card.prices?.tcgplayer || card.prices?.cardmarket) && (
+                <>
+                  <div>
+                    <h3 className="text-sm font-medium text-muted-foreground mb-3 flex items-center gap-2">
+                      <TrendUp className="w-4 h-4" />
+                      Market Prices
+                    </h3>
+                    <div className="space-y-4">
+                      {card.prices.tcgplayer && (
+                        <div className="p-3 bg-muted/50 rounded-lg space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold text-sm flex items-center gap-1.5">
+                              <CurrencyDollar className="w-4 h-4" weight="bold" />
+                              TCGPlayer
+                            </span>
+                            {card.prices.tcgplayer.url && (
+                              <a 
+                                href={card.prices.tcgplayer.url} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="text-primary hover:underline text-xs flex items-center gap-1"
+                              >
+                                View <ArrowSquareOut className="w-3 h-3" />
+                              </a>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            {card.prices.tcgplayer.market && (
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Market:</span>
+                                <span className="font-semibold">${card.prices.tcgplayer.market.toFixed(2)}</span>
+                              </div>
+                            )}
+                            {card.prices.tcgplayer.low && (
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Low:</span>
+                                <span className="font-medium">${card.prices.tcgplayer.low.toFixed(2)}</span>
+                              </div>
+                            )}
+                            {card.prices.tcgplayer.mid && (
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Mid:</span>
+                                <span className="font-medium">${card.prices.tcgplayer.mid.toFixed(2)}</span>
+                              </div>
+                            )}
+                            {card.prices.tcgplayer.high && (
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">High:</span>
+                                <span className="font-medium">${card.prices.tcgplayer.high.toFixed(2)}</span>
+                              </div>
+                            )}
+                            {card.prices.tcgplayer.holofoil && (
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Holofoil:</span>
+                                <span className="font-medium">${card.prices.tcgplayer.holofoil.toFixed(2)}</span>
+                              </div>
+                            )}
+                            {card.prices.tcgplayer.reverseHolofoil && (
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Reverse:</span>
+                                <span className="font-medium">${card.prices.tcgplayer.reverseHolofoil.toFixed(2)}</span>
+                              </div>
+                            )}
+                          </div>
+                          {card.prices.tcgplayer.updatedAt && (
+                            <div className="text-xs text-muted-foreground pt-1 border-t border-border/50">
+                              Updated: {new Date(card.prices.tcgplayer.updatedAt).toLocaleDateString()}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      
+                      {card.prices.cardmarket && (
+                        <div className="p-3 bg-muted/50 rounded-lg space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold text-sm flex items-center gap-1.5">
+                              <CurrencyDollar className="w-4 h-4" weight="bold" />
+                              Cardmarket (€)
+                            </span>
+                            {card.prices.cardmarket.url && (
+                              <a 
+                                href={card.prices.cardmarket.url} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="text-primary hover:underline text-xs flex items-center gap-1"
+                              >
+                                View <ArrowSquareOut className="w-3 h-3" />
+                              </a>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            {card.prices.cardmarket.trendPrice && (
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Trend:</span>
+                                <span className="font-semibold">€{card.prices.cardmarket.trendPrice.toFixed(2)}</span>
+                              </div>
+                            )}
+                            {card.prices.cardmarket.averageSellPrice && (
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Avg Sell:</span>
+                                <span className="font-medium">€{card.prices.cardmarket.averageSellPrice.toFixed(2)}</span>
+                              </div>
+                            )}
+                            {card.prices.cardmarket.lowPrice && (
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Low:</span>
+                                <span className="font-medium">€{card.prices.cardmarket.lowPrice.toFixed(2)}</span>
+                              </div>
+                            )}
+                            {card.prices.cardmarket.avg30 && (
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">30d Avg:</span>
+                                <span className="font-medium">€{card.prices.cardmarket.avg30.toFixed(2)}</span>
+                              </div>
+                            )}
+                          </div>
+                          {card.prices.cardmarket.updatedAt && (
+                            <div className="text-xs text-muted-foreground pt-1 border-t border-border/50">
+                              Updated: {new Date(card.prices.cardmarket.updatedAt).toLocaleDateString()}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <Separator />
+                </>
+              )}
 
               <div>
                 <h3 className="text-sm font-medium text-muted-foreground mb-3">Quantity</h3>

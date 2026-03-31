@@ -160,6 +160,14 @@ function App() {
     return (cards || []).reduce((sum, card) => sum + card.quantity, 0)
   }, [cards])
 
+  const collectionValue = useMemo(() => {
+    const value = (cards || []).reduce((sum, card) => {
+      const price = card.prices?.tcgplayer?.market || card.prices?.cardmarket?.trendPrice || 0
+      return sum + (price * card.quantity)
+    }, 0)
+    return value
+  }, [cards])
+
   const activeFiltersCount = selectedTypes.length + selectedRarities.length
 
   const handleToggleType = (type: string) => {
@@ -299,6 +307,9 @@ function App() {
                 ) : (
                   <>
                     {(cards || []).length} unique {(cards || []).length === 1 ? 'card' : 'cards'} • {totalCards} total
+                    {collectionValue > 0 && (
+                      <> • Est. value: ${collectionValue.toFixed(2)}</>
+                    )}
                   </>
                 )}
               </p>
