@@ -309,18 +309,34 @@ export function useTCGDatabase() {
         
         console.log('[TCG Database] IndexedDB state:', { meta, cardCount, setCount })
         
-        if (meta && cardCount > 0) {
-          setMetadata(meta)
-          console.log('[TCG Database] Metadata loaded, cards will load on demand')
-        } else {
-          setMetadata(null)
-          console.log('[TCG Database] No database found')
-        }
-        
         if (setCount > 0) {
           const loadedSets = await db.getAll<TCGSet>('sets')
           setSets(loadedSets)
           console.log(`[TCG Database] Loaded ${loadedSets.length} sets`)
+        }
+        
+        if (meta && cardCount > 0) {
+          const correctedMeta = {
+            ...meta,
+            cardCount: cardCount,
+            setCount: setCount
+          }
+          setMetadata(correctedMeta)
+          
+          if (meta.setCount !== setCount || meta.cardCount !== cardCount) {
+            console.log('[TCG Database] Correcting metadata counts:', { 
+              oldCardCount: meta.cardCount, 
+              newCardCount: cardCount,
+              oldSetCount: meta.setCount,
+              newSetCount: setCount
+            })
+            await db.put('metadata', correctedMeta)
+          }
+          
+          console.log('[TCG Database] Metadata loaded, cards will load on demand')
+        } else {
+          setMetadata(null)
+          console.log('[TCG Database] No database found')
         }
       } catch (error) {
         console.error('[TCG Database] Failed to load from IndexedDB:', error)
