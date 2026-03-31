@@ -563,4 +563,9 @@ function App() {
   )
 }
 
+export default App      <Toaster position="top-center" />
+    </div>
+  )
+}
+
 export default App
