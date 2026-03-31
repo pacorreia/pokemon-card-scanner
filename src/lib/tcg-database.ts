@@ -1,4 +1,5 @@
 import { useKV } from '@github/spark/hooks'
+import JSZip from 'jszip'
 
 export interface TCGCard {
   id: string
@@ -102,8 +103,6 @@ export interface DatabaseMetadata {
 }
 
 async function unzipAndExtractJSON(onProgress?: (current: number, total: number, message: string) => void): Promise<{ cards: TCGCard[]; sets: TCGSet[] }> {
-  const { default: JSZip } = await import('jszip')
-  
   onProgress?.(5, 100, 'Fetching latest release info...')
   
   let releaseData
