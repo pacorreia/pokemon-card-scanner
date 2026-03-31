@@ -1,4 +1,5 @@
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
@@ -47,100 +48,102 @@ export function CardDetailsSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="bottom" className="h-[90vh] sm:h-auto">
-        <SheetHeader>
+      <SheetContent side="bottom" className="h-[85vh] max-h-[85vh] flex flex-col p-0">
+        <SheetHeader className="px-4 pt-4 pb-2 shrink-0">
           <SheetTitle className="font-display text-2xl">{card.name}</SheetTitle>
         </SheetHeader>
         
-        <div className="mt-6 space-y-6">
-          <div className="flex justify-center">
-            <div className="w-64 aspect-[2.5/3.5] rounded-lg overflow-hidden shadow-2xl">
-              <img
-                src={card.imageUrl}
-                alt={card.name}
-                className="w-full h-full object-cover"
-                onError={(e) => {
-                  const target = e.target as HTMLImageElement
-                  target.src = `https://placehold.co/400x560/88ccee/ffffff?text=${encodeURIComponent(card.name)}`
-                }}
-              />
+        <ScrollArea className="flex-1 px-4">
+          <div className="pb-6 space-y-6">
+            <div className="flex justify-center pt-2">
+              <div className="w-64 aspect-[2.5/3.5] rounded-lg overflow-hidden shadow-2xl">
+                <img
+                  src={card.imageUrl}
+                  alt={card.name}
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    const target = e.target as HTMLImageElement
+                    target.src = `https://placehold.co/400x560/88ccee/ffffff?text=${encodeURIComponent(card.name)}`
+                  }}
+                />
+              </div>
             </div>
-          </div>
 
-          <div className="space-y-4">
-            <div>
-              <h3 className="text-sm font-medium text-muted-foreground mb-2">Details</h3>
-              <div className="space-y-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm">Set</span>
-                  <span className="font-medium">{card.set}</span>
+            <div className="space-y-4">
+              <div>
+                <h3 className="text-sm font-medium text-muted-foreground mb-2">Details</h3>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm">Set</span>
+                    <span className="font-medium">{card.set}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm">Card Number</span>
+                    <span className="font-medium">#{card.cardNumber}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm">Rarity</span>
+                    <Badge className={`${rarityColors[card.rarity] || 'bg-gray-500'} text-white`}>
+                      {card.rarity}
+                    </Badge>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm">Type</span>
+                    <Badge className={`${typeColors[card.type] || 'bg-gray-400'} text-white border-0`}>
+                      {card.type}
+                    </Badge>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm">Date Added</span>
+                    <span className="font-medium">
+                      {new Date(card.dateAdded).toLocaleDateString()}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm">Card Number</span>
-                  <span className="font-medium">#{card.cardNumber}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm">Rarity</span>
-                  <Badge className={`${rarityColors[card.rarity] || 'bg-gray-500'} text-white`}>
-                    {card.rarity}
-                  </Badge>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm">Type</span>
-                  <Badge className={`${typeColors[card.type] || 'bg-gray-400'} text-white border-0`}>
-                    {card.type}
-                  </Badge>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm">Date Added</span>
-                  <span className="font-medium">
-                    {new Date(card.dateAdded).toLocaleDateString()}
+              </div>
+
+              <Separator />
+
+              <div>
+                <h3 className="text-sm font-medium text-muted-foreground mb-3">Quantity</h3>
+                <div className="flex items-center justify-center gap-4">
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    onClick={() => onUpdateQuantity(card.id, -1)}
+                    disabled={card.quantity <= 1}
+                  >
+                    <Minus className="w-4 h-4" />
+                  </Button>
+                  <span className="text-3xl font-bold font-display min-w-[60px] text-center">
+                    {card.quantity}
                   </span>
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    onClick={() => onUpdateQuantity(card.id, 1)}
+                  >
+                    <Plus className="w-4 h-4" />
+                  </Button>
                 </div>
               </div>
+
+              <Separator />
+
+              <Button
+                variant="destructive"
+                className="w-full font-display font-semibold"
+                onClick={() => {
+                  onDelete(card.id)
+                  onOpenChange(false)
+                }}
+              >
+                <Trash className="w-4 h-4 mr-2" />
+                Remove from Collection
+              </Button>
             </div>
-
-            <Separator />
-
-            <div>
-              <h3 className="text-sm font-medium text-muted-foreground mb-3">Quantity</h3>
-              <div className="flex items-center gap-4">
-                <Button
-                  size="icon"
-                  variant="outline"
-                  onClick={() => onUpdateQuantity(card.id, -1)}
-                  disabled={card.quantity <= 1}
-                >
-                  <Minus className="w-4 h-4" />
-                </Button>
-                <span className="text-3xl font-bold font-display min-w-[60px] text-center">
-                  {card.quantity}
-                </span>
-                <Button
-                  size="icon"
-                  variant="outline"
-                  onClick={() => onUpdateQuantity(card.id, 1)}
-                >
-                  <Plus className="w-4 h-4" />
-                </Button>
-              </div>
-            </div>
-
-            <Separator />
-
-            <Button
-              variant="destructive"
-              className="w-full font-display font-semibold"
-              onClick={() => {
-                onDelete(card.id)
-                onOpenChange(false)
-              }}
-            >
-              <Trash className="w-4 h-4 mr-2" />
-              Remove from Collection
-            </Button>
           </div>
-        </div>
+        </ScrollArea>
       </SheetContent>
     </Sheet>
   )
