@@ -325,33 +325,39 @@ export function useTCGDatabase() {
       }
       
       console.log(`[TCG Database] Splitting cards into ${cardChunks.length} chunks`)
-      onProgress?.(95, 100, `Saving ${cardChunks.length} chunks to storage...`)
+      onProgress?.(95, 100, `Preparing to save ${cardChunks.length} chunks...`)
       
       try {
         const allKeys = await spark.kv.keys()
         const oldChunkKeys = allKeys.filter(key => key.startsWith('tcg-database-cards-chunk-'))
+        onProgress?.(96, 100, `Cleaning up ${oldChunkKeys.length} old chunks...`)
         for (const key of oldChunkKeys) {
           await spark.kv.delete(key)
         }
         console.log(`[TCG Database] Deleted ${oldChunkKeys.length} old chunk keys`)
       } catch (error) {
-        console.error('[TCG Database] Failed to fetch KV keys:', error)
+        console.warn('[TCG Database] Could not clean old chunks (this is OK for first install):', error)
       }
+      
+      onProgress?.(97, 100, `Saving chunk 0/${cardChunks.length}...`)
       
       for (let i = 0; i < cardChunks.length; i++) {
         const chunkKey = `tcg-database-cards-chunk-${i}`
+        const chunkNumber = i + 1
+        const percentComplete = Math.round((chunkNumber / cardChunks.length) * 100)
+        
+        onProgress?.(97, 100, `Saving chunk ${chunkNumber}/${cardChunks.length} (${percentComplete}%)...`)
+        
         try {
           await spark.kv.set(chunkKey, cardChunks[i])
-          console.log(`[TCG Database] Saved chunk ${i + 1}/${cardChunks.length} (${cardChunks[i].length} cards)`)
+          console.log(`[TCG Database] ✓ Saved chunk ${chunkNumber}/${cardChunks.length} (${cardChunks[i].length} cards)`)
         } catch (error) {
-          console.error(`[TCG Database] Failed to save chunk ${i}:`, error)
-          throw new Error(`Failed to save data chunk ${i + 1}/${cardChunks.length}`)
-        }
-        
-        if ((i + 1) % 10 === 0 || i === cardChunks.length - 1) {
-          onProgress?.(95 + ((i + 1) / cardChunks.length) * 4, 100, `Saved ${i + 1}/${cardChunks.length} chunks...`)
+          console.error(`[TCG Database] ✗ Failed to save chunk ${chunkNumber}:`, error)
+          throw new Error(`Failed to save data chunk ${chunkNumber}/${cardChunks.length}: ${error instanceof Error ? error.message : 'Unknown error'}`)
         }
       }
+      
+      onProgress?.(99, 100, `All ${cardChunks.length} chunks saved! Finalizing...`)
       
       const newMetadata: DatabaseMetadata = {
         lastUpdated: Date.now(),

@@ -107,8 +107,13 @@ export function DatabaseManager({ open, onOpenChange }: DatabaseManagerProps) {
 
           {isUpdating && (
             <div className="space-y-3">
-              <Progress value={progress} className="h-2" />
-              <p className="text-sm text-muted-foreground text-center">{progressMessage}</p>
+              <Progress value={progress} className="h-2.5" />
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-center">{progressMessage}</p>
+                <p className="text-xs text-muted-foreground text-center">
+                  {Math.round(progress)}% complete
+                </p>
+              </div>
             </div>
           )}
 
