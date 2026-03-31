@@ -143,7 +143,7 @@ export function DatabaseManager({ open, onOpenChange }: DatabaseManagerProps) {
 
           {!isLoaded && (
             <p className="text-xs text-muted-foreground text-center">
-              This will download approximately 10-20MB of data from GitHub. Make sure you have a stable internet connection.
+              This will download card data directly from the Pokémon TCG database. Make sure you have a stable internet connection. The download may take a few minutes.
             </p>
           )}
         </div>

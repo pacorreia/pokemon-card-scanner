@@ -1,5 +1,4 @@
 import { useKV } from '@github/spark/hooks'
-import JSZip from 'jszip'
 
 export interface TCGCard {
   id: string
@@ -102,7 +101,7 @@ export interface DatabaseMetadata {
   setCount: number
 }
 
-async function unzipAndExtractJSON(onProgress?: (current: number, total: number, message: string) => void): Promise<{ cards: TCGCard[]; sets: TCGSet[] }> {
+async function fetchJSONFilesDirectly(onProgress?: (current: number, total: number, message: string) => void): Promise<{ cards: TCGCard[]; sets: TCGSet[] }> {
   onProgress?.(5, 100, 'Fetching latest release info...')
   
   let releaseData
@@ -123,74 +122,113 @@ async function unzipAndExtractJSON(onProgress?: (current: number, total: number,
     throw new Error(`Failed to fetch release info: ${error instanceof Error ? error.message : 'Unknown error'}`)
   }
   
-  console.log('Release info:', { tag: releaseData.tag_name })
+  const tagName = releaseData.tag_name
+  console.log('Latest release tag:', tagName)
   
-  const zipUrl = `https://github.com/PokemonTCG/pokemon-tcg-data/archive/refs/tags/${releaseData.tag_name}.zip`
+  onProgress?.(10, 100, 'Finding available card sets...')
   
-  console.log('Download URL:', zipUrl)
+  const baseUrl = `https://raw.githubusercontent.com/PokemonTCG/pokemon-tcg-data/${tagName}`
   
-  onProgress?.(15, 100, 'Downloading card database (this may take a minute)...')
+  const cardsBaseUrl = `${baseUrl}/cards/en`
+  const setsBaseUrl = `${baseUrl}/sets/en`
   
-  let zipResponse
+  onProgress?.(15, 100, 'Fetching sets list...')
+  
+  let setsList: string[] = []
   try {
-    zipResponse = await fetch(zipUrl, {
-      method: 'GET',
-      mode: 'cors'
+    const setsApiResponse = await fetch(`https://api.github.com/repos/PokemonTCG/pokemon-tcg-data/contents/sets/en?ref=${tagName}`, {
+      headers: {
+        'Accept': 'application/vnd.github+json'
+      }
     })
-  } catch (fetchError) {
-    console.error('Fetch error:', fetchError)
-    throw new Error(`Network error while downloading: ${fetchError instanceof Error ? fetchError.message : 'Unknown error'}`)
+    
+    if (setsApiResponse.ok) {
+      const setsFiles = await setsApiResponse.json()
+      setsList = setsFiles
+        .filter((file: any) => file.name.endsWith('.json') && file.type === 'file')
+        .map((file: any) => file.name)
+    }
+  } catch (error) {
+    console.error('Failed to fetch sets list:', error)
   }
   
-  if (!zipResponse.ok) {
-    const errorText = await zipResponse.text().catch(() => 'No error details available')
-    console.error('Response not OK:', zipResponse.status, zipResponse.statusText, errorText)
-    throw new Error(`Download failed: ${zipResponse.status} ${zipResponse.statusText}`)
+  onProgress?.(20, 100, 'Fetching cards list...')
+  
+  let cardsList: string[] = []
+  try {
+    const cardsApiResponse = await fetch(`https://api.github.com/repos/PokemonTCG/pokemon-tcg-data/contents/cards/en?ref=${tagName}`, {
+      headers: {
+        'Accept': 'application/vnd.github+json'
+      }
+    })
+    
+    if (cardsApiResponse.ok) {
+      const cardsFiles = await cardsApiResponse.json()
+      cardsList = cardsFiles
+        .filter((file: any) => file.name.endsWith('.json') && file.type === 'file')
+        .map((file: any) => file.name)
+    }
+  } catch (error) {
+    console.error('Failed to fetch cards list:', error)
   }
   
-  onProgress?.(40, 100, 'Reading downloaded data...')
+  const totalFiles = setsList.length + cardsList.length
+  console.log(`Found ${setsList.length} set files and ${cardsList.length} card files`)
   
-  const arrayBuffer = await zipResponse.arrayBuffer()
-  
-  onProgress?.(50, 100, 'Extracting archive...')
-  
-  const zip = await JSZip.loadAsync(arrayBuffer)
+  if (totalFiles === 0) {
+    throw new Error('No JSON files found in repository. The repository structure may have changed.')
+  }
   
   const cards: TCGCard[] = []
   const sets: TCGSet[] = []
+  let processedFiles = 0
   
-  const files = Object.keys(zip.files).filter(name => name.endsWith('.json'))
-  onProgress?.(50, 100, `Found ${files.length} JSON files`)
+  onProgress?.(25, 100, `Downloading ${setsList.length} set files...`)
   
-  for (let i = 0; i < files.length; i++) {
-    const fileName = files[i]
-    const file = zip.files[fileName]
-    
-    if (file.dir) continue
-    
+  for (const setFile of setsList) {
     try {
-      const content = await file.async('text')
-      const data = JSON.parse(content)
+      const url = `${setsBaseUrl}/${setFile}`
+      const response = await fetch(url)
       
-      if (fileName.includes('/sets/') || fileName.includes('\\sets\\')) {
+      if (response.ok) {
+        const data = await response.json()
         if (Array.isArray(data)) {
           sets.push(...data)
         } else {
           sets.push(data)
         }
-      } else if (fileName.includes('/cards/') || fileName.includes('\\cards\\')) {
+      }
+    } catch (error) {
+      console.error(`Failed to fetch set file ${setFile}:`, error)
+    }
+    
+    processedFiles++
+    const progress = 25 + (processedFiles / totalFiles) * 70
+    onProgress?.(progress, 100, `Downloading files... ${processedFiles}/${totalFiles}`)
+  }
+  
+  onProgress?.(50, 100, `Downloading ${cardsList.length} card files...`)
+  
+  for (const cardFile of cardsList) {
+    try {
+      const url = `${cardsBaseUrl}/${cardFile}`
+      const response = await fetch(url)
+      
+      if (response.ok) {
+        const data = await response.json()
         if (Array.isArray(data)) {
           cards.push(...data)
         } else {
           cards.push(data)
         }
       }
-      
-      const progress = 50 + ((i + 1) / files.length) * 45
-      onProgress?.(progress, 100, `Processing files... ${i + 1}/${files.length}`)
     } catch (error) {
-      console.error(`Failed to parse ${fileName}:`, error)
+      console.error(`Failed to fetch card file ${cardFile}:`, error)
     }
+    
+    processedFiles++
+    const progress = 25 + (processedFiles / totalFiles) * 70
+    onProgress?.(progress, 100, `Downloading files... ${processedFiles}/${totalFiles}`)
   }
   
   return { cards, sets }
@@ -202,7 +240,7 @@ export async function downloadCardDatabase(
   try {
     onProgress?.(0, 100, 'Preparing to download...')
     
-    const { cards, sets } = await unzipAndExtractJSON(onProgress)
+    const { cards, sets } = await fetchJSONFilesDirectly(onProgress)
     
     onProgress?.(95, 100, 'Finalizing...')
     
