@@ -283,13 +283,19 @@ export function useTCGDatabase() {
         setsCount: newSets.length
       })
       
-      setCards((current) => newCards)
-      setSets((current) => newSets)
-      setMetadata((current) => ({
+      const newMetadata = {
         lastUpdated: Date.now(),
         cardCount: newCards.length,
         setCount: newSets.length
-      }))
+      }
+      
+      console.log('[TCG Database] Saving to KV storage...')
+      
+      setCards(() => newCards)
+      setSets(() => newSets)
+      setMetadata(() => newMetadata)
+      
+      await new Promise(resolve => setTimeout(resolve, 100))
       
       console.log('[TCG Database] Data saved to KV storage')
       
