@@ -349,7 +349,6 @@ export function useTCGDatabase() {
         const chunkNumber = i + 1
         const percentComplete = Math.round((chunkNumber / cardChunks.length) * 100)
         
-        let timeMessage = ''
         if (chunkTimes.length > 0) {
           const avgTimePerChunk = chunkTimes.reduce((a, b) => a + b, 0) / chunkTimes.length
           const chunksRemaining = cardChunks.length - chunkNumber
@@ -364,20 +363,21 @@ export function useTCGDatabase() {
           }
         }
         
-        onProgress?.(97, 100, `Saving chunk ${chunkNumber}/${cardChunks.length} (${percentComplete}%)${timeMessage}`)
+        ess?.(97, 100, `Saving chunk ${chunkNumber}/${cardChunks.length} (${percentComplete}%)${timeMessage}`)
         
         const chunkSaveStart = Date.now()
         try {
+        try {
           await spark.kv.set(chunkKey, cardChunks[i])
-          const chunkSaveTime = Date.now() - chunkSaveStart
           chunkTimes.push(chunkSaveTime)
           console.log(`[TCG Database] ✓ Saved chunk ${chunkNumber}/${cardChunks.length} (${cardChunks[i].length} cards, ${chunkSaveTime}ms)`)
+        } catch (error) {
         } catch (error) {
           console.error(`[TCG Database] ✗ Failed to save chunk ${chunkNumber}:`, error)
           throw new Error(`Failed to save data chunk ${chunkNumber}/${cardChunks.length}: ${error instanceof Error ? error.message : 'Unknown error'}`)
         }
       }
-      
+      const totalChunkSaveTime = Date.now() - chunkStartTime
       const totalChunkSaveTime = Date.now() - chunkStartTime
       console.log(`[TCG Database] Total chunk save time: ${(totalChunkSaveTime / 1000).toFixed(1)}s`)
       
@@ -397,15 +397,14 @@ export function useTCGDatabase() {
       setSets(() => newSets)
       setMetadata(() => newMetadata)
       
-      console.log('[TCG Database] Data saved to KV storage')
       
       onProgress?.(100, 100, 'Database saved successfully!')
       
       return { success: true }
     } catch (error) {
+    } catch (error) {
       console.error('Database update failed:', error)
       return { success: false, error }
-    }
   }
 
   const searchCards = (query: string, limit = 10): TCGCard[] => {
