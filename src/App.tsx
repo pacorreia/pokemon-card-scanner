@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
-import { Camera, MagnifyingGlass, Copy, Database, BookOpen, Funnel, X } from '@phosphor-icons/react'
+import { Camera, MagnifyingGlass, Copy, Database, BookOpen, Funnel, X, CheckSquare } from '@phosphor-icons/react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ScanDialog } from '@/components/ScanDialog'
 import { CardItem } from '@/components/CardItem'
@@ -13,6 +13,7 @@ import { CardDetailsSheet } from '@/components/CardDetailsSheet'
 import { EmptyState } from '@/components/EmptyState'
 import { DatabaseManager } from '@/components/DatabaseManager'
 import { DatabaseBrowser } from '@/components/DatabaseBrowser'
+import { BulkActionsToolbar } from '@/components/BulkActionsToolbar'
 import { useTCGDatabase } from '@/lib/tcg-database'
 import type { PokemonCard, ViewMode } from '@/lib/types'
 import { toast } from 'sonner'
@@ -36,6 +37,8 @@ function App() {
   const [dbBrowserOpen, setDbBrowserOpen] = useState(false)
   const [selectedTypes, setSelectedTypes] = useState<string[]>([])
   const [selectedRarities, setSelectedRarities] = useState<string[]>([])
+  const [isSelectionMode, setIsSelectionMode] = useState(false)
+  const [selectedCardIds, setSelectedCardIds] = useState<Set<string>>(new Set())
   
   const { isLoaded: isDatabaseLoaded, metadata } = useTCGDatabase()
 
@@ -175,9 +178,87 @@ function App() {
     setSearchQuery('')
   }
 
+  const handleToggleSelectionMode = () => {
+    if (isSelectionMode) {
+      setSelectedCardIds(new Set())
+    }
+    setIsSelectionMode(!isSelectionMode)
+  }
+
+  const handleToggleCardSelection = (cardId: string) => {
+    setSelectedCardIds(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(cardId)) {
+        newSet.delete(cardId)
+      } else {
+        newSet.add(cardId)
+      }
+      return newSet
+    })
+  }
+
+  const handleSelectAllCards = () => {
+    const allIds = new Set(filteredCards.map(card => card.id))
+    setSelectedCardIds(allIds)
+  }
+
+  const handleBulkIncreaseQuantity = () => {
+    setCards((currentCards) => {
+      const current = currentCards || []
+      return current.map(card =>
+        selectedCardIds.has(card.id)
+          ? { ...card, quantity: card.quantity + 1 }
+          : card
+      )
+    })
+    toast.success(`Increased quantity for ${selectedCardIds.size} ${selectedCardIds.size === 1 ? 'card' : 'cards'}`)
+  }
+
+  const handleBulkDecreaseQuantity = () => {
+    setCards((currentCards) => {
+      const current = currentCards || []
+      return current.map(card =>
+        selectedCardIds.has(card.id)
+          ? { ...card, quantity: Math.max(1, card.quantity - 1) }
+          : card
+      )
+    })
+    toast.success(`Decreased quantity for ${selectedCardIds.size} ${selectedCardIds.size === 1 ? 'card' : 'cards'}`)
+  }
+
+  const handleBulkDelete = () => {
+    const count = selectedCardIds.size
+    setCards((currentCards) => {
+      const current = currentCards || []
+      return current.filter(card => !selectedCardIds.has(card.id))
+    })
+    setSelectedCardIds(new Set())
+    setIsSelectionMode(false)
+    toast.success(`Removed ${count} ${count === 1 ? 'card' : 'cards'} from collection`)
+  }
+
+  const handleCancelBulkSelection = () => {
+    setSelectedCardIds(new Set())
+    setIsSelectionMode(false)
+  }
+
   return (
     <div className="min-h-screen bg-background">
-      <div className="container mx-auto px-4 py-6 max-w-7xl">
+      <AnimatePresence>
+        {isSelectionMode && selectedCardIds.size > 0 && (
+          <BulkActionsToolbar
+            selectedCount={selectedCardIds.size}
+            totalCount={filteredCards.length}
+            onCancel={handleCancelBulkSelection}
+            onSelectAll={handleSelectAllCards}
+            onIncreaseQuantity={handleBulkIncreaseQuantity}
+            onDecreaseQuantity={handleBulkDecreaseQuantity}
+            onDelete={handleBulkDelete}
+          />
+        )}
+      </AnimatePresence>
+
+      <div className={`container mx-auto px-4 py-6 max-w-7xl ${isSelectionMode && selectedCardIds.size > 0 ? 'pt-24' : ''}`}>
         <header className="mb-8">
           <div className="flex items-center justify-between mb-6">
             <div className="flex-1">
@@ -213,6 +294,17 @@ function App() {
               >
                 <Database className="w-5 h-5" />
               </Button>
+              {(cards || []).length > 0 && !isSelectionMode && (
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={handleToggleSelectionMode}
+                  className="shrink-0"
+                  title="Select Multiple Cards"
+                >
+                  <CheckSquare className="w-5 h-5" />
+                </Button>
+              )}
             </div>
           </div>
 
@@ -372,6 +464,9 @@ function App() {
                     onClick={() => handleCardClick(card)}
                     onUpdateQuantity={(delta) => handleUpdateQuantity(card.id, delta)}
                     onDelete={() => handleDeleteCard(card.id)}
+                    isSelectionMode={isSelectionMode}
+                    isSelected={selectedCardIds.has(card.id)}
+                    onToggleSelect={() => handleToggleCardSelection(card.id)}
                   />
                 ))}
               </AnimatePresence>

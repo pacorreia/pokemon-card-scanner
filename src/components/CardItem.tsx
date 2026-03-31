@@ -1,5 +1,6 @@
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Checkbox } from '@/components/ui/checkbox'
 import { motion } from 'framer-motion'
 import type { PokemonCard } from '@/lib/types'
 import {
@@ -27,6 +28,9 @@ interface CardItemProps {
   onClick: () => void
   onUpdateQuantity: (delta: number) => void
   onDelete: () => void
+  isSelectionMode?: boolean
+  isSelected?: boolean
+  onToggleSelect?: () => void
 }
 
 const rarityColors: Record<string, string> = {
@@ -52,7 +56,7 @@ const typeColors: Record<string, string> = {
   'Colorless': 'bg-gray-400'
 }
 
-export function CardItem({ card, onClick, onUpdateQuantity, onDelete }: CardItemProps) {
+export function CardItem({ card, onClick, onUpdateQuantity, onDelete, isSelectionMode, isSelected, onToggleSelect }: CardItemProps) {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
 
   const handleMenuClick = (e: React.MouseEvent) => {
@@ -69,18 +73,35 @@ export function CardItem({ card, onClick, onUpdateQuantity, onDelete }: CardItem
     onDelete()
   }
 
+  const handleClick = () => {
+    if (isSelectionMode && onToggleSelect) {
+      onToggleSelect()
+    } else {
+      onClick()
+    }
+  }
+
+  const handleCheckboxClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (onToggleSelect) {
+      onToggleSelect()
+    }
+  }
+
   return (
     <>
       <motion.div
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
-        whileHover={{ scale: 1.05, y: -4 }}
+        whileHover={{ scale: isSelectionMode ? 1 : 1.05, y: isSelectionMode ? 0 : -4 }}
         whileTap={{ scale: 0.98 }}
         transition={{ duration: 0.2 }}
       >
         <Card
-          className="overflow-hidden cursor-pointer hover:shadow-xl transition-shadow relative group"
-          onClick={onClick}
+          className={`overflow-hidden cursor-pointer hover:shadow-xl transition-all relative group ${
+            isSelected ? 'ring-4 ring-primary shadow-2xl' : ''
+          }`}
+          onClick={handleClick}
         >
           <div className="aspect-[2.5/3.5] bg-gradient-to-br from-muted to-muted/50 relative">
             <img
@@ -93,7 +114,22 @@ export function CardItem({ card, onClick, onUpdateQuantity, onDelete }: CardItem
               }}
             />
             
-            <div className="absolute top-2 left-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity" onClick={handleMenuClick}>
+            {isSelectionMode && (
+              <div 
+                className="absolute top-2 left-2 z-10"
+                onClick={handleCheckboxClick}
+              >
+                <div className="bg-background rounded-md p-1 shadow-lg">
+                  <Checkbox 
+                    checked={isSelected}
+                    className="w-5 h-5"
+                  />
+                </div>
+              </div>
+            )}
+            
+            {!isSelectionMode && (
+              <div className="absolute top-2 left-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity" onClick={handleMenuClick}>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button className="bg-background/90 backdrop-blur-sm hover:bg-background rounded-full p-1.5 shadow-lg">
@@ -127,6 +163,7 @@ export function CardItem({ card, onClick, onUpdateQuantity, onDelete }: CardItem
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
+            )}
 
             {card.quantity > 1 && (
               <div className="absolute top-2 right-2">
