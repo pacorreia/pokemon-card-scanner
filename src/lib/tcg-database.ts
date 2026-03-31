@@ -320,21 +320,105 @@ export function useTCGDatabase() {
       })
       
       const cleanCards = newCards.map(card => {
-        const cleaned: any = { ...card }
-        
-        if (cleaned.set && typeof cleaned.set === 'object') {
-          cleaned.set = {
-            id: cleaned.set.id || '',
-            name: cleaned.set.name || '',
-            series: cleaned.set.series || '',
-            printedTotal: cleaned.set.printedTotal || 0,
-            total: cleaned.set.total || 0,
-            legalities: cleaned.set.legalities || {},
-            releaseDate: cleaned.set.releaseDate || '',
-            updatedAt: cleaned.set.updatedAt || '',
-            images: cleaned.set.images || { symbol: '', logo: '' }
+        const cleaned: any = {
+          id: card.id || '',
+          name: card.name || '',
+          supertype: card.supertype || '',
+          subtypes: Array.isArray(card.subtypes) ? card.subtypes : [],
+          hp: card.hp || undefined,
+          types: Array.isArray(card.types) ? card.types : [],
+          evolvesFrom: card.evolvesFrom || undefined,
+          number: card.number || '',
+          artist: card.artist || undefined,
+          rarity: card.rarity || undefined,
+          flavorText: card.flavorText || undefined,
+          nationalPokedexNumbers: Array.isArray(card.nationalPokedexNumbers) ? card.nationalPokedexNumbers : [],
+          legalities: {
+            unlimited: card.legalities?.unlimited || undefined,
+            standard: card.legalities?.standard || undefined,
+            expanded: card.legalities?.expanded || undefined,
+          },
+          images: {
+            small: card.images?.small || '',
+            large: card.images?.large || '',
           }
-          if (cleaned.set.ptcgoCode) cleaned.set.ptcgoCode = cleaned.set.ptcgoCode
+        }
+        
+        if (card.abilities && Array.isArray(card.abilities)) {
+          cleaned.abilities = card.abilities.map((a: any) => ({
+            name: a.name || '',
+            text: a.text || '',
+            type: a.type || ''
+          }))
+        }
+        
+        if (card.attacks && Array.isArray(card.attacks)) {
+          cleaned.attacks = card.attacks.map((a: any) => ({
+            name: a.name || '',
+            cost: Array.isArray(a.cost) ? a.cost : [],
+            convertedEnergyCost: a.convertedEnergyCost || 0,
+            damage: a.damage || '',
+            text: a.text || ''
+          }))
+        }
+        
+        if (card.weaknesses && Array.isArray(card.weaknesses)) {
+          cleaned.weaknesses = card.weaknesses.map((w: any) => ({
+            type: w.type || '',
+            value: w.value || ''
+          }))
+        }
+        
+        if (card.resistances && Array.isArray(card.resistances)) {
+          cleaned.resistances = card.resistances.map((r: any) => ({
+            type: r.type || '',
+            value: r.value || ''
+          }))
+        }
+        
+        if (card.retreatCost && Array.isArray(card.retreatCost)) {
+          cleaned.retreatCost = card.retreatCost
+          cleaned.convertedRetreatCost = card.convertedRetreatCost || card.retreatCost.length
+        }
+        
+        if (card.set && typeof card.set === 'object') {
+          cleaned.set = {
+            id: card.set.id || '',
+            name: card.set.name || '',
+            series: card.set.series || '',
+            printedTotal: card.set.printedTotal || 0,
+            total: card.set.total || 0,
+            legalities: {
+              unlimited: card.set.legalities?.unlimited || undefined,
+              standard: card.set.legalities?.standard || undefined,
+              expanded: card.set.legalities?.expanded || undefined,
+            },
+            releaseDate: card.set.releaseDate || '',
+            updatedAt: card.set.updatedAt || '',
+            images: {
+              symbol: card.set.images?.symbol || '',
+              logo: card.set.images?.logo || ''
+            }
+          }
+          if (card.set.ptcgoCode) {
+            cleaned.set.ptcgoCode = card.set.ptcgoCode
+          }
+        }
+        
+        if (card.tcgplayer && typeof card.tcgplayer === 'object') {
+          cleaned.tcgplayer = {
+            url: card.tcgplayer.url || '',
+            updatedAt: card.tcgplayer.updatedAt || '',
+            prices: card.tcgplayer.prices || undefined
+          }
+        }
+        
+        if (card.cardmarket && typeof card.cardmarket === 'object') {
+          cleaned.cardmarket = {
+            url: card.cardmarket.url || '',
+            updatedAt: card.cardmarket.updatedAt || '',
+            prices: card.cardmarket.prices || undefined
+          }
         }
         
         return cleaned as TCGCard
@@ -353,7 +437,7 @@ export function useTCGDatabase() {
         ...(set.ptcgoCode && { ptcgoCode: set.ptcgoCode })
       }))
       
-      const CHUNK_SIZE = 50
+      const CHUNK_SIZE = 25
       const cardChunks: TCGCard[][] = []
       
       for (let i = 0; i < cleanCards.length; i += CHUNK_SIZE) {
@@ -390,6 +474,22 @@ export function useTCGDatabase() {
       const chunkStartTime = Date.now()
       const chunkTimes: number[] = []
       
+      const saveChunkWithRetry = async (chunkKey: string, chunkData: TCGCard[], retries = 3): Promise<void> => {
+        for (let attempt = 0; attempt <= retries; attempt++) {
+          try {
+            await spark.kv.set(chunkKey, chunkData)
+            return
+          } catch (error) {
+            if (attempt === retries) {
+              throw error
+            }
+            const delay = Math.pow(2, attempt) * 100
+            console.warn(`[TCG Database] Retry ${attempt + 1}/${retries} for ${chunkKey} after ${delay}ms delay`)
+            await new Promise(resolve => setTimeout(resolve, delay))
+          }
+        }
+      }
+      
       for (let i = 0; i < cardChunks.length; i++) {
         const chunkKey = `tcg-database-cards-chunk-${i}`
         const chunkNumber = i + 1
@@ -418,7 +518,7 @@ export function useTCGDatabase() {
           const testSerialize = JSON.stringify(chunkData)
           const sizeInMB = (testSerialize.length / (1024 * 1024)).toFixed(2)
           
-          await spark.kv.set(chunkKey, chunkData)
+          await saveChunkWithRetry(chunkKey, chunkData, 3)
           const chunkSaveTime = Date.now() - chunkSaveStart
           chunkTimes.push(chunkSaveTime)
           console.log(`[TCG Database] ✓ Saved chunk ${chunkNumber}/${cardChunks.length} (${chunkData.length} cards, ${sizeInMB}MB, ${chunkSaveTime}ms)`)
