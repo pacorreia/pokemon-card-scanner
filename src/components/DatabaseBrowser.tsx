@@ -111,8 +111,8 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
   return (
     <>
       <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent side="right" className="w-full sm:max-w-2xl p-0 flex flex-col">
-          <SheetHeader className="px-6 pt-6 pb-4 border-b">
+        <SheetContent side="right" className="w-full sm:max-w-2xl p-0 flex flex-col h-full">
+          <SheetHeader className="px-6 pt-6 pb-4 border-b shrink-0">
             <SheetTitle className="font-display text-2xl flex items-center gap-2">
               <Package className="w-6 h-6" weight="duotone" />
               Browse Database
@@ -122,65 +122,65 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
             </SheetDescription>
           </SheetHeader>
 
-          <div className="flex-1 flex flex-col overflow-hidden">
-            {!isLoaded ? (
-              <div className="flex-1 flex items-center justify-center p-6">
-                <div className="text-center space-y-4">
-                  <Warning className="w-16 h-16 mx-auto text-yellow-600" weight="duotone" />
-                  <div>
-                    <p className="font-semibold text-lg mb-2">Database not loaded</p>
-                    <p className="text-sm text-muted-foreground">
-                      Please download the database first to browse cards and sets
-                    </p>
-                  </div>
+          {!isLoaded ? (
+            <div className="flex-1 flex items-center justify-center p-6">
+              <div className="text-center space-y-4">
+                <Warning className="w-16 h-16 mx-auto text-yellow-600" weight="duotone" />
+                <div>
+                  <p className="font-semibold text-lg mb-2">Database not loaded</p>
+                  <p className="text-sm text-muted-foreground">
+                    Please download the database first to browse cards and sets
+                  </p>
                 </div>
               </div>
-            ) : (
-              <>
-                <div className="px-6 py-4 space-y-4 border-b">
-                  <div className="relative">
-                    <MagnifyingGlass className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-                    <Input
-                      placeholder="Search by name, set, type..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="pl-10 pr-10"
-                    />
-                    {searchQuery && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
-                        onClick={() => setSearchQuery('')}
-                      >
-                        <X className="w-4 h-4" />
-                      </Button>
-                    )}
-                  </div>
-
-                  <Tabs value={selectedTab} onValueChange={(v) => setSelectedTab(v as 'cards' | 'sets')}>
-                    <TabsList className="grid w-full grid-cols-2">
-                      <TabsTrigger value="cards" className="font-display font-semibold">
-                        <SquaresFour className="w-4 h-4 mr-1.5" />
-                        Cards
-                        <Badge variant="secondary" className="ml-2">
-                          {(cards?.length || 0).toLocaleString()}
-                        </Badge>
-                      </TabsTrigger>
-                      <TabsTrigger value="sets" className="font-display font-semibold">
-                        <Package className="w-4 h-4 mr-1.5" />
-                        Sets
-                        <Badge variant="secondary" className="ml-2">
-                          {sets?.length || 0}
-                        </Badge>
-                      </TabsTrigger>
-                    </TabsList>
-                  </Tabs>
+            </div>
+          ) : (
+            <>
+              <div className="px-6 py-4 space-y-4 border-b shrink-0">
+                <div className="relative">
+                  <MagnifyingGlass className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                  <Input
+                    placeholder="Search by name, set, type..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-10 pr-10"
+                  />
+                  {searchQuery && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
+                      onClick={() => setSearchQuery('')}
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
+                  )}
                 </div>
 
-                <ScrollArea className="flex-1 px-6">
-                  <div className="py-4 pb-6">
-                      {selectedTab === 'cards' && (
+                <Tabs value={selectedTab} onValueChange={(v) => setSelectedTab(v as 'cards' | 'sets')}>
+                  <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="cards" className="font-display font-semibold">
+                      <SquaresFour className="w-4 h-4 mr-1.5" />
+                      Cards
+                      <Badge variant="secondary" className="ml-2">
+                        {(cards?.length || 0).toLocaleString()}
+                      </Badge>
+                    </TabsTrigger>
+                    <TabsTrigger value="sets" className="font-display font-semibold">
+                      <Package className="w-4 h-4 mr-1.5" />
+                      Sets
+                      <Badge variant="secondary" className="ml-2">
+                        {sets?.length || 0}
+                      </Badge>
+                    </TabsTrigger>
+                  </TabsList>
+                </Tabs>
+              </div>
+
+              <div className="flex-1 overflow-hidden">
+                <ScrollArea className="h-full">
+                  <div className="px-6 py-4 pb-6">
+                    {selectedTab === 'cards' && (
                       <div className="space-y-6">
                         {filteredCards.length === 0 ? (
                           <div className="text-center py-12">
@@ -316,114 +316,116 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
                     )}
                   </div>
                 </ScrollArea>
-              </>
-            )}
-          </div>
+              </div>
+            </>
+          )}
         </SheetContent>
       </Sheet>
 
       {selectedCard && (
         <Sheet open={!!selectedCard} onOpenChange={(open) => !open && setSelectedCard(null)}>
-          <SheetContent side="right" className="w-full sm:max-w-md p-0 flex flex-col">
+          <SheetContent side="right" className="w-full sm:max-w-md p-0 flex flex-col h-full">
             <SheetHeader className="px-6 pt-6 pb-4 border-b shrink-0">
               <SheetTitle className="font-display">{selectedCard.name}</SheetTitle>
               <SheetDescription>{selectedCard.set?.name || 'Unknown Set'}</SheetDescription>
             </SheetHeader>
 
-            <ScrollArea className="flex-1 px-6">
-              <div className="py-4 space-y-6 pb-6">
-                <div className="bg-muted rounded-lg overflow-hidden">
-                  {selectedCard.images?.large ? (
-                    <img
-                      src={selectedCard.images.large}
-                      alt={selectedCard.name}
-                      className="w-full"
-                    />
-                  ) : (
-                    <div className="w-full aspect-[2/3] flex items-center justify-center text-muted-foreground">
-                      No Image Available
-                    </div>
-                  )}
-                </div>
-
-                <div className="space-y-4">
-                  <div>
-                    <h4 className="text-sm font-semibold text-muted-foreground mb-2">Details</h4>
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Type</span>
-                        <span className="font-medium">{selectedCard.supertype}</span>
+            <div className="flex-1 overflow-hidden">
+              <ScrollArea className="h-full">
+                <div className="px-6 py-4 space-y-6 pb-6">
+                  <div className="bg-muted rounded-lg overflow-hidden">
+                    {selectedCard.images?.large ? (
+                      <img
+                        src={selectedCard.images.large}
+                        alt={selectedCard.name}
+                        className="w-full"
+                      />
+                    ) : (
+                      <div className="w-full aspect-[2/3] flex items-center justify-center text-muted-foreground">
+                        No Image Available
                       </div>
-                      {selectedCard.types && selectedCard.types.length > 0 && (
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Types</span>
-                          <div className="flex gap-1">
-                            {selectedCard.types.map(type => (
-                              <Badge key={type} variant="secondary">{type}</Badge>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      {selectedCard.hp && (
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">HP</span>
-                          <span className="font-medium">{selectedCard.hp}</span>
-                        </div>
-                      )}
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Number</span>
-                        <span className="font-medium">{selectedCard.number}/{selectedCard.set?.total || '?'}</span>
-                      </div>
-                      {selectedCard.rarity && (
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Rarity</span>
-                          <span className="font-medium">{selectedCard.rarity}</span>
-                        </div>
-                      )}
-                      {selectedCard.artist && (
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Artist</span>
-                          <span className="font-medium">{selectedCard.artist}</span>
-                        </div>
-                      )}
-                    </div>
+                    )}
                   </div>
 
-                  {selectedCard.attacks && selectedCard.attacks.length > 0 && (
+                  <div className="space-y-4">
                     <div>
-                      <h4 className="text-sm font-semibold text-muted-foreground mb-2">Attacks</h4>
-                      <div className="space-y-3">
-                        {selectedCard.attacks.map((attack, idx) => (
-                          <div key={idx} className="p-3 bg-muted rounded-lg">
-                            <div className="flex justify-between items-start mb-1">
-                              <span className="font-semibold">{attack.name}</span>
-                              <span className="font-bold">{attack.damage}</span>
+                      <h4 className="text-sm font-semibold text-muted-foreground mb-2">Details</h4>
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Type</span>
+                          <span className="font-medium">{selectedCard.supertype}</span>
+                        </div>
+                        {selectedCard.types && selectedCard.types.length > 0 && (
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">Types</span>
+                            <div className="flex gap-1">
+                              {selectedCard.types.map(type => (
+                                <Badge key={type} variant="secondary">{type}</Badge>
+                              ))}
                             </div>
-                            {attack.text && (
-                              <p className="text-xs text-muted-foreground">{attack.text}</p>
-                            )}
                           </div>
-                        ))}
+                        )}
+                        {selectedCard.hp && (
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">HP</span>
+                            <span className="font-medium">{selectedCard.hp}</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Number</span>
+                          <span className="font-medium">{selectedCard.number}/{selectedCard.set?.total || '?'}</span>
+                        </div>
+                        {selectedCard.rarity && (
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">Rarity</span>
+                            <span className="font-medium">{selectedCard.rarity}</span>
+                          </div>
+                        )}
+                        {selectedCard.artist && (
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">Artist</span>
+                            <span className="font-medium">{selectedCard.artist}</span>
+                          </div>
+                        )}
                       </div>
                     </div>
-                  )}
 
-                  {selectedCard.abilities && selectedCard.abilities.length > 0 && (
-                    <div>
-                      <h4 className="text-sm font-semibold text-muted-foreground mb-2">Abilities</h4>
-                      <div className="space-y-3">
-                        {selectedCard.abilities.map((ability, idx) => (
-                          <div key={idx} className="p-3 bg-muted rounded-lg">
-                            <div className="font-semibold mb-1">{ability.name}</div>
-                            <p className="text-xs text-muted-foreground">{ability.text}</p>
-                          </div>
-                        ))}
+                    {selectedCard.attacks && selectedCard.attacks.length > 0 && (
+                      <div>
+                        <h4 className="text-sm font-semibold text-muted-foreground mb-2">Attacks</h4>
+                        <div className="space-y-3">
+                          {selectedCard.attacks.map((attack, idx) => (
+                            <div key={idx} className="p-3 bg-muted rounded-lg">
+                              <div className="flex justify-between items-start mb-1">
+                                <span className="font-semibold">{attack.name}</span>
+                                <span className="font-bold">{attack.damage}</span>
+                              </div>
+                              {attack.text && (
+                                <p className="text-xs text-muted-foreground">{attack.text}</p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  )}
-                </div>
+                    )}
+
+                    {selectedCard.abilities && selectedCard.abilities.length > 0 && (
+                      <div>
+                        <h4 className="text-sm font-semibold text-muted-foreground mb-2">Abilities</h4>
+                        <div className="space-y-3">
+                          {selectedCard.abilities.map((ability, idx) => (
+                            <div key={idx} className="p-3 bg-muted rounded-lg">
+                              <div className="font-semibold mb-1">{ability.name}</div>
+                              <p className="text-xs text-muted-foreground">{ability.text}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </ScrollArea>
+            </div>
           </SheetContent>
         </Sheet>
       )}
