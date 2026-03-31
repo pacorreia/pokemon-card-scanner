@@ -1,9 +1,11 @@
+import { useState } from 'react'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
-import { Plus, Minus, Trash } from '@phosphor-icons/react'
+import { Dialog, DialogContent } from '@/components/ui/dialog'
+import { Plus, Minus, Trash, X } from '@phosphor-icons/react'
 import type { PokemonCard } from '@/lib/types'
 
 interface CardDetailsSheetProps {
@@ -44,30 +46,36 @@ export function CardDetailsSheet({
   onUpdateQuantity,
   onDelete
 }: CardDetailsSheetProps) {
+  const [zoomOpen, setZoomOpen] = useState(false)
+  
   if (!card) return null
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="bottom" className="h-[85vh] max-h-[85vh] flex flex-col p-0">
-        <SheetHeader className="px-4 pt-4 pb-2 shrink-0">
-          <SheetTitle className="font-display text-2xl">{card.name}</SheetTitle>
-        </SheetHeader>
-        
-        <ScrollArea className="flex-1 px-4">
-          <div className="pb-6 space-y-6">
-            <div className="flex justify-center pt-2">
-              <div className="w-64 aspect-[2.5/3.5] rounded-lg overflow-hidden shadow-2xl">
-                <img
-                  src={card.imageUrl}
-                  alt={card.name}
-                  className="w-full h-full object-cover"
-                  onError={(e) => {
-                    const target = e.target as HTMLImageElement
-                    target.src = `https://placehold.co/400x560/88ccee/ffffff?text=${encodeURIComponent(card.name)}`
-                  }}
-                />
+    <>
+      <Sheet open={open} onOpenChange={onOpenChange}>
+        <SheetContent side="bottom" className="h-[85vh] max-h-[85vh] flex flex-col p-0">
+          <SheetHeader className="px-4 pt-4 pb-2 shrink-0">
+            <SheetTitle className="font-display text-2xl">{card.name}</SheetTitle>
+          </SheetHeader>
+          
+          <ScrollArea className="flex-1 px-4">
+            <div className="pb-6 space-y-6">
+              <div className="flex justify-center pt-2">
+                <button 
+                  onClick={() => setZoomOpen(true)}
+                  className="w-64 aspect-[2.5/3.5] rounded-lg overflow-hidden shadow-2xl cursor-pointer hover:shadow-3xl transition-shadow active:scale-[0.98] transition-transform"
+                >
+                  <img
+                    src={card.imageUrl}
+                    alt={card.name}
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement
+                      target.src = `https://placehold.co/400x560/88ccee/ffffff?text=${encodeURIComponent(card.name)}`
+                    }}
+                  />
+                </button>
               </div>
-            </div>
 
             <div className="space-y-4">
               <div>
@@ -146,5 +154,28 @@ export function CardDetailsSheet({
         </ScrollArea>
       </SheetContent>
     </Sheet>
+
+    <Dialog open={zoomOpen} onOpenChange={setZoomOpen}>
+      <DialogContent className="max-w-full w-full h-full p-0 border-0 bg-black/95 flex items-center justify-center">
+        <button
+          onClick={() => setZoomOpen(false)}
+          className="absolute top-4 right-4 z-50 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
+        >
+          <X className="w-6 h-6" weight="bold" />
+        </button>
+        <div className="w-full max-w-2xl px-4">
+          <img
+            src={card.imageUrl}
+            alt={card.name}
+            className="w-full h-auto rounded-lg shadow-2xl"
+            onError={(e) => {
+              const target = e.target as HTMLImageElement
+              target.src = `https://placehold.co/400x560/88ccee/ffffff?text=${encodeURIComponent(card.name)}`
+            }}
+          />
+        </div>
+      </DialogContent>
+    </Dialog>
+  </>
   )
 }
