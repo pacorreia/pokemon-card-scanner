@@ -179,6 +179,8 @@ function App() {
                     key={card.id}
                     card={card}
                     onClick={() => handleCardClick(card)}
+                    onUpdateQuantity={(delta) => handleUpdateQuantity(card.id, delta)}
+                    onDelete={() => handleDeleteCard(card.id)}
                   />
                 ))}
               </AnimatePresence>

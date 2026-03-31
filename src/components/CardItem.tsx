@@ -2,10 +2,31 @@ import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { motion } from 'framer-motion'
 import type { PokemonCard } from '@/lib/types'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { DotsThreeVertical, Eye, Plus, Minus, Trash } from '@phosphor-icons/react'
+import { useState } from 'react'
 
 interface CardItemProps {
   card: PokemonCard
   onClick: () => void
+  onUpdateQuantity: (delta: number) => void
+  onDelete: () => void
 }
 
 const rarityColors: Record<string, string> = {
@@ -31,36 +52,89 @@ const typeColors: Record<string, string> = {
   'Colorless': 'bg-gray-400'
 }
 
-export function CardItem({ card, onClick }: CardItemProps) {
+export function CardItem({ card, onClick, onUpdateQuantity, onDelete }: CardItemProps) {
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+
+  const handleMenuClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+  }
+
+  const handleDeleteClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setDeleteDialogOpen(true)
+  }
+
+  const confirmDelete = () => {
+    setDeleteDialogOpen(false)
+    onDelete()
+  }
+
   return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.9 }}
-      animate={{ opacity: 1, scale: 1 }}
-      whileHover={{ scale: 1.05, y: -4 }}
-      whileTap={{ scale: 0.98 }}
-      transition={{ duration: 0.2 }}
-    >
-      <Card
-        className="overflow-hidden cursor-pointer hover:shadow-xl transition-shadow relative group"
-        onClick={onClick}
+    <>
+      <motion.div
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        whileHover={{ scale: 1.05, y: -4 }}
+        whileTap={{ scale: 0.98 }}
+        transition={{ duration: 0.2 }}
       >
-        <div className="aspect-[2.5/3.5] bg-gradient-to-br from-muted to-muted/50 relative">
-          <img
-            src={card.imageUrl}
-            alt={card.name}
-            className="w-full h-full object-cover"
-            onError={(e) => {
-              const target = e.target as HTMLImageElement
-              target.src = `https://placehold.co/400x560/88ccee/ffffff?text=${encodeURIComponent(card.name)}`
-            }}
-          />
-          {card.quantity > 1 && (
-            <div className="absolute top-2 right-2">
-              <Badge className="bg-accent text-accent-foreground font-bold font-display shadow-lg">
-                ×{card.quantity}
-              </Badge>
+        <Card
+          className="overflow-hidden cursor-pointer hover:shadow-xl transition-shadow relative group"
+          onClick={onClick}
+        >
+          <div className="aspect-[2.5/3.5] bg-gradient-to-br from-muted to-muted/50 relative">
+            <img
+              src={card.imageUrl}
+              alt={card.name}
+              className="w-full h-full object-cover"
+              onError={(e) => {
+                const target = e.target as HTMLImageElement
+                target.src = `https://placehold.co/400x560/88ccee/ffffff?text=${encodeURIComponent(card.name)}`
+              }}
+            />
+            
+            <div className="absolute top-2 left-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity" onClick={handleMenuClick}>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button className="bg-background/90 backdrop-blur-sm hover:bg-background rounded-full p-1.5 shadow-lg">
+                    <DotsThreeVertical className="w-5 h-5" weight="bold" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-48">
+                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onClick(); }}>
+                    <Eye className="w-4 h-4 mr-2" />
+                    View Details
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onUpdateQuantity(1); }}>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Increase Quantity
+                  </DropdownMenuItem>
+                  {card.quantity > 1 && (
+                    <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onUpdateQuantity(-1); }}>
+                      <Minus className="w-4 h-4 mr-2" />
+                      Decrease Quantity
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem 
+                    onClick={handleDeleteClick}
+                    className="text-destructive focus:text-destructive"
+                  >
+                    <Trash className="w-4 h-4 mr-2" />
+                    Remove Card
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
-          )}
+
+            {card.quantity > 1 && (
+              <div className="absolute top-2 right-2">
+                <Badge className="bg-accent text-accent-foreground font-bold font-display shadow-lg">
+                  ×{card.quantity}
+                </Badge>
+              </div>
+            )}
         </div>
         <div className="p-3 space-y-2">
           <h3 className="font-display font-semibold text-sm leading-tight line-clamp-1">
@@ -86,5 +160,23 @@ export function CardItem({ card, onClick }: CardItemProps) {
         </div>
       </Card>
     </motion.div>
+
+    <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+      <AlertDialogContent onClick={(e) => e.stopPropagation()}>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Remove {card.name}?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This will permanently remove this card from your collection{card.quantity > 1 ? ` (${card.quantity} copies)` : ''}. This action cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction onClick={confirmDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+            Remove
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  </>
   )
 }
