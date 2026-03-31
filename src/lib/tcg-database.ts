@@ -327,12 +327,16 @@ export function useTCGDatabase() {
       console.log(`[TCG Database] Splitting cards into ${cardChunks.length} chunks`)
       onProgress?.(95, 100, `Saving ${cardChunks.length} chunks to storage...`)
       
-      const allKeys = await spark.kv.keys()
-      const oldChunkKeys = allKeys.filter(key => key.startsWith('tcg-database-cards-chunk-'))
-      for (const key of oldChunkKeys) {
-        await spark.kv.delete(key)
+      try {
+        const allKeys = await spark.kv.keys()
+        const oldChunkKeys = allKeys.filter(key => key.startsWith('tcg-database-cards-chunk-'))
+        for (const key of oldChunkKeys) {
+          await spark.kv.delete(key)
+        }
+        console.log(`[TCG Database] Deleted ${oldChunkKeys.length} old chunk keys`)
+      } catch (error) {
+        console.error('[TCG Database] Failed to fetch KV keys:', error)
       }
-      console.log(`[TCG Database] Deleted ${oldChunkKeys.length} old chunk keys`)
       
       for (let i = 0; i < cardChunks.length; i++) {
         const chunkKey = `tcg-database-cards-chunk-${i}`
