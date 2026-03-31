@@ -268,9 +268,9 @@ export function useTCGDatabase() {
     try {
       const { cards: newCards, sets: newSets } = await downloadCardDatabase(onProgress)
       
-      setCards(newCards)
-      setSets(newSets)
-      setMetadata({
+      await setCards(newCards)
+      await setSets(newSets)
+      await setMetadata({
         lastUpdated: Date.now(),
         cardCount: newCards.length,
         setCount: newSets.length
