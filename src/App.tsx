@@ -27,13 +27,14 @@ function App() {
   const [dbManagerOpen, setDbManagerOpen] = useState(false)
   const [dbBrowserOpen, setDbBrowserOpen] = useState(false)
   
-  const { isLoaded: isDatabaseLoaded } = useTCGDatabase()
+  const { isLoaded: isDatabaseLoaded, metadata } = useTCGDatabase()
 
   useEffect(() => {
-    if (!isDatabaseLoaded) {
+    console.log('[App] Database loaded state:', { isDatabaseLoaded, metadata })
+    if (metadata === null && isDatabaseLoaded === false) {
       setDbManagerOpen(true)
     }
-  }, [])
+  }, [metadata, isDatabaseLoaded])
 
   const handleCardScanned = (card: PokemonCard) => {
     setCards((currentCards) => {

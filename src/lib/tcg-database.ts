@@ -1,4 +1,5 @@
 import { useKV } from '@github/spark/hooks'
+import { useEffect } from 'react'
 
 export interface TCGCard {
   id: string
@@ -264,17 +265,33 @@ export function useTCGDatabase() {
   const [sets, setSets] = useKV<TCGSet[]>('tcg-database-sets', [])
   const [metadata, setMetadata] = useKV<DatabaseMetadata | null>('tcg-database-metadata', null)
 
+  useEffect(() => {
+    console.log('[TCG Database] Current state:', {
+      cardsLength: cards?.length ?? 0,
+      setsLength: sets?.length ?? 0,
+      metadata,
+      metadataCardCount: metadata?.cardCount ?? 0,
+    })
+  }, [cards, sets, metadata])
+
   const updateDatabase = async (onProgress?: (current: number, total: number, message: string) => void) => {
     try {
       const { cards: newCards, sets: newSets } = await downloadCardDatabase(onProgress)
       
-      await setCards(newCards)
-      await setSets(newSets)
-      await setMetadata({
+      console.log('[TCG Database] Downloaded data:', {
+        cardsCount: newCards.length,
+        setsCount: newSets.length
+      })
+      
+      setCards((current) => newCards)
+      setSets((current) => newSets)
+      setMetadata((current) => ({
         lastUpdated: Date.now(),
         cardCount: newCards.length,
         setCount: newSets.length
-      })
+      }))
+      
+      console.log('[TCG Database] Data saved to KV storage')
       
       return { success: true }
     } catch (error) {
@@ -327,11 +344,13 @@ export function useTCGDatabase() {
     return matches[0] || null
   }
 
+  const isLoaded = metadata !== null && (metadata?.cardCount ?? 0) > 0 && (cards?.length ?? 0) > 0
+
   return {
     cards,
     sets,
     metadata,
-    isLoaded: metadata !== null && (cards?.length ?? 0) > 0,
+    isLoaded,
     updateDatabase,
     searchCards,
     findCard
