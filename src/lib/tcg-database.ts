@@ -364,7 +364,7 @@ export function useTCGDatabase() {
           }
         }
         
-        onProgress?.(97, 100, `Saving chunk ${chunkNumber}/${cardChunks.length} (${percentComplete}%)${timeMessage}`)
+        onProgress?.(97 + (percentComplete / 100) * 3, 100, `Saving chunk ${chunkNumber}/${cardChunks.length}${timeMessage}...`)
         
         const chunkSaveStart = Date.now()
         try {
@@ -377,10 +377,9 @@ export function useTCGDatabase() {
           throw new Error(`Failed to save data chunk ${chunkNumber}/${cardChunks.length}: ${error instanceof Error ? error.message : 'Unknown error'}`)
         }
       }
+      
       const totalChunkSaveTime = Date.now() - chunkStartTime
       console.log(`[TCG Database] Total chunk save time: ${(totalChunkSaveTime / 1000).toFixed(1)}s`)
-      
-      onProgress?.(99, 100, `All ${cardChunks.length} chunks saved! Finalizing...`)
       
       const newMetadata: DatabaseMetadata = {
         lastUpdated: Date.now(),
@@ -396,7 +395,6 @@ export function useTCGDatabase() {
       setSets(() => newSets)
       setMetadata(() => newMetadata)
       
-      
       onProgress?.(100, 100, 'Database saved successfully!')
       
       return { success: true }
@@ -409,8 +407,9 @@ export function useTCGDatabase() {
   const searchCards = (query: string, limit = 10): TCGCard[] => {
     if (!cards || cards.length === 0) return []
     
-    const lowerQuery = query.toLowerCase()
     const safeCards = cards || []
+    const lowerQuery = query.toLowerCase()
+    
     const results = safeCards.filter(card => {
       return (
         card.name.toLowerCase().includes(lowerQuery) ||
