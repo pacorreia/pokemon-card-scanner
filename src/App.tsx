@@ -5,13 +5,14 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
-import { Camera, MagnifyingGlass, Copy, Database } from '@phosphor-icons/react'
+import { Camera, MagnifyingGlass, Copy, Database, BookOpen } from '@phosphor-icons/react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ScanDialog } from '@/components/ScanDialog'
 import { CardItem } from '@/components/CardItem'
 import { CardDetailsSheet } from '@/components/CardDetailsSheet'
 import { EmptyState } from '@/components/EmptyState'
 import { DatabaseManager } from '@/components/DatabaseManager'
+import { DatabaseBrowser } from '@/components/DatabaseBrowser'
 import { useTCGDatabase } from '@/lib/tcg-database'
 import type { PokemonCard, ViewMode } from '@/lib/types'
 import { toast } from 'sonner'
@@ -24,6 +25,7 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('')
   const [viewMode, setViewMode] = useState<ViewMode>('all')
   const [dbManagerOpen, setDbManagerOpen] = useState(false)
+  const [dbBrowserOpen, setDbBrowserOpen] = useState(false)
   
   const { isLoaded: isDatabaseLoaded } = useTCGDatabase()
 
@@ -137,14 +139,26 @@ function App() {
                 )}
               </p>
             </div>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => setDbManagerOpen(true)}
-              className="shrink-0"
-            >
-              <Database className="w-5 h-5" />
-            </Button>
+            <div className="flex gap-2 shrink-0">
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => setDbBrowserOpen(true)}
+                className="shrink-0"
+                title="Browse Database"
+              >
+                <BookOpen className="w-5 h-5" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => setDbManagerOpen(true)}
+                className="shrink-0"
+                title="Manage Database"
+              >
+                <Database className="w-5 h-5" />
+              </Button>
+            </div>
           </div>
 
           {(cards || []).length > 0 && (
@@ -240,6 +254,11 @@ function App() {
       <DatabaseManager
         open={dbManagerOpen}
         onOpenChange={setDbManagerOpen}
+      />
+
+      <DatabaseBrowser
+        open={dbBrowserOpen}
+        onOpenChange={setDbBrowserOpen}
       />
 
       <Toaster position="top-center" />
