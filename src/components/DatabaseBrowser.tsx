@@ -57,12 +57,16 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
     const query = searchQuery.toLowerCase()
     if (!query) return cards.slice(0, 100)
     
-    return cards.filter(card =>
-      card.name.toLowerCase().includes(query) ||
-      card.set.name.toLowerCase().includes(query) ||
-      card.number.includes(searchQuery) ||
-      card.types?.some(type => type.toLowerCase().includes(query))
-    ).slice(0, 100)
+    return cards.filter(card => {
+      if (!card || !card.name) return false
+      
+      return (
+        card.name.toLowerCase().includes(query) ||
+        (card.set?.name && card.set.name.toLowerCase().includes(query)) ||
+        (card.number && card.number.includes(searchQuery)) ||
+        (card.types && card.types.some(type => type.toLowerCase().includes(query)))
+      )
+    }).slice(0, 100)
   }, [cards, searchQuery])
 
   const filteredSets = useMemo(() => {
@@ -71,16 +75,21 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
     const query = searchQuery.toLowerCase()
     if (!query) return sets
     
-    return sets.filter(set =>
-      set.name.toLowerCase().includes(query) ||
-      set.series.toLowerCase().includes(query) ||
-      set.id.toLowerCase().includes(query)
-    )
+    return sets.filter(set => {
+      if (!set || !set.name) return false
+      
+      return (
+        set.name.toLowerCase().includes(query) ||
+        (set.series && set.series.toLowerCase().includes(query)) ||
+        (set.id && set.id.toLowerCase().includes(query))
+      )
+    })
   }, [sets, searchQuery])
 
   const groupedByType = useMemo(() => {
     const groups: Record<string, TCGCard[]> = {}
     filteredCards.forEach(card => {
+      if (!card) return
       const type = card.supertype || 'Other'
       if (!groups[type]) groups[type] = []
       groups[type].push(card)
@@ -91,6 +100,7 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
   const groupedBySeries = useMemo(() => {
     const groups: Record<string, TCGSet[]> = {}
     filteredSets.forEach(set => {
+      if (!set) return
       const series = set.series || 'Other'
       if (!groups[series]) groups[series] = []
       groups[series].push(set)
@@ -187,15 +197,21 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
                                     className="group relative bg-card rounded-lg overflow-hidden border hover:border-primary transition-all hover:shadow-lg"
                                   >
                                     <div className="aspect-[2/3] bg-muted">
-                                      <img
-                                        src={card.images.small}
-                                        alt={card.name}
-                                        className="w-full h-full object-cover"
-                                      />
+                                      {card.images?.small ? (
+                                        <img
+                                          src={card.images.small}
+                                          alt={card.name}
+                                          className="w-full h-full object-cover"
+                                        />
+                                      ) : (
+                                        <div className="w-full h-full flex items-center justify-center text-muted-foreground">
+                                          No Image
+                                        </div>
+                                      )}
                                     </div>
                                     <div className="p-2">
                                       <p className="text-xs font-semibold truncate">{card.name}</p>
-                                      <p className="text-xs text-muted-foreground truncate">{card.set.name}</p>
+                                      <p className="text-xs text-muted-foreground truncate">{card.set?.name || 'Unknown Set'}</p>
                                     </div>
                                   </button>
                                 ))}
@@ -215,15 +231,21 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
                                         className="group relative bg-card rounded-lg overflow-hidden border hover:border-primary transition-all hover:shadow-lg"
                                       >
                                         <div className="aspect-[2/3] bg-muted">
-                                          <img
-                                            src={card.images.small}
-                                            alt={card.name}
-                                            className="w-full h-full object-cover"
-                                          />
+                                          {card.images?.small ? (
+                                            <img
+                                              src={card.images.small}
+                                              alt={card.name}
+                                              className="w-full h-full object-cover"
+                                            />
+                                          ) : (
+                                            <div className="w-full h-full flex items-center justify-center text-muted-foreground text-xs">
+                                              No Image
+                                            </div>
+                                          )}
                                         </div>
                                         <div className="p-2">
                                           <p className="text-xs font-semibold truncate">{card.name}</p>
-                                          <p className="text-xs text-muted-foreground truncate">{card.set.name}</p>
+                                          <p className="text-xs text-muted-foreground truncate">{card.set?.name || 'Unknown Set'}</p>
                                         </div>
                                       </button>
                                     ))}
@@ -305,17 +327,23 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
           <SheetContent side="right" className="w-full sm:max-w-md">
             <SheetHeader className="mb-4">
               <SheetTitle className="font-display">{selectedCard.name}</SheetTitle>
-              <SheetDescription>{selectedCard.set.name}</SheetDescription>
+              <SheetDescription>{selectedCard.set?.name || 'Unknown Set'}</SheetDescription>
             </SheetHeader>
 
             <ScrollArea className="h-[calc(100vh-120px)]">
               <div className="space-y-6 pb-6">
                 <div className="bg-muted rounded-lg overflow-hidden">
-                  <img
-                    src={selectedCard.images.large}
-                    alt={selectedCard.name}
-                    className="w-full"
-                  />
+                  {selectedCard.images?.large ? (
+                    <img
+                      src={selectedCard.images.large}
+                      alt={selectedCard.name}
+                      className="w-full"
+                    />
+                  ) : (
+                    <div className="w-full aspect-[2/3] flex items-center justify-center text-muted-foreground">
+                      No Image Available
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-4">
@@ -326,7 +354,7 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
                         <span className="text-muted-foreground">Type</span>
                         <span className="font-medium">{selectedCard.supertype}</span>
                       </div>
-                      {selectedCard.types && (
+                      {selectedCard.types && selectedCard.types.length > 0 && (
                         <div className="flex justify-between text-sm">
                           <span className="text-muted-foreground">Types</span>
                           <div className="flex gap-1">
@@ -344,7 +372,7 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
                       )}
                       <div className="flex justify-between text-sm">
                         <span className="text-muted-foreground">Number</span>
-                        <span className="font-medium">{selectedCard.number}/{selectedCard.set.total}</span>
+                        <span className="font-medium">{selectedCard.number}/{selectedCard.set?.total || '?'}</span>
                       </div>
                       {selectedCard.rarity && (
                         <div className="flex justify-between text-sm">
