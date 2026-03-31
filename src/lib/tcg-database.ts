@@ -103,41 +103,40 @@ export interface DatabaseMetadata {
 
 async function unzipAndExtractJSON(onProgress?: (current: number, total: number, message: string) => void): Promise<{ cards: TCGCard[]; sets: TCGSet[] }> {
   const { default: JSZip } = await import('jszip')
-  const { Octokit } = await import('octokit')
   
   onProgress?.(5, 100, 'Fetching latest release info...')
   
-  const octokit = new Octokit()
-  
   let releaseData
   try {
-    const response = await octokit.rest.repos.getLatestRelease({
-      owner: 'PokemonTCG',
-      repo: 'pokemon-tcg-data'
+    const response = await fetch('https://api.github.com/repos/PokemonTCG/pokemon-tcg-data/releases/latest', {
+      headers: {
+        'Accept': 'application/vnd.github+json'
+      }
     })
-    releaseData = response.data
+    
+    if (!response.ok) {
+      throw new Error(`GitHub API returned ${response.status}`)
+    }
+    
+    releaseData = await response.json()
   } catch (error) {
     console.error('Failed to fetch release:', error)
     throw new Error(`Failed to fetch release info: ${error instanceof Error ? error.message : 'Unknown error'}`)
   }
   
-  console.log('Release info:', { tag: releaseData.tag_name, zipball: releaseData.zipball_url })
+  console.log('Release info:', { tag: releaseData.tag_name })
   
-  const zipballUrl = releaseData.zipball_url
+  const zipUrl = `https://github.com/PokemonTCG/pokemon-tcg-data/archive/refs/tags/${releaseData.tag_name}.zip`
   
-  if (!zipballUrl) {
-    throw new Error('No zipball URL found in release data')
-  }
+  console.log('Download URL:', zipUrl)
   
   onProgress?.(15, 100, 'Downloading card database (this may take a minute)...')
   
   let zipResponse
   try {
-    zipResponse = await fetch(zipballUrl, {
+    zipResponse = await fetch(zipUrl, {
       method: 'GET',
-      headers: {
-        'Accept': 'application/zip, application/octet-stream, */*'
-      }
+      mode: 'cors'
     })
   } catch (fetchError) {
     console.error('Fetch error:', fetchError)
@@ -147,7 +146,7 @@ async function unzipAndExtractJSON(onProgress?: (current: number, total: number,
   if (!zipResponse.ok) {
     const errorText = await zipResponse.text().catch(() => 'No error details available')
     console.error('Response not OK:', zipResponse.status, zipResponse.statusText, errorText)
-    throw new Error(`Download failed: ${zipResponse.status} ${zipResponse.statusText}. Details: ${errorText}`)
+    throw new Error(`Download failed: ${zipResponse.status} ${zipResponse.statusText}`)
   }
   
   onProgress?.(40, 100, 'Reading downloaded data...')
