@@ -104,21 +104,38 @@ export interface DatabaseMetadata {
 async function unzipAndExtractJSON(onProgress?: (current: number, total: number, message: string) => void): Promise<{ cards: TCGCard[]; sets: TCGSet[] }> {
   const { default: JSZip } = await import('jszip')
   
-  onProgress?.(5, 100, 'Fetching latest release...')
+  onProgress?.(5, 100, 'Fetching latest release info...')
   
-  const apiResponse = await fetch('https://api.github.com/repos/PokemonTCG/pokemon-tcg-data/zipball/master', {
+  const releaseResponse = await fetch('https://api.github.com/repos/PokemonTCG/pokemon-tcg-data/releases/latest', {
+    headers: {
+      'Accept': 'application/vnd.github.v3+json'
+    }
+  })
+  
+  if (!releaseResponse.ok) {
+    throw new Error(`Failed to fetch release info: ${releaseResponse.statusText}`)
+  }
+  
+  const releaseData = await releaseResponse.json()
+  const zipballUrl = releaseData.zipball_url
+  
+  if (!zipballUrl) {
+    throw new Error('No zipball URL found in release')
+  }
+  
+  onProgress?.(15, 100, 'Downloading card database...')
+  
+  const zipResponse = await fetch(zipballUrl, {
     redirect: 'follow'
   })
   
-  if (!apiResponse.ok) {
-    throw new Error(`Failed to download database: ${apiResponse.statusText}`)
+  if (!zipResponse.ok) {
+    throw new Error(`Failed to download database: ${zipResponse.statusText}`)
   }
   
-  onProgress?.(30, 100, 'Downloading card database...')
+  onProgress?.(40, 100, 'Extracting files...')
   
-  const blob = await apiResponse.blob()
-  onProgress?.(50, 100, 'Extracting files...')
-  
+  const blob = await zipResponse.blob()
   const zip = await JSZip.loadAsync(blob)
   
   const cards: TCGCard[] = []
