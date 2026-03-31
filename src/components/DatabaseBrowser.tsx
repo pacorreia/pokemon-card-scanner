@@ -178,9 +178,10 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
                   </Tabs>
                 </div>
 
-                <ScrollArea className="flex-1">
-                  <div className="px-6 py-4 pb-32">
-                    {selectedTab === 'cards' && (
+                <div className="flex-1 overflow-hidden">
+                  <ScrollArea className="h-full">
+                    <div className="px-6 py-4 pb-32">
+                      {selectedTab === 'cards' && (
                       <div className="space-y-6">
                         {filteredCards.length === 0 ? (
                           <div className="text-center py-12">
@@ -314,8 +315,9 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
                         )}
                       </div>
                     )}
-                  </div>
-                </ScrollArea>
+                    </div>
+                  </ScrollArea>
+                </div>
               </>
             )}
           </div>
@@ -330,8 +332,9 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
               <SheetDescription>{selectedCard.set?.name || 'Unknown Set'}</SheetDescription>
             </SheetHeader>
 
-            <ScrollArea className="flex-1">
-              <div className="px-6 py-4 space-y-6 pb-32">
+            <div className="flex-1 overflow-hidden">
+              <ScrollArea className="h-full">
+                <div className="px-6 py-4 space-y-6 pb-32">
                 <div className="bg-muted rounded-lg overflow-hidden">
                   {selectedCard.images?.large ? (
                     <img
@@ -424,6 +427,7 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
                 </div>
               </div>
             </ScrollArea>
+            </div>
           </SheetContent>
         </Sheet>
       )}
