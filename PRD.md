@@ -13,11 +13,11 @@ A mobile-first Pokémon card collection manager that uses AI vision to scan and 
 ## Essential Features
 
 ### Card Scanning & Recognition
-- **Functionality**: Uses device camera to capture Pokémon card images and AI vision to identify card details (name, set, number, rarity)
-- **Purpose**: Eliminates manual data entry and makes collection management effortless
+- **Functionality**: Uses device camera to capture Pokémon card images and AI vision to identify card details (name, set, number, rarity), then automatically matches and fetches official card artwork from Pokémon TCG API database
+- **Purpose**: Eliminates manual data entry and provides professional card images for collection display
 - **Trigger**: User taps the "Scan Card" button from the main inventory view
-- **Progression**: Tap scan button → Camera opens → Point at card → AI recognizes card → Preview card details → Confirm to add → Card added to inventory with success feedback
-- **Success criteria**: Card is correctly identified with 90%+ accuracy and added to inventory within 3 seconds
+- **Progression**: Tap scan button → Camera opens → Point at card → Capture photo → AI recognizes card details → TCG API lookup for official artwork → Card added to inventory with database image and success feedback
+- **Success criteria**: Card is correctly identified with 90%+ accuracy, matched with TCG database artwork, and added to inventory within 5 seconds
 
 ### Inventory Management
 - **Functionality**: Displays all collected cards in a grid/list view with card images, names, and quantities
@@ -51,6 +51,7 @@ A mobile-first Pokémon card collection manager that uses AI vision to scan and 
 
 - **Poor Lighting Conditions**: Guide user with on-screen tips to improve lighting; allow manual retry
 - **Unrecognized Cards**: Fall back to manual entry form with autofill suggestions
+- **TCG API Match Failure**: If no match found in database, use placeholder image with card details; allow user to add custom image URL
 - **Duplicate Scans**: Detect if card already exists and prompt to increase quantity instead of creating duplicate entry
 - **Empty Collection**: Show welcoming empty state with clear call-to-action to scan first card
 - **Offline Usage**: Core functionality (viewing inventory, search) works offline; scanning queues for when online

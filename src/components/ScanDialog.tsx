@@ -20,7 +20,40 @@ type Mode = 'idle' | 'camera' | 'analyzing' | 'manual'
 const RARITIES = ['Common', 'Uncommon', 'Rare', 'Holo Rare', 'Ultra Rare', 'Secret Rare']
 const TYPES = ['Fire', 'Water', 'Grass', 'Electric', 'Psychic', 'Fighting', 'Darkness', 'Metal', 'Dragon', 'Fairy', 'Colorless']
 
-async function analyzeCardImage(imageDataUrl: string): Promise<Omit<PokemonCard, 'id' | 'quantity' | 'dateAdded' | 'imageUrl'>> {
+async function searchTCGCard(name: string, setName: string, cardNumber: string): Promise<string | null> {
+  try {
+    const searchQuery = `name:"${name}"${setName !== 'Unknown Set' ? ` set.name:"${setName}"` : ''}${cardNumber !== '?' ? ` number:"${cardNumber.split('/')[0]}"` : ''}`
+    const response = await fetch(
+      `https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(searchQuery)}&pageSize=1`
+    )
+    
+    if (!response.ok) return null
+    
+    const data = await response.json()
+    if (data.data && data.data.length > 0) {
+      return data.data[0].images.large || data.data[0].images.small
+    }
+    
+    const fallbackQuery = `name:"${name}"`
+    const fallbackResponse = await fetch(
+      `https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(fallbackQuery)}&pageSize=1`
+    )
+    
+    if (!fallbackResponse.ok) return null
+    
+    const fallbackData = await fallbackResponse.json()
+    if (fallbackData.data && fallbackData.data.length > 0) {
+      return fallbackData.data[0].images.large || fallbackData.data[0].images.small
+    }
+    
+    return null
+  } catch (error) {
+    console.error('TCG API error:', error)
+    return null
+  }
+}
+
+async function analyzeCardImage(imageDataUrl: string): Promise<Omit<PokemonCard, 'id' | 'quantity' | 'dateAdded'>> {
   const body = {
     messages: [
       {
@@ -34,7 +67,7 @@ async function analyzeCardImage(imageDataUrl: string): Promise<Omit<PokemonCard,
             type: 'text',
             text: `Analyze this Pokémon card image and return a JSON object with these fields:
 {
-  "name": "Exact Pokémon name on the card",
+  "name": "Exact Pokémon name on the card (just the Pokemon name, not form variations)",
   "set": "Set name (e.g., Base Set, Jungle, Fossil, Team Rocket, Sword & Shield, Scarlet & Violet, etc.)",
   "cardNumber": "Card number as shown (e.g., 25/102)",
   "rarity": "One of: Common, Uncommon, Rare, Holo Rare, Ultra Rare, Secret Rare",
@@ -74,12 +107,22 @@ If this is not a Pokémon card or the image is too unclear to read, return: {"er
     throw new Error(parsed.error)
   }
 
+  const name = parsed.name || 'Unknown'
+  const set = parsed.set || 'Unknown Set'
+  const cardNumber = parsed.cardNumber || '?'
+  const rarity = RARITIES.includes(parsed.rarity) ? parsed.rarity : 'Common'
+  const type = TYPES.includes(parsed.type) ? parsed.type : 'Colorless'
+
+  const tcgImageUrl = await searchTCGCard(name, set, cardNumber)
+  const imageUrl = tcgImageUrl || `https://placehold.co/400x560/88ccee/ffffff?text=${encodeURIComponent(name)}`
+
   return {
-    name: parsed.name || 'Unknown',
-    set: parsed.set || 'Unknown Set',
-    cardNumber: parsed.cardNumber || '?',
-    rarity: RARITIES.includes(parsed.rarity) ? parsed.rarity : 'Common',
-    type: TYPES.includes(parsed.type) ? parsed.type : 'Colorless',
+    name,
+    set,
+    cardNumber,
+    rarity,
+    type,
+    imageUrl,
   }
 }
 
@@ -156,7 +199,7 @@ export function ScanDialog({ open, onOpenChange, onCardScanned }: ScanDialogProp
     try {
       const dataUrl = await fileToDataUrl(file)
       const cardData = await analyzeCardImage(dataUrl)
-      processCard({ ...cardData, imageUrl: dataUrl })
+      processCard(cardData)
     } catch (error) {
       toast.error('Could not identify the card. Try manual entry instead.', {
         action: {
@@ -214,7 +257,7 @@ export function ScanDialog({ open, onOpenChange, onCardScanned }: ScanDialogProp
     setMode('analyzing')
     try {
       const cardData = await analyzeCardImage(dataUrl)
-      processCard({ ...cardData, imageUrl: dataUrl })
+      processCard(cardData)
     } catch (error) {
       toast.error('Could not identify the card. Try manual entry instead.', {
         action: {
