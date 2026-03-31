@@ -121,22 +121,22 @@ async function unzipAndExtractJSON(onProgress?: (current: number, total: number,
     throw new Error(`Failed to fetch release info: ${error instanceof Error ? error.message : 'Unknown error'}`)
   }
   
-  console.log('Release info:', { tag: releaseData.tag_name, tarball: releaseData.tarball_url })
+  console.log('Release info:', { tag: releaseData.tag_name, zipball: releaseData.zipball_url })
   
-  const tarballUrl = releaseData.tarball_url
+  const zipballUrl = releaseData.zipball_url
   
-  if (!tarballUrl) {
-    throw new Error('No tarball URL found in release data')
+  if (!zipballUrl) {
+    throw new Error('No zipball URL found in release data')
   }
   
   onProgress?.(15, 100, 'Downloading card database (this may take a minute)...')
   
   let zipResponse
   try {
-    zipResponse = await fetch(tarballUrl, {
+    zipResponse = await fetch(zipballUrl, {
       method: 'GET',
       headers: {
-        'Accept': 'application/gzip, application/x-gzip, application/octet-stream, */*'
+        'Accept': 'application/zip, application/octet-stream, */*'
       }
     })
   } catch (fetchError) {
