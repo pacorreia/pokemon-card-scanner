@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
-import { Camera, MagnifyingGlass, Copy, Database, BookOpen, Funnel, X, CheckSquare } from '@phosphor-icons/react'
+import { Camera, MagnifyingGlass, Copy, Database, BookOpen, Funnel, X, CheckSquare, ArrowsDownUp } from '@phosphor-icons/react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ScanDialog } from '@/components/ScanDialog'
 import { CardItem } from '@/components/CardItem'
@@ -14,6 +14,7 @@ import { EmptyState } from '@/components/EmptyState'
 import { DatabaseManager } from '@/components/DatabaseManager'
 import { DatabaseBrowser } from '@/components/DatabaseBrowser'
 import { BulkActionsToolbar } from '@/components/BulkActionsToolbar'
+import { ExportImportDialog } from '@/components/ExportImportDialog'
 import { useTCGDatabase } from '@/lib/tcg-database'
 import type { PokemonCard, ViewMode } from '@/lib/types'
 import { toast } from 'sonner'
@@ -35,6 +36,7 @@ function App() {
   const [viewMode, setViewMode] = useState<ViewMode>('all')
   const [dbManagerOpen, setDbManagerOpen] = useState(false)
   const [dbBrowserOpen, setDbBrowserOpen] = useState(false)
+  const [exportImportOpen, setExportImportOpen] = useState(false)
   const [selectedTypes, setSelectedTypes] = useState<string[]>([])
   const [selectedRarities, setSelectedRarities] = useState<string[]>([])
   const [isSelectionMode, setIsSelectionMode] = useState(false)
@@ -242,6 +244,32 @@ function App() {
     setIsSelectionMode(false)
   }
 
+  const handleImport = (importedCards: PokemonCard[]) => {
+    setCards((currentCards) => {
+      const current = currentCards || []
+      const mergedCards = [...current]
+      
+      importedCards.forEach(importedCard => {
+        const existingIndex = mergedCards.findIndex(
+          c => c.name === importedCard.name && 
+               c.set === importedCard.set && 
+               c.cardNumber === importedCard.cardNumber
+        )
+        
+        if (existingIndex >= 0) {
+          mergedCards[existingIndex] = {
+            ...mergedCards[existingIndex],
+            quantity: mergedCards[existingIndex].quantity + importedCard.quantity
+          }
+        } else {
+          mergedCards.push(importedCard)
+        }
+      })
+      
+      return mergedCards
+    })
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <AnimatePresence>
@@ -276,6 +304,15 @@ function App() {
               </p>
             </div>
             <div className="flex gap-2 shrink-0">
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => setExportImportOpen(true)}
+                className="shrink-0"
+                title="Backup & Restore"
+              >
+                <ArrowsDownUp className="w-5 h-5" />
+              </Button>
               <Button
                 variant="outline"
                 size="icon"
@@ -512,6 +549,13 @@ function App() {
       <DatabaseBrowser
         open={dbBrowserOpen}
         onOpenChange={setDbBrowserOpen}
+      />
+
+      <ExportImportDialog
+        open={exportImportOpen}
+        onOpenChange={setExportImportOpen}
+        cards={cards || []}
+        onImport={handleImport}
       />
 
       <Toaster position="top-center" />
