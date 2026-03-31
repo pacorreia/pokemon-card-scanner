@@ -101,29 +101,11 @@ export interface DatabaseMetadata {
   setCount: number
 }
 
-const GITHUB_RELEASE_API = 'https://api.github.com/repos/PokemonTCG/pokemon-tcg-data/releases/latest'
+const GITHUB_ARCHIVE_URL = 'https://github.com/PokemonTCG/pokemon-tcg-data/archive/refs/heads/master.zip'
 
 interface ZipEntry {
   name: string
   getData: (writer: any) => Promise<any>
-}
-
-async function fetchLatestRelease(): Promise<string> {
-  const response = await fetch(GITHUB_RELEASE_API, {
-    headers: {
-      'Accept': 'application/vnd.github.v3+json',
-    },
-  })
-  if (!response.ok) {
-    throw new Error(`Failed to fetch latest release: ${response.statusText}`)
-  }
-  const data = await response.json()
-  
-  if (data.zipball_url) {
-    return data.zipball_url
-  }
-  
-  throw new Error('No source code ZIP found in latest release')
 }
 
 async function unzipAndExtractJSON(zipUrl: string, onProgress?: (current: number, total: number, message: string) => void): Promise<{ cards: TCGCard[]; sets: TCGSet[] }> {
@@ -185,12 +167,9 @@ export async function downloadCardDatabase(
   onProgress?: (current: number, total: number, message: string) => void
 ): Promise<{ cards: TCGCard[]; sets: TCGSet[] }> {
   try {
-    onProgress?.(0, 100, 'Fetching latest release...')
+    onProgress?.(0, 100, 'Preparing to download...')
     
-    const zipUrl = await fetchLatestRelease()
-    onProgress?.(2, 100, 'Found database release')
-    
-    const { cards, sets } = await unzipAndExtractJSON(zipUrl, onProgress)
+    const { cards, sets } = await unzipAndExtractJSON(GITHUB_ARCHIVE_URL, onProgress)
     
     onProgress?.(95, 100, 'Finalizing...')
     
