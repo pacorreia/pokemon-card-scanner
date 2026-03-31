@@ -105,17 +105,29 @@ const GITHUB_API_BASE = 'https://api.github.com/repos/PokemonTCG/pokemon-tcg-dat
 const GITHUB_RAW_BASE = 'https://raw.githubusercontent.com/PokemonTCG/pokemon-tcg-data/master'
 
 async function fetchGitHubDirectory(path: string): Promise<Array<{ name: string; path: string; download_url: string }>> {
-  const response = await fetch(`${GITHUB_API_BASE}/${path}`)
+  const response = await fetch(`${GITHUB_API_BASE}/${path}`, {
+    headers: {
+      'Accept': 'application/vnd.github.v3+json',
+    },
+  })
   if (!response.ok) {
-    throw new Error(`Failed to fetch directory: ${response.statusText}`)
+    const errorText = await response.text()
+    console.error('GitHub API Error:', response.status, errorText)
+    throw new Error(`Failed to fetch directory (${response.status}): ${response.statusText}`)
   }
   return response.json()
 }
 
 async function fetchJSON<T>(url: string): Promise<T> {
-  const response = await fetch(url)
+  const response = await fetch(url, {
+    headers: {
+      'Accept': 'application/json',
+    },
+  })
   if (!response.ok) {
-    throw new Error(`Failed to fetch JSON: ${response.statusText}`)
+    const errorText = await response.text()
+    console.error('Fetch Error:', response.status, errorText)
+    throw new Error(`Failed to fetch JSON (${response.status}): ${response.statusText}`)
   }
   return response.json()
 }
@@ -126,35 +138,66 @@ export async function downloadCardDatabase(
   try {
     onProgress?.(0, 100, 'Fetching set list...')
 
-    const setsFiles = await fetchGitHubDirectory('sets/en')
-    const setJsonFiles = setsFiles.filter(f => f.name.endsWith('.json'))
+    let setsFiles: Array<{ name: string; path: string; download_url: string }>
+    try {
+      setsFiles = await fetchGitHubDirectory('sets/en')
+    } catch (error) {
+      console.error('Error fetching sets directory:', error)
+      throw new Error('Unable to access card database. Please check your internet connection.')
+    }
 
+    const setJsonFiles = setsFiles.filter(f => f.name.endsWith('.json'))
     onProgress?.(10, 100, `Found ${setJsonFiles.length} sets`)
 
     const sets: TCGSet[] = []
     for (let i = 0; i < setJsonFiles.length; i++) {
-      const setData = await fetchJSON<TCGSet>(setJsonFiles[i].download_url)
-      sets.push(setData)
-      onProgress?.(10 + (i / setJsonFiles.length) * 10, 100, `Loading set metadata ${i + 1}/${setJsonFiles.length}`)
+      try {
+        const setData = await fetchJSON<TCGSet>(setJsonFiles[i].download_url)
+        sets.push(setData)
+        onProgress?.(10 + (i / setJsonFiles.length) * 10, 100, `Loading set ${i + 1}/${setJsonFiles.length}`)
+      } catch (error) {
+        console.error(`Failed to load set ${setJsonFiles[i].name}:`, error)
+      }
     }
 
     onProgress?.(20, 100, 'Fetching card data...')
 
-    const cardsDir = await fetchGitHubDirectory('cards/en')
-    const cardFiles = cardsDir.filter(f => f.name.endsWith('.json'))
+    let cardsDir: Array<{ name: string; path: string; download_url: string }>
+    try {
+      cardsDir = await fetchGitHubDirectory('cards/en')
+    } catch (error) {
+      console.error('Error fetching cards directory:', error)
+      throw new Error('Unable to access card database. Please check your internet connection.')
+    }
 
+    const cardFiles = cardsDir.filter(f => f.name.endsWith('.json'))
     onProgress?.(30, 100, `Found ${cardFiles.length} card files`)
 
     const allCards: TCGCard[] = []
+    let successCount = 0
+    let failCount = 0
     
     for (let i = 0; i < cardFiles.length; i++) {
-      const cardsData = await fetchJSON<TCGCard[]>(cardFiles[i].download_url)
-      allCards.push(...cardsData)
-      const progress = 30 + (i / cardFiles.length) * 60
-      onProgress?.(progress, 100, `Loading cards ${i + 1}/${cardFiles.length}`)
+      try {
+        const cardsData = await fetchJSON<TCGCard[]>(cardFiles[i].download_url)
+        allCards.push(...cardsData)
+        successCount++
+        const progress = 30 + (i / cardFiles.length) * 60
+        onProgress?.(progress, 100, `Loading cards ${i + 1}/${cardFiles.length} (${allCards.length} cards)`)
+      } catch (error) {
+        failCount++
+        console.error(`Failed to load cards from ${cardFiles[i].name}:`, error)
+      }
     }
 
     onProgress?.(90, 100, 'Processing data...')
+
+    if (allCards.length === 0) {
+      throw new Error('No cards were loaded. Please try again.')
+    }
+
+    console.log(`Database download complete: ${allCards.length} cards, ${sets.length} sets`)
+    console.log(`Success: ${successCount}, Failed: ${failCount}`)
 
     return { cards: allCards, sets }
   } catch (error) {
@@ -235,7 +278,7 @@ export function useTCGDatabase() {
     cards,
     sets,
     metadata,
-    isLoaded: metadata !== null && cards.length > 0,
+    isLoaded: metadata !== null && (cards?.length ?? 0) > 0,
     updateDatabase,
     searchCards,
     findCard

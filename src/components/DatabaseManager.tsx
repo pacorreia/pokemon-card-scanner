@@ -16,11 +16,13 @@ export function DatabaseManager({ open, onOpenChange }: DatabaseManagerProps) {
   const [isUpdating, setIsUpdating] = useState(false)
   const [progress, setProgress] = useState(0)
   const [progressMessage, setProgressMessage] = useState('')
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
   const handleUpdate = async () => {
     setIsUpdating(true)
     setProgress(0)
     setProgressMessage('Starting download...')
+    setErrorMessage(null)
 
     const result = await updateDatabase((current, total, message) => {
       setProgress(current)
@@ -35,8 +37,11 @@ export function DatabaseManager({ open, onOpenChange }: DatabaseManagerProps) {
       })
       onOpenChange(false)
     } else {
+      const errorMsg = result.error instanceof Error ? result.error.message : 'Unknown error occurred'
+      setErrorMessage(errorMsg)
       toast.error('Failed to update database', {
-        description: 'Please check your internet connection and try again.'
+        description: errorMsg,
+        duration: 5000
       })
     }
   }
@@ -104,6 +109,13 @@ export function DatabaseManager({ open, onOpenChange }: DatabaseManagerProps) {
             <div className="space-y-3">
               <Progress value={progress} className="h-2" />
               <p className="text-sm text-muted-foreground text-center">{progressMessage}</p>
+            </div>
+          )}
+
+          {errorMessage && !isUpdating && (
+            <div className="p-4 bg-red-50 rounded-lg border border-red-200">
+              <p className="text-sm text-red-900 font-semibold mb-1">Error Details:</p>
+              <p className="text-xs text-red-700">{errorMessage}</p>
             </div>
           )}
 
