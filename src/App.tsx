@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
-import { Camera, MagnifyingGlass, Copy, Database, BookOpen, Funnel, X, CheckSquare, ArrowsDownUp } from '@phosphor-icons/react'
+import { Camera, MagnifyingGlass, Copy, Database, BookOpen, Funnel, X, CheckSquare, ArrowsDownUp, Folders } from '@phosphor-icons/react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ScanDialog } from '@/components/ScanDialog'
 import { CardItem } from '@/components/CardItem'
@@ -15,8 +15,10 @@ import { DatabaseManager } from '@/components/DatabaseManager'
 import { DatabaseBrowser } from '@/components/DatabaseBrowser'
 import { BulkActionsToolbar } from '@/components/BulkActionsToolbar'
 import { ExportImportDialog } from '@/components/ExportImportDialog'
+import { CollectionsManager } from '@/components/CollectionsManager'
+import { AddToCollectionDialog } from '@/components/AddToCollectionDialog'
 import { useTCGDatabase } from '@/lib/tcg-database'
-import type { PokemonCard, ViewMode } from '@/lib/types'
+import type { PokemonCard, ViewMode, CardCollection } from '@/lib/types'
 import { toast } from 'sonner'
 import {
   DropdownMenu,
@@ -29,6 +31,7 @@ import {
 
 function App() {
   const [cards, setCards] = useKV<PokemonCard[]>('pokemon-cards', [])
+  const [collections, setCollections] = useKV<CardCollection[]>('card-collections', [])
   const [scanDialogOpen, setScanDialogOpen] = useState(false)
   const [selectedCard, setSelectedCard] = useState<PokemonCard | null>(null)
   const [detailsOpen, setDetailsOpen] = useState(false)
@@ -37,6 +40,10 @@ function App() {
   const [dbManagerOpen, setDbManagerOpen] = useState(false)
   const [dbBrowserOpen, setDbBrowserOpen] = useState(false)
   const [exportImportOpen, setExportImportOpen] = useState(false)
+  const [collectionsManagerOpen, setCollectionsManagerOpen] = useState(false)
+  const [addToCollectionOpen, setAddToCollectionOpen] = useState(false)
+  const [selectedCardForCollection, setSelectedCardForCollection] = useState<PokemonCard | null>(null)
+  const [selectedCollection, setSelectedCollection] = useState<CardCollection | null>(null)
   const [selectedTypes, setSelectedTypes] = useState<string[]>([])
   const [selectedRarities, setSelectedRarities] = useState<string[]>([])
   const [isSelectionMode, setIsSelectionMode] = useState(false)
@@ -127,6 +134,10 @@ function App() {
   const filteredCards = useMemo(() => {
     let filtered = cards || []
 
+    if (viewMode === 'collection' && selectedCollection) {
+      filtered = filtered.filter(card => selectedCollection.cardIds.includes(card.id))
+    }
+
     if (searchQuery) {
       const query = searchQuery.toLowerCase()
       filtered = filtered.filter(card =>
@@ -150,7 +161,7 @@ function App() {
     }
 
     return filtered.sort((a, b) => b.dateAdded - a.dateAdded)
-  }, [cards, searchQuery, viewMode, selectedTypes, selectedRarities])
+  }, [cards, searchQuery, viewMode, selectedTypes, selectedRarities, selectedCollection])
 
   const duplicateCount = useMemo(() => {
     return (cards || []).filter(card => card.quantity > 1).length
@@ -278,6 +289,97 @@ function App() {
     })
   }
 
+  const handleCreateCollection = (collectionData: Omit<CardCollection, 'id' | 'dateCreated' | 'dateModified'>) => {
+    const now = Date.now()
+    const newCollection: CardCollection = {
+      ...collectionData,
+      id: `collection-${now}`,
+      dateCreated: now,
+      dateModified: now,
+    }
+    setCollections((current) => [...(current || []), newCollection])
+  }
+
+  const handleUpdateCollection = (id: string, updates: Partial<CardCollection>) => {
+    setCollections((current) => {
+      const collections = current || []
+      return collections.map(col =>
+        col.id === id
+          ? { ...col, ...updates, dateModified: Date.now() }
+          : col
+      )
+    })
+  }
+
+  const handleDeleteCollection = (id: string) => {
+    setCollections((current) => {
+      const collections = current || []
+      return collections.filter(col => col.id !== id)
+    })
+
+    setCards((currentCards) => {
+      const cards = currentCards || []
+      return cards.map(card => ({
+        ...card,
+        collectionIds: (card.collectionIds || []).filter(cid => cid !== id)
+      }))
+    })
+  }
+
+  const handleViewCollection = (collection: CardCollection) => {
+    setSelectedCollection(collection)
+    setViewMode('collection')
+    setCollectionsManagerOpen(false)
+  }
+
+  const handleAddCardToCollection = (card: PokemonCard) => {
+    setSelectedCardForCollection(card)
+    setAddToCollectionOpen(true)
+  }
+
+  const handleToggleCardInCollection = (collectionId: string, add: boolean) => {
+    const cardId = selectedCardForCollection?.id
+    if (!cardId) return
+
+    if (add) {
+      setCollections((current) => {
+        const collections = current || []
+        return collections.map(col =>
+          col.id === collectionId
+            ? { ...col, cardIds: [...col.cardIds, cardId], dateModified: Date.now() }
+            : col
+        )
+      })
+
+      setCards((currentCards) => {
+        const cards = currentCards || []
+        return cards.map(card =>
+          card.id === cardId
+            ? { ...card, collectionIds: [...(card.collectionIds || []), collectionId] }
+            : card
+        )
+      })
+    } else {
+      setCollections((current) => {
+        const collections = current || []
+        return collections.map(col =>
+          col.id === collectionId
+            ? { ...col, cardIds: col.cardIds.filter(id => id !== cardId), dateModified: Date.now() }
+            : col
+        )
+      })
+
+      setCards((currentCards) => {
+        const cards = currentCards || []
+        return cards.map(card =>
+          card.id === cardId
+            ? { ...card, collectionIds: (card.collectionIds || []).filter(id => id !== collectionId) }
+            : card
+        )
+      })
+    }
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <AnimatePresence>
@@ -341,6 +443,15 @@ function App() {
                 title="Manage Database"
               >
                 <Database className="w-5 h-5" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => setCollectionsManagerOpen(true)}
+                className="shrink-0"
+                title="Manage Collections"
+              >
+                <Folders className="w-5 h-5" />
               </Button>
               {(cards || []).length > 0 && !isSelectionMode && (
                 <Button
@@ -512,6 +623,7 @@ function App() {
                     onClick={() => handleCardClick(card)}
                     onUpdateQuantity={(delta) => handleUpdateQuantity(card.id, delta)}
                     onDelete={() => handleDeleteCard(card.id)}
+                    onAddToCollection={() => handleAddCardToCollection(card)}
                     isSelectionMode={isSelectionMode}
                     isSelected={selectedCardIds.has(card.id)}
                     onToggleSelect={() => handleToggleCardSelection(card.id)}
@@ -567,6 +679,30 @@ function App() {
         onOpenChange={setExportImportOpen}
         cards={cards || []}
         onImport={handleImport}
+      />
+
+      <CollectionsManager
+        open={collectionsManagerOpen}
+        onOpenChange={setCollectionsManagerOpen}
+        collections={collections || []}
+        onCreateCollection={handleCreateCollection}
+        onUpdateCollection={handleUpdateCollection}
+        onDeleteCollection={handleDeleteCollection}
+        onViewCollection={handleViewCollection}
+      />
+
+      <AddToCollectionDialog
+        open={addToCollectionOpen}
+        onOpenChange={setAddToCollectionOpen}
+        cardId={selectedCardForCollection?.id || ''}
+        cardName={selectedCardForCollection?.name || ''}
+        collections={collections || []}
+        currentCollectionIds={selectedCardForCollection?.collectionIds || []}
+        onToggleCollection={handleToggleCardInCollection}
+        onCreateNewCollection={() => {
+          setAddToCollectionOpen(false)
+          setCollectionsManagerOpen(true)
+        }}
       />
 
       <Toaster position="top-center" />

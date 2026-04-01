@@ -54,6 +54,13 @@ A mobile-first Pokémon card collection manager that uses AI vision to scan and 
 - **Progression**: Tap card → Details slide up → View full info → Option to adjust quantity or remove → Close or navigate back
 - **Success criteria**: Details display smoothly with all relevant information clearly organized
 
+### Custom Collections
+- **Functionality**: Create and manage custom collections to organize cards by theme, purpose, or any criteria (e.g., "Favorites", "For Trade", "Fire Types Only")
+- **Purpose**: Provides flexible organization beyond basic filtering, allowing users to curate meaningful subsets of their collection
+- **Trigger**: User taps "Manage Collections" button in header
+- **Progression**: Open collections manager → Create new collection (name, description, icon, color) → Click card → Add to Collection → Select collections → Cards organized in custom views
+- **Success criteria**: Collections are easy to create, cards can be added/removed smoothly, and viewing a collection filters the card grid appropriately
+
 ## Edge Case Handling
 
 - **Poor Lighting Conditions**: Guide user with on-screen tips to improve lighting; allow manual retry

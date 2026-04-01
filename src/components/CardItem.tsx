@@ -20,7 +20,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { DotsThreeVertical, Eye, Plus, Minus, Trash } from '@phosphor-icons/react'
+import { DotsThreeVertical, Eye, Plus, Minus, Trash, FolderPlus } from '@phosphor-icons/react'
 import { useState } from 'react'
 
 interface CardItemProps {
@@ -28,6 +28,7 @@ interface CardItemProps {
   onClick: () => void
   onUpdateQuantity: (delta: number) => void
   onDelete: () => void
+  onAddToCollection?: () => void
   isSelectionMode?: boolean
   isSelected?: boolean
   onToggleSelect?: () => void
@@ -56,7 +57,7 @@ const typeColors: Record<string, string> = {
   'Colorless': 'bg-gray-400'
 }
 
-export function CardItem({ card, onClick, onUpdateQuantity, onDelete, isSelectionMode, isSelected, onToggleSelect }: CardItemProps) {
+export function CardItem({ card, onClick, onUpdateQuantity, onDelete, onAddToCollection, isSelectionMode, isSelected, onToggleSelect }: CardItemProps) {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
 
   const handleMenuClick = (e: React.MouseEvent) => {
@@ -66,6 +67,13 @@ export function CardItem({ card, onClick, onUpdateQuantity, onDelete, isSelectio
   const handleDeleteClick = (e: React.MouseEvent) => {
     e.stopPropagation()
     setDeleteDialogOpen(true)
+  }
+
+  const handleAddToCollection = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (onAddToCollection) {
+      onAddToCollection()
+    }
   }
 
   const confirmDelete = () => {
@@ -140,6 +148,11 @@ export function CardItem({ card, onClick, onUpdateQuantity, onDelete, isSelectio
                   <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onClick(); }}>
                     <Eye className="w-4 h-4 mr-2" />
                     View Details
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handleAddToCollection}>
+                    <FolderPlus className="w-4 h-4 mr-2" />
+                    Add to Collection
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onUpdateQuantity(1); }}>

@@ -45,6 +45,18 @@ export interface PokemonCard {
   dateAdded: number
   prices?: CardPrices
   tcgCardId?: string
+  collectionIds?: string[]
 }
 
-export type ViewMode = 'all' | 'duplicates'
+export interface CardCollection {
+  id: string
+  name: string
+  description?: string
+  color: string
+  icon: string
+  cardIds: string[]
+  dateCreated: number
+  dateModified: number
+}
+
+export type ViewMode = 'all' | 'duplicates' | 'collection'
