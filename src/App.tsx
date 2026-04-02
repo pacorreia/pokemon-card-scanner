@@ -50,7 +50,7 @@ function App() {
   const [selectedCardIds, setSelectedCardIds] = useState<Set<string>>(new Set())
   const [hasCheckedDatabase, setHasCheckedDatabase] = useState(false)
   
-  const { isLoaded: isDatabaseLoaded, metadata, isLoading: isDatabaseLoading } = useTCGDatabase()
+  const { isLoaded: isDatabaseLoaded, metadata, isLoading: isDatabaseLoading, findCard } = useTCGDatabase()
 
   useEffect(() => {
     console.log('[App] Database loaded state:', { isDatabaseLoaded, metadata, isDatabaseLoading, hasCheckedDatabase })
@@ -62,6 +62,48 @@ function App() {
       }
     }
   }, [isDatabaseLoaded, metadata, isDatabaseLoading, hasCheckedDatabase])
+
+  useEffect(() => {
+    const updateCardImagesFromDatabase = async () => {
+      if (!isDatabaseLoaded || !cards || cards.length === 0) return
+
+      const cardsNeedingImages = cards.filter(card => 
+        card.imageUrl.includes('placehold.co') || !card.imageUrl
+      )
+
+      if (cardsNeedingImages.length === 0) return
+
+      console.log(`[App] Updating ${cardsNeedingImages.length} cards with database images...`)
+
+      let updated = false
+      const updatedCards = [...cards]
+
+      for (const card of cardsNeedingImages) {
+        const dbCard = await findCard(card.name, card.set, card.cardNumber)
+        if (dbCard?.images?.large) {
+          const index = updatedCards.findIndex(c => c.id === card.id)
+          if (index !== -1) {
+            updatedCards[index] = {
+              ...updatedCards[index],
+              imageUrl: dbCard.images.large,
+              tcgCardId: dbCard.id
+            }
+            updated = true
+            console.log(`[App] Updated image for ${card.name}`)
+          }
+        }
+      }
+
+      if (updated) {
+        setCards(updatedCards)
+        toast.success('Card images updated from database', {
+          description: `Updated ${cardsNeedingImages.length} ${cardsNeedingImages.length === 1 ? 'card' : 'cards'}`
+        })
+      }
+    }
+
+    updateCardImagesFromDatabase()
+  }, [isDatabaseLoaded, findCard])
 
   const handleCardScanned = (card: PokemonCard) => {
     setCards((currentCards) => {
@@ -86,7 +128,7 @@ function App() {
             ? { 
                 ...c, 
                 quantity: c.quantity + 1,
-                imageUrl: card.imageUrl || c.imageUrl,
+                imageUrl: card.imageUrl && !card.imageUrl.includes('placehold.co') ? card.imageUrl : c.imageUrl,
                 prices: card.prices || c.prices,
                 tcgCardId: card.tcgCardId || c.tcgCardId
               }
