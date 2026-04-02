@@ -155,7 +155,7 @@ export function CardItem({ card, onClick, onUpdateQuantity, onDelete, onAddToCol
             )}
             
             {!isSelectionMode && (
-              <div className="absolute top-2 left-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity" onClick={handleMenuClick}>
+              <div className="absolute top-2 left-2 transition-opacity" onClick={handleMenuClick}>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button className="bg-background/90 backdrop-blur-sm hover:bg-background rounded-full p-1.5 shadow-lg">
