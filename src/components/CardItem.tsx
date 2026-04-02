@@ -59,6 +59,7 @@ const typeColors: Record<string, string> = {
 
 export function CardItem({ card, onClick, onUpdateQuantity, onDelete, onAddToCollection, isSelectionMode, isSelected, onToggleSelect }: CardItemProps) {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [imageError, setImageError] = useState(false)
 
   const handleMenuClick = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -112,12 +113,19 @@ export function CardItem({ card, onClick, onUpdateQuantity, onDelete, onAddToCol
           onClick={handleClick}
         >
           <div className="aspect-[2.5/3.5] relative overflow-hidden bg-gradient-to-br from-blue-400 via-purple-400 to-pink-400">
-            {card.imageUrl && !card.imageUrl.includes('placehold.co') ? (
+            {card.imageUrl && !card.imageUrl.includes('placehold.co') && !imageError ? (
               <img
                 src={card.imageUrl}
                 alt={card.name}
                 className="w-full h-full object-cover absolute inset-0"
                 loading="lazy"
+                onError={() => {
+                  console.error(`[CardItem] Image failed to load for ${card.name}:`, card.imageUrl)
+                  setImageError(true)
+                }}
+                onLoad={() => {
+                  console.log(`[CardItem] Image loaded successfully for ${card.name}:`, card.imageUrl)
+                }}
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center p-4 absolute inset-0">
@@ -126,7 +134,7 @@ export function CardItem({ card, onClick, onUpdateQuantity, onDelete, onAddToCol
                     {card.name}
                   </div>
                   <div className="text-white/80 text-xs drop-shadow">
-                    No Image Available
+                    {imageError ? 'Image Load Failed' : 'No Image Available'}
                   </div>
                 </div>
               </div>

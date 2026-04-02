@@ -148,6 +148,15 @@ function App() {
   }, [isDatabaseLoaded])
 
   const handleCardScanned = (card: PokemonCard) => {
+    console.log('[App] Card scanned:', {
+      name: card.name,
+      set: card.set,
+      cardNumber: card.cardNumber,
+      imageUrl: card.imageUrl,
+      hasPlaceholder: card.imageUrl?.includes('placehold.co'),
+      tcgCardId: card.tcgCardId
+    })
+    
     setCards((currentCards) => {
       const current = currentCards || []
       const existingCard = current.find(
