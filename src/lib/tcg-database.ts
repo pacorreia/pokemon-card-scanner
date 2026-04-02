@@ -291,62 +291,84 @@ export async function downloadCardDatabase(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Module-level shared state – all hook instances share the same data so that
+// a database update in one component is immediately visible in every other.
+// ---------------------------------------------------------------------------
+let _metadata: DatabaseMetadata | null = null
+let _sets: TCGSet[] = []
+let _isLoading = true
+let _initialized = false
+let _initPromise: Promise<void> | null = null
+
+const _listeners = new Set<() => void>()
+
+function _notifyListeners() {
+  _listeners.forEach(fn => fn())
+}
+
+function _initializeIfNeeded(): Promise<void> {
+  if (_initialized) return Promise.resolve()
+  if (_initPromise) return _initPromise
+
+  _initPromise = (async () => {
+    try {
+      console.log('[TCG Database] Loading data from IndexedDB...')
+      await db.openDB()
+
+      const meta = await db.get<DatabaseMetadata>('metadata', 'database-metadata')
+      const cardCount = await db.count('cards')
+      const setCount = await db.count('sets')
+
+      console.log('[TCG Database] IndexedDB state:', { meta, cardCount, setCount })
+
+      if (setCount > 0) {
+        _sets = await db.getAll<TCGSet>('sets')
+        console.log(`[TCG Database] Loaded ${_sets.length} sets`)
+      }
+
+      if (meta && cardCount > 0) {
+        const correctedMeta: DatabaseMetadata = { ...meta, cardCount, setCount }
+        _metadata = correctedMeta
+
+        if (meta.setCount !== setCount || meta.cardCount !== cardCount) {
+          console.log('[TCG Database] Correcting metadata counts:', {
+            oldCardCount: meta.cardCount,
+            newCardCount: cardCount,
+            oldSetCount: meta.setCount,
+            newSetCount: setCount,
+          })
+          await db.put('metadata', correctedMeta)
+        }
+
+        console.log('[TCG Database] Metadata loaded, cards will load on demand')
+      } else {
+        _metadata = null
+        console.log('[TCG Database] No database found')
+      }
+    } catch (error) {
+      console.error('[TCG Database] Failed to load from IndexedDB:', error)
+      _metadata = null
+    } finally {
+      _isLoading = false
+      _initialized = true
+      _notifyListeners()
+    }
+  })()
+
+  return _initPromise
+}
+
 export function useTCGDatabase() {
-  const [cards, setCards] = useState<TCGCard[]>([])
-  const [sets, setSets] = useState<TCGSet[]>([])
-  const [metadata, setMetadata] = useState<DatabaseMetadata | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
+  const [, forceUpdate] = useState(0)
 
   useEffect(() => {
-    const loadDataFromIndexedDB = async () => {
-      try {
-        console.log('[TCG Database] Loading data from IndexedDB...')
-        await db.openDB()
-        
-        const meta = await db.get<DatabaseMetadata>('metadata', 'database-metadata')
-        const cardCount = await db.count('cards')
-        const setCount = await db.count('sets')
-        
-        console.log('[TCG Database] IndexedDB state:', { meta, cardCount, setCount })
-        
-        if (setCount > 0) {
-          const loadedSets = await db.getAll<TCGSet>('sets')
-          setSets(loadedSets)
-          console.log(`[TCG Database] Loaded ${loadedSets.length} sets`)
-        }
-        
-        if (meta && cardCount > 0) {
-          const correctedMeta = {
-            ...meta,
-            cardCount: cardCount,
-            setCount: setCount
-          }
-          setMetadata(correctedMeta)
-          
-          if (meta.setCount !== setCount || meta.cardCount !== cardCount) {
-            console.log('[TCG Database] Correcting metadata counts:', { 
-              oldCardCount: meta.cardCount, 
-              newCardCount: cardCount,
-              oldSetCount: meta.setCount,
-              newSetCount: setCount
-            })
-            await db.put('metadata', correctedMeta)
-          }
-          
-          console.log('[TCG Database] Metadata loaded, cards will load on demand')
-        } else {
-          setMetadata(null)
-          console.log('[TCG Database] No database found')
-        }
-      } catch (error) {
-        console.error('[TCG Database] Failed to load from IndexedDB:', error)
-        setMetadata(null)
-      } finally {
-        setIsLoading(false)
-      }
+    const listener = () => forceUpdate(n => n + 1)
+    _listeners.add(listener)
+    _initializeIfNeeded()
+    return () => {
+      _listeners.delete(listener)
     }
-    
-    loadDataFromIndexedDB()
   }, [])
 
   const updateDatabase = async (onProgress?: (current: number, total: number, message: string) => void) => {
@@ -532,17 +554,19 @@ export function useTCGDatabase() {
       
       await db.put('metadata', newMetadata)
       console.log(`[TCG Database] ✓ Metadata saved`)
-      
-      setCards(cleanCards)
-      setSets(cleanSets)
-      setMetadata(newMetadata)
-      
+
+      // Update shared module state and notify all hook instances
+      _metadata = newMetadata
+      _sets = cleanSets
+      _isLoading = false
+      _notifyListeners()
+
       onProgress?.(100, 100, 'Database saved successfully!')
-      
+
       return { success: true }
     } catch (error) {
       console.error('Database update failed:', error)
-      
+
       try {
         await db.clearStore('cards')
         await db.clearStore('sets')
@@ -551,16 +575,16 @@ export function useTCGDatabase() {
       } catch (rollbackError) {
         console.error('[TCG Database] ✗ Rollback failed:', rollbackError)
       }
-      
+
       return { success: false, error }
     }
   }
 
   const searchCards = async (query: string, limit = 10): Promise<TCGCard[]> => {
     const lowerQuery = query.toLowerCase()
-    
+
     const allCards = await db.getAll<TCGCard>('cards')
-    
+
     const results = allCards.filter(card => {
       return (
         card.name.toLowerCase().includes(lowerQuery) ||
@@ -568,35 +592,35 @@ export function useTCGDatabase() {
         card.number.includes(query)
       )
     })
-    
+
     return results.slice(0, limit)
   }
 
   const findCard = async (name: string, setName?: string, cardNumber?: string): Promise<TCGCard | null> => {
     try {
       console.log('[TCG Database] findCard called:', { name, setName, cardNumber })
-      
-      if (!metadata || metadata.cardCount === 0) {
+
+      if (!_metadata || _metadata.cardCount === 0) {
         console.warn('[TCG Database] No database loaded, cannot find card')
         return null
       }
-      
+
       const lowerName = name.toLowerCase()
-      
+
       const allCards = await db.getAll<TCGCard>('cards')
       console.log(`[TCG Database] Loaded ${allCards.length} cards from IndexedDB`)
-      
+
       if (allCards.length === 0) {
         console.warn('[TCG Database] No cards found in IndexedDB despite metadata existing')
         return null
       }
-      
-      let exactMatches = allCards.filter(card => 
+
+      let exactMatches = allCards.filter(card =>
         card.name.toLowerCase() === lowerName
       )
-      
+
       console.log(`[TCG Database] Found ${exactMatches.length} exact matches for "${name}"`)
-      
+
       let partialMatches: TCGCard[] = []
       if (exactMatches.length === 0) {
         partialMatches = allCards.filter(card => {
@@ -605,12 +629,12 @@ export function useTCGDatabase() {
         })
         console.log(`[TCG Database] Found ${partialMatches.length} partial matches for "${name}"`)
       }
-      
+
       let matches = exactMatches.length > 0 ? exactMatches : partialMatches
-      
+
       if (setName && matches.length > 1) {
         const lowerSet = setName.toLowerCase()
-        const setFiltered = matches.filter(card => 
+        const setFiltered = matches.filter(card =>
           card.set.name.toLowerCase().includes(lowerSet) ||
           card.set.series.toLowerCase().includes(lowerSet)
         )
@@ -619,10 +643,10 @@ export function useTCGDatabase() {
           matches = setFiltered
         }
       }
-      
+
       if (cardNumber && matches.length > 1) {
         const numberPart = cardNumber.split('/')[0]
-        const numberFiltered = matches.filter(card => 
+        const numberFiltered = matches.filter(card =>
           card.number === numberPart || card.number === cardNumber
         )
         if (numberFiltered.length > 0) {
@@ -630,7 +654,7 @@ export function useTCGDatabase() {
           matches = numberFiltered
         }
       }
-      
+
       const result = matches[0] || null
       console.log('[TCG Database] findCard result:', result ? `Found ${result.name}` : 'No match found')
       return result
@@ -639,22 +663,24 @@ export function useTCGDatabase() {
       return null
     }
   }
-  
+
   const getAllCards = async (): Promise<TCGCard[]> => {
     return await db.getAll<TCGCard>('cards')
   }
 
-  const isLoaded = !isLoading && metadata !== null && (metadata?.cardCount ?? 0) > 0
+  const isLoaded = !_isLoading && _metadata !== null && (_metadata?.cardCount ?? 0) > 0
 
   return {
-    cards,
-    sets,
-    metadata,
+    // Cards are loaded on-demand via getAllCards(); this property exists for
+    // API compatibility but is intentionally empty (use getAllCards() instead).
+    cards: [],
+    sets: _sets,
+    metadata: _metadata,
     isLoaded,
-    isLoading,
+    isLoading: _isLoading,
     updateDatabase,
     searchCards,
     findCard,
-    getAllCards
+    getAllCards,
   }
 }
