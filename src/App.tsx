@@ -83,7 +83,13 @@ function App() {
         })
         return current.map(c =>
           c.id === existingCard.id
-            ? { ...c, quantity: c.quantity + 1 }
+            ? { 
+                ...c, 
+                quantity: c.quantity + 1,
+                imageUrl: card.imageUrl || c.imageUrl,
+                prices: card.prices || c.prices,
+                tcgCardId: card.tcgCardId || c.tcgCardId
+              }
             : c
         )
       }
