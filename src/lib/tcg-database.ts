@@ -573,46 +573,71 @@ export function useTCGDatabase() {
   }
 
   const findCard = async (name: string, setName?: string, cardNumber?: string): Promise<TCGCard | null> => {
-    const lowerName = name.toLowerCase()
-    
-    const allCards = await db.getAll<TCGCard>('cards')
-    
-    let exactMatches = allCards.filter(card => 
-      card.name.toLowerCase() === lowerName
-    )
-    
-    let partialMatches: TCGCard[] = []
-    if (exactMatches.length === 0) {
-      partialMatches = allCards.filter(card => {
-        const cardNameLower = card.name.toLowerCase()
-        return cardNameLower.includes(lowerName) || lowerName.includes(cardNameLower)
-      })
-    }
-    
-    let matches = exactMatches.length > 0 ? exactMatches : partialMatches
-    
-    if (setName && matches.length > 1) {
-      const lowerSet = setName.toLowerCase()
-      const setFiltered = matches.filter(card => 
-        card.set.name.toLowerCase().includes(lowerSet) ||
-        card.set.series.toLowerCase().includes(lowerSet)
-      )
-      if (setFiltered.length > 0) {
-        matches = setFiltered
+    try {
+      console.log('[TCG Database] findCard called:', { name, setName, cardNumber })
+      
+      if (!metadata || metadata.cardCount === 0) {
+        console.warn('[TCG Database] No database loaded, cannot find card')
+        return null
       }
-    }
-    
-    if (cardNumber && matches.length > 1) {
-      const numberPart = cardNumber.split('/')[0]
-      const numberFiltered = matches.filter(card => 
-        card.number === numberPart || card.number === cardNumber
-      )
-      if (numberFiltered.length > 0) {
-        matches = numberFiltered
+      
+      const lowerName = name.toLowerCase()
+      
+      const allCards = await db.getAll<TCGCard>('cards')
+      console.log(`[TCG Database] Loaded ${allCards.length} cards from IndexedDB`)
+      
+      if (allCards.length === 0) {
+        console.warn('[TCG Database] No cards found in IndexedDB despite metadata existing')
+        return null
       }
+      
+      let exactMatches = allCards.filter(card => 
+        card.name.toLowerCase() === lowerName
+      )
+      
+      console.log(`[TCG Database] Found ${exactMatches.length} exact matches for "${name}"`)
+      
+      let partialMatches: TCGCard[] = []
+      if (exactMatches.length === 0) {
+        partialMatches = allCards.filter(card => {
+          const cardNameLower = card.name.toLowerCase()
+          return cardNameLower.includes(lowerName) || lowerName.includes(cardNameLower)
+        })
+        console.log(`[TCG Database] Found ${partialMatches.length} partial matches for "${name}"`)
+      }
+      
+      let matches = exactMatches.length > 0 ? exactMatches : partialMatches
+      
+      if (setName && matches.length > 1) {
+        const lowerSet = setName.toLowerCase()
+        const setFiltered = matches.filter(card => 
+          card.set.name.toLowerCase().includes(lowerSet) ||
+          card.set.series.toLowerCase().includes(lowerSet)
+        )
+        if (setFiltered.length > 0) {
+          console.log(`[TCG Database] Filtered by set "${setName}": ${setFiltered.length} matches`)
+          matches = setFiltered
+        }
+      }
+      
+      if (cardNumber && matches.length > 1) {
+        const numberPart = cardNumber.split('/')[0]
+        const numberFiltered = matches.filter(card => 
+          card.number === numberPart || card.number === cardNumber
+        )
+        if (numberFiltered.length > 0) {
+          console.log(`[TCG Database] Filtered by card number "${cardNumber}": ${numberFiltered.length} matches`)
+          matches = numberFiltered
+        }
+      }
+      
+      const result = matches[0] || null
+      console.log('[TCG Database] findCard result:', result ? `Found ${result.name}` : 'No match found')
+      return result
+    } catch (error) {
+      console.error('[TCG Database] Error in findCard:', error)
+      return null
     }
-    
-    return matches[0] || null
   }
   
   const getAllCards = async (): Promise<TCGCard[]> => {

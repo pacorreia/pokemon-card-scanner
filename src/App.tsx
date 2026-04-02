@@ -48,15 +48,20 @@ function App() {
   const [selectedRarities, setSelectedRarities] = useState<string[]>([])
   const [isSelectionMode, setIsSelectionMode] = useState(false)
   const [selectedCardIds, setSelectedCardIds] = useState<Set<string>>(new Set())
+  const [hasCheckedDatabase, setHasCheckedDatabase] = useState(false)
   
-  const { isLoaded: isDatabaseLoaded, metadata } = useTCGDatabase()
+  const { isLoaded: isDatabaseLoaded, metadata, isLoading: isDatabaseLoading } = useTCGDatabase()
 
   useEffect(() => {
-    console.log('[App] Database loaded state:', { isDatabaseLoaded, metadata })
-    if (metadata === null && isDatabaseLoaded === false) {
-      setDbManagerOpen(true)
+    console.log('[App] Database loaded state:', { isDatabaseLoaded, metadata, isDatabaseLoading, hasCheckedDatabase })
+    if (!isDatabaseLoading && !hasCheckedDatabase) {
+      setHasCheckedDatabase(true)
+      if (!isDatabaseLoaded && metadata === null) {
+        console.log('[App] Opening database manager - no database found')
+        setDbManagerOpen(true)
+      }
     }
-  }, [metadata, isDatabaseLoaded])
+  }, [isDatabaseLoaded, metadata, isDatabaseLoading, hasCheckedDatabase])
 
   const handleCardScanned = (card: PokemonCard) => {
     setCards((currentCards) => {
