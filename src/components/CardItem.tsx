@@ -60,6 +60,7 @@ const typeColors: Record<string, string> = {
 export function CardItem({ card, onClick, onUpdateQuantity, onDelete, onAddToCollection, isSelectionMode, isSelected, onToggleSelect }: CardItemProps) {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [imageError, setImageError] = useState(false)
+  const [dropdownOpen, setDropdownOpen] = useState(false)
 
   const handleMenuClick = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -67,11 +68,13 @@ export function CardItem({ card, onClick, onUpdateQuantity, onDelete, onAddToCol
 
   const handleDeleteClick = (e: React.MouseEvent) => {
     e.stopPropagation()
+    setDropdownOpen(false)
     setDeleteDialogOpen(true)
   }
 
   const handleAddToCollection = (e: React.MouseEvent) => {
     e.stopPropagation()
+    setDropdownOpen(false)
     if (onAddToCollection) {
       onAddToCollection()
     }
@@ -95,6 +98,24 @@ export function CardItem({ card, onClick, onUpdateQuantity, onDelete, onAddToCol
     if (onToggleSelect) {
       onToggleSelect()
     }
+  }
+
+  const handleViewDetails = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setDropdownOpen(false)
+    onClick()
+  }
+
+  const handleIncreaseQuantity = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setDropdownOpen(false)
+    onUpdateQuantity(1)
+  }
+
+  const handleDecreaseQuantity = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setDropdownOpen(false)
+    onUpdateQuantity(-1)
   }
 
   return (
@@ -156,14 +177,14 @@ export function CardItem({ card, onClick, onUpdateQuantity, onDelete, onAddToCol
             
             {!isSelectionMode && (
               <div className="absolute top-2 left-2 z-10" onClick={handleMenuClick}>
-                <DropdownMenu>
+                <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
                   <DropdownMenuTrigger asChild>
                     <button className="bg-background/95 backdrop-blur-sm hover:bg-background rounded-full p-1.5 shadow-lg opacity-40 sm:opacity-0 group-hover:opacity-100 sm:group-hover:opacity-100 focus:opacity-100 transition-all duration-200 hover:scale-110 active:scale-95">
                       <DotsThreeVertical className="w-5 h-5" weight="bold" />
                     </button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start" className="w-48">
-                    <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onClick(); }}>
+                    <DropdownMenuItem onClick={handleViewDetails}>
                       <Eye className="w-4 h-4 mr-2" />
                       View Details
                     </DropdownMenuItem>
@@ -173,12 +194,12 @@ export function CardItem({ card, onClick, onUpdateQuantity, onDelete, onAddToCol
                       Add to Collection
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onUpdateQuantity(1); }}>
+                    <DropdownMenuItem onClick={handleIncreaseQuantity}>
                       <Plus className="w-4 h-4 mr-2" />
                       Increase Quantity
                     </DropdownMenuItem>
                     {card.quantity > 1 && (
-                      <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onUpdateQuantity(-1); }}>
+                      <DropdownMenuItem onClick={handleDecreaseQuantity}>
                         <Minus className="w-4 h-4 mr-2" />
                         Decrease Quantity
                       </DropdownMenuItem>

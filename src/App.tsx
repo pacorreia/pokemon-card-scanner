@@ -65,9 +65,11 @@ function App() {
   }, [isDatabaseLoaded, metadata, isDatabaseLoading, hasCheckedDatabase])
 
   useEffect(() => {
+    let isMounted = true
+    
     const updateCardImagesFromDatabase = async () => {
-      if (!isDatabaseLoaded) {
-        console.log('[App] Database not loaded, skipping image update')
+      if (!isMounted || !isDatabaseLoaded) {
+        console.log('[App] Database not loaded or component unmounted, skipping image update')
         return
       }
 
@@ -77,7 +79,7 @@ function App() {
       }
 
       const cardsNeedingImages = cards.filter(card => 
-        (card.imageUrl.includes('placehold.co') || !card.imageUrl) && !updatedCardIdsRef.current.has(card.id)
+        card && (card.imageUrl?.includes('placehold.co') || !card.imageUrl) && !updatedCardIdsRef.current.has(card.id)
       )
 
       if (cardsNeedingImages.length === 0) {
@@ -90,52 +92,58 @@ function App() {
       let updatedCount = 0
 
       for (const card of cardsNeedingImages) {
+        if (!isMounted) break
+        
         updatedCardIdsRef.current.add(card.id)
         
-        const dbCard = await findCard(card.name, card.set, card.cardNumber)
-        console.log(`[App] Looking up image for "${card.name}" (Set: ${card.set}, #${card.cardNumber}):`, {
-          found: !!dbCard,
-          hasImages: !!dbCard?.images,
-          largeImage: dbCard?.images?.large,
-          smallImage: dbCard?.images?.small
-        })
-        
-        if (dbCard?.images?.large || dbCard?.images?.small) {
-          const imageUrl = dbCard.images.large || dbCard.images.small
-          
-          setCards((currentCards) => {
-            const cards = currentCards || []
-            return cards.map(c =>
-              c.id === card.id
-                ? {
-                    ...c,
-                    imageUrl: imageUrl,
-                    tcgCardId: dbCard.id,
-                    prices: dbCard.tcgplayer || dbCard.cardmarket ? {
-                      tcgplayer: dbCard.tcgplayer ? {
-                        url: dbCard.tcgplayer.url,
-                        updatedAt: dbCard.tcgplayer.updatedAt,
-                        ...(dbCard.tcgplayer.prices?.normal?.market && { market: dbCard.tcgplayer.prices.normal.market }),
-                      } : undefined,
-                      cardmarket: dbCard.cardmarket ? {
-                        url: dbCard.cardmarket.url,
-                        updatedAt: dbCard.cardmarket.updatedAt,
-                        ...(dbCard.cardmarket.prices?.trendPrice && { trendPrice: dbCard.cardmarket.prices.trendPrice }),
-                      } : undefined
-                    } : c.prices
-                  }
-                : c
-            )
+        try {
+          const dbCard = await findCard(card.name, card.set, card.cardNumber)
+          console.log(`[App] Looking up image for "${card.name}" (Set: ${card.set}, #${card.cardNumber}):`, {
+            found: !!dbCard,
+            hasImages: !!dbCard?.images,
+            largeImage: dbCard?.images?.large,
+            smallImage: dbCard?.images?.small
           })
           
-          updatedCount++
-          console.log(`[App] ✓ Updated image for ${card.name} to: ${imageUrl}`)
-        } else {
-          console.log(`[App] ✗ No image found for ${card.name}`)
+          if (isMounted && (dbCard?.images?.large || dbCard?.images?.small)) {
+            const imageUrl = dbCard.images.large || dbCard.images.small
+            
+            setCards((currentCards) => {
+              if (!currentCards) return []
+              return currentCards.map(c =>
+                c && c.id === card.id
+                  ? {
+                      ...c,
+                      imageUrl: imageUrl,
+                      tcgCardId: dbCard.id,
+                      prices: dbCard.tcgplayer || dbCard.cardmarket ? {
+                        tcgplayer: dbCard.tcgplayer ? {
+                          url: dbCard.tcgplayer.url,
+                          updatedAt: dbCard.tcgplayer.updatedAt,
+                          ...(dbCard.tcgplayer.prices?.normal?.market && { market: dbCard.tcgplayer.prices.normal.market }),
+                        } : undefined,
+                        cardmarket: dbCard.cardmarket ? {
+                          url: dbCard.cardmarket.url,
+                          updatedAt: dbCard.cardmarket.updatedAt,
+                          ...(dbCard.cardmarket.prices?.trendPrice && { trendPrice: dbCard.cardmarket.prices.trendPrice }),
+                        } : undefined
+                      } : c.prices
+                    }
+                  : c
+              )
+            })
+            
+            updatedCount++
+            console.log(`[App] ✓ Updated image for ${card.name} to: ${imageUrl}`)
+          } else {
+            console.log(`[App] ✗ No image found for ${card.name}`)
+          }
+        } catch (error) {
+          console.error(`[App] Error updating card ${card.name}:`, error)
         }
       }
 
-      if (updatedCount > 0) {
+      if (isMounted && updatedCount > 0) {
         toast.success('Card images updated from database', {
           description: `Updated images for ${updatedCount} ${updatedCount === 1 ? 'card' : 'cards'}`
         })
@@ -145,7 +153,11 @@ function App() {
     if (isDatabaseLoaded && cards && cards.length > 0) {
       updateCardImagesFromDatabase()
     }
-  }, [isDatabaseLoaded])
+    
+    return () => {
+      isMounted = false
+    }
+  }, [isDatabaseLoaded, findCard, cards, setCards])
 
   const handleCardScanned = (card: PokemonCard) => {
     console.log('[App] Card scanned:', {
@@ -215,6 +227,7 @@ function App() {
   }
 
   const handleCardClick = (card: PokemonCard) => {
+    if (!card) return
     setSelectedCard(card)
     setDetailsOpen(true)
   }
@@ -720,7 +733,7 @@ function App() {
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
               <AnimatePresence mode="popLayout">
-                {filteredCards.map((card) => (
+                {filteredCards.map((card) => card ? (
                   <CardItem
                     key={card.id}
                     card={card}
@@ -732,7 +745,7 @@ function App() {
                     isSelected={selectedCardIds.has(card.id)}
                     onToggleSelect={() => handleToggleCardSelection(card.id)}
                   />
-                ))}
+                ) : null)}
               </AnimatePresence>
             </div>
           )}
