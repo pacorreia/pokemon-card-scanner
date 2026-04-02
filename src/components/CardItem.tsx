@@ -111,16 +111,29 @@ export function CardItem({ card, onClick, onUpdateQuantity, onDelete, onAddToCol
           }`}
           onClick={handleClick}
         >
-          <div className="aspect-[2.5/3.5] bg-gradient-to-br from-muted to-muted/50 relative">
-            <img
-              src={card.imageUrl}
-              alt={card.name}
-              className="w-full h-full object-cover"
-              onError={(e) => {
-                const target = e.target as HTMLImageElement
-                target.src = `https://placehold.co/400x560/88ccee/ffffff?text=${encodeURIComponent(card.name)}`
-              }}
-            />
+          <div className="aspect-[2.5/3.5] bg-gradient-to-br from-blue-400 via-purple-400 to-pink-400 relative overflow-hidden">
+            {card.imageUrl && !card.imageUrl.includes('placehold.co') ? (
+              <img
+                src={card.imageUrl}
+                alt={card.name}
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  const target = e.target as HTMLImageElement
+                  target.style.display = 'none'
+                }}
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center p-4">
+                <div className="text-center">
+                  <div className="text-white text-lg font-bold font-display mb-1 drop-shadow-lg">
+                    {card.name}
+                  </div>
+                  <div className="text-white/80 text-xs drop-shadow">
+                    No Image Available
+                  </div>
+                </div>
+              </div>
+            )}
             
             {isSelectionMode && (
               <div 
