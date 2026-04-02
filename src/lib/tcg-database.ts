@@ -577,23 +577,39 @@ export function useTCGDatabase() {
     
     const allCards = await db.getAll<TCGCard>('cards')
     
-    let matches = allCards.filter(card => 
+    let exactMatches = allCards.filter(card => 
       card.name.toLowerCase() === lowerName
     )
     
+    let partialMatches: TCGCard[] = []
+    if (exactMatches.length === 0) {
+      partialMatches = allCards.filter(card => {
+        const cardNameLower = card.name.toLowerCase()
+        return cardNameLower.includes(lowerName) || lowerName.includes(cardNameLower)
+      })
+    }
+    
+    let matches = exactMatches.length > 0 ? exactMatches : partialMatches
+    
     if (setName && matches.length > 1) {
       const lowerSet = setName.toLowerCase()
-      matches = matches.filter(card => 
+      const setFiltered = matches.filter(card => 
         card.set.name.toLowerCase().includes(lowerSet) ||
         card.set.series.toLowerCase().includes(lowerSet)
       )
+      if (setFiltered.length > 0) {
+        matches = setFiltered
+      }
     }
     
     if (cardNumber && matches.length > 1) {
       const numberPart = cardNumber.split('/')[0]
-      matches = matches.filter(card => 
+      const numberFiltered = matches.filter(card => 
         card.number === numberPart || card.number === cardNumber
       )
+      if (numberFiltered.length > 0) {
+        matches = numberFiltered
+      }
     }
     
     return matches[0] || null
