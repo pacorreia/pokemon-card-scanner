@@ -63,20 +63,17 @@ export function CardDetailsSheet({
               <div className="flex justify-center pt-2">
                 <button 
                   onClick={() => setZoomOpen(true)}
-                  className="w-64 aspect-[2.5/3.5] rounded-lg overflow-hidden shadow-2xl cursor-pointer hover:shadow-3xl transition-shadow active:scale-[0.98] transition-transform bg-gradient-to-br from-blue-400 via-purple-400 to-pink-400"
+                  className="w-64 aspect-[2.5/3.5] rounded-lg overflow-hidden shadow-2xl cursor-pointer hover:shadow-3xl transition-shadow active:scale-[0.98] transition-transform relative bg-gradient-to-br from-blue-400 via-purple-400 to-pink-400"
                 >
                   {card.imageUrl && !card.imageUrl.includes('placehold.co') ? (
                     <img
                       src={card.imageUrl}
                       alt={card.name}
-                      className="w-full h-full object-cover"
-                      onError={(e) => {
-                        const target = e.target as HTMLImageElement
-                        target.style.display = 'none'
-                      }}
+                      className="w-full h-full object-cover absolute inset-0"
+                      loading="lazy"
                     />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center p-6">
+                    <div className="w-full h-full flex items-center justify-center p-6 absolute inset-0">
                       <div className="text-center">
                         <div className="text-white text-2xl font-bold font-display mb-2 drop-shadow-lg">
                           {card.name}
@@ -306,28 +303,27 @@ export function CardDetailsSheet({
           <X className="w-6 h-6" weight="bold" />
         </button>
         <div className="w-full max-w-2xl px-4">
-          {card.imageUrl && !card.imageUrl.includes('placehold.co') ? (
-            <img
-              src={card.imageUrl}
-              alt={card.name}
-              className="w-full h-auto rounded-lg shadow-2xl"
-              onError={(e) => {
-                const target = e.target as HTMLImageElement
-                target.style.display = 'none'
-              }}
-            />
-          ) : (
-            <div className="w-full aspect-[2.5/3.5] rounded-lg shadow-2xl bg-gradient-to-br from-blue-400 via-purple-400 to-pink-400 flex items-center justify-center p-12">
-              <div className="text-center">
-                <div className="text-white text-4xl font-bold font-display mb-4 drop-shadow-lg">
-                  {card.name}
-                </div>
-                <div className="text-white/80 text-lg drop-shadow">
-                  No Image Available
+          <div className="w-full aspect-[2.5/3.5] rounded-lg shadow-2xl relative bg-gradient-to-br from-blue-400 via-purple-400 to-pink-400 overflow-hidden">
+            {card.imageUrl && !card.imageUrl.includes('placehold.co') ? (
+              <img
+                src={card.imageUrl}
+                alt={card.name}
+                className="w-full h-full object-contain absolute inset-0"
+                loading="lazy"
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center p-12 absolute inset-0">
+                <div className="text-center">
+                  <div className="text-white text-4xl font-bold font-display mb-4 drop-shadow-lg">
+                    {card.name}
+                  </div>
+                  <div className="text-white/80 text-lg drop-shadow">
+                    No Image Available
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </DialogContent>
     </Dialog>

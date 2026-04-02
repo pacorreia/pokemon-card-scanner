@@ -111,19 +111,16 @@ export function CardItem({ card, onClick, onUpdateQuantity, onDelete, onAddToCol
           }`}
           onClick={handleClick}
         >
-          <div className="aspect-[2.5/3.5] bg-gradient-to-br from-blue-400 via-purple-400 to-pink-400 relative overflow-hidden">
+          <div className="aspect-[2.5/3.5] relative overflow-hidden bg-gradient-to-br from-blue-400 via-purple-400 to-pink-400">
             {card.imageUrl && !card.imageUrl.includes('placehold.co') ? (
               <img
                 src={card.imageUrl}
                 alt={card.name}
-                className="w-full h-full object-cover"
-                onError={(e) => {
-                  const target = e.target as HTMLImageElement
-                  target.style.display = 'none'
-                }}
+                className="w-full h-full object-cover absolute inset-0"
+                loading="lazy"
               />
             ) : (
-              <div className="w-full h-full flex items-center justify-center p-4">
+              <div className="w-full h-full flex items-center justify-center p-4 absolute inset-0">
                 <div className="text-center">
                   <div className="text-white text-lg font-bold font-display mb-1 drop-shadow-lg">
                     {card.name}
