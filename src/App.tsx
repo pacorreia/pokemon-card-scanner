@@ -66,67 +66,86 @@ function App() {
 
   useEffect(() => {
     const updateCardImagesFromDatabase = async () => {
-      if (!isDatabaseLoaded || !cards || cards.length === 0) return
+      if (!isDatabaseLoaded) {
+        console.log('[App] Database not loaded, skipping image update')
+        return
+      }
+
+      if (!cards || cards.length === 0) {
+        console.log('[App] No cards to update')
+        return
+      }
 
       const cardsNeedingImages = cards.filter(card => 
         (card.imageUrl.includes('placehold.co') || !card.imageUrl) && !updatedCardIdsRef.current.has(card.id)
       )
 
-      if (cardsNeedingImages.length === 0) return
+      if (cardsNeedingImages.length === 0) {
+        console.log('[App] All cards already have images')
+        return
+      }
 
       console.log(`[App] Updating ${cardsNeedingImages.length} cards with database images...`)
 
-      let updated = false
-      const updatedCards = [...cards]
+      let updatedCount = 0
 
       for (const card of cardsNeedingImages) {
         updatedCardIdsRef.current.add(card.id)
         
         const dbCard = await findCard(card.name, card.set, card.cardNumber)
-        console.log(`[App] Looking up image for ${card.name}:`, {
+        console.log(`[App] Looking up image for "${card.name}" (Set: ${card.set}, #${card.cardNumber}):`, {
           found: !!dbCard,
           hasImages: !!dbCard?.images,
           largeImage: dbCard?.images?.large,
           smallImage: dbCard?.images?.small
         })
         
-        if (dbCard?.images?.large) {
-          const index = updatedCards.findIndex(c => c.id === card.id)
-          if (index !== -1) {
-            updatedCards[index] = {
-              ...updatedCards[index],
-              imageUrl: dbCard.images.large,
-              tcgCardId: dbCard.id
-            }
-            updated = true
-            console.log(`[App] ✓ Updated image for ${card.name} to: ${dbCard.images.large}`)
-          }
-        } else if (dbCard?.images?.small) {
-          const index = updatedCards.findIndex(c => c.id === card.id)
-          if (index !== -1) {
-            updatedCards[index] = {
-              ...updatedCards[index],
-              imageUrl: dbCard.images.small,
-              tcgCardId: dbCard.id
-            }
-            updated = true
-            console.log(`[App] ✓ Updated image for ${card.name} to: ${dbCard.images.small}`)
-          }
+        if (dbCard?.images?.large || dbCard?.images?.small) {
+          const imageUrl = dbCard.images.large || dbCard.images.small
+          
+          setCards((currentCards) => {
+            const cards = currentCards || []
+            return cards.map(c =>
+              c.id === card.id
+                ? {
+                    ...c,
+                    imageUrl: imageUrl,
+                    tcgCardId: dbCard.id,
+                    prices: dbCard.tcgplayer || dbCard.cardmarket ? {
+                      tcgplayer: dbCard.tcgplayer ? {
+                        url: dbCard.tcgplayer.url,
+                        updatedAt: dbCard.tcgplayer.updatedAt,
+                        ...(dbCard.tcgplayer.prices?.normal?.market && { market: dbCard.tcgplayer.prices.normal.market }),
+                      } : undefined,
+                      cardmarket: dbCard.cardmarket ? {
+                        url: dbCard.cardmarket.url,
+                        updatedAt: dbCard.cardmarket.updatedAt,
+                        ...(dbCard.cardmarket.prices?.trendPrice && { trendPrice: dbCard.cardmarket.prices.trendPrice }),
+                      } : undefined
+                    } : c.prices
+                  }
+                : c
+            )
+          })
+          
+          updatedCount++
+          console.log(`[App] ✓ Updated image for ${card.name} to: ${imageUrl}`)
         } else {
           console.log(`[App] ✗ No image found for ${card.name}`)
         }
       }
 
-      if (updated) {
-        setCards(updatedCards)
+      if (updatedCount > 0) {
         toast.success('Card images updated from database', {
-          description: `Updated images for ${cardsNeedingImages.length} ${cardsNeedingImages.length === 1 ? 'card' : 'cards'}`
+          description: `Updated images for ${updatedCount} ${updatedCount === 1 ? 'card' : 'cards'}`
         })
       }
     }
 
-    updateCardImagesFromDatabase()
-  }, [isDatabaseLoaded, cards, findCard])
+    if (isDatabaseLoaded && cards && cards.length > 0) {
+      updateCardImagesFromDatabase()
+    }
+  }, [isDatabaseLoaded])
 
   const handleCardScanned = (card: PokemonCard) => {
     setCards((currentCards) => {
