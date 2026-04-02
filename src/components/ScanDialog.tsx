@@ -82,7 +82,13 @@ If this is not a Pokémon card or the image is too unclear to read, return: {"er
   const type = TYPES.includes(parsed.type) ? parsed.type : 'Colorless'
 
   const tcgCard = await findCard(name, set, cardNumber)
-  const imageUrl = tcgCard?.images?.large || tcgCard?.images?.small || `https://placehold.co/400x560/88ccee/ffffff?text=${encodeURIComponent(name)}`
+  
+  let imageUrl = `https://placehold.co/400x560/88ccee/ffffff?text=${encodeURIComponent(name)}`
+  if (tcgCard?.images?.large) {
+    imageUrl = tcgCard.images.large
+  } else if (tcgCard?.images?.small) {
+    imageUrl = tcgCard.images.small
+  }
 
   const prices = tcgCard?.tcgplayer || tcgCard?.cardmarket ? {
     tcgplayer: tcgCard.tcgplayer ? {
@@ -286,7 +292,7 @@ export function ScanDialog({ open, onOpenChange, onCardScanned }: ScanDialogProp
       cardNumber: manualForm.cardNumber || '?',
       rarity: manualForm.rarity,
       type: manualForm.type,
-      imageUrl: manualForm.imageUrl,
+      imageUrl: manualForm.imageUrl || `https://placehold.co/400x560/88ccee/ffffff?text=${encodeURIComponent(manualForm.name)}`,
     })
     setManualForm({ name: '', set: '', cardNumber: '', rarity: '', type: '', imageUrl: '' })
   }
