@@ -24,21 +24,23 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
 
   useEffect(() => {
     const loadCards = async () => {
-      if (open && isLoaded && cards.length === 0) {
-        setIsLoadingCards(true)
-        try {
-          const allCards = await getAllCards()
-          setCards(allCards)
-          console.log('[DatabaseBrowser] Loaded cards:', allCards.length)
-        } catch (error) {
-          console.error('[DatabaseBrowser] Failed to load cards:', error)
-        } finally {
-          setIsLoadingCards(false)
+      if (open && isLoaded) {
+        if (cards.length === 0 && !isLoadingCards) {
+          setIsLoadingCards(true)
+          try {
+            const allCards = await getAllCards()
+            setCards(allCards)
+            console.log('[DatabaseBrowser] Loaded cards:', allCards.length)
+          } catch (error) {
+            console.error('[DatabaseBrowser] Failed to load cards:', error)
+          } finally {
+            setIsLoadingCards(false)
+          }
         }
       }
     }
     loadCards()
-  }, [open, isLoaded, cards.length, getAllCards])
+  }, [open, isLoaded, getAllCards])
   
   useEffect(() => {
     console.log('[DatabaseBrowser] State:', { 
