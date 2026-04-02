@@ -155,45 +155,45 @@ export function CardItem({ card, onClick, onUpdateQuantity, onDelete, onAddToCol
             )}
             
             {!isSelectionMode && (
-              <div className="absolute top-2 left-2" onClick={handleMenuClick}>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button className="bg-background/90 backdrop-blur-sm hover:bg-background rounded-full p-1.5 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                    <DotsThreeVertical className="w-5 h-5" weight="bold" />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="w-48">
-                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onClick(); }}>
-                    <Eye className="w-4 h-4 mr-2" />
-                    View Details
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={handleAddToCollection}>
-                    <FolderPlus className="w-4 h-4 mr-2" />
-                    Add to Collection
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onUpdateQuantity(1); }}>
-                    <Plus className="w-4 h-4 mr-2" />
-                    Increase Quantity
-                  </DropdownMenuItem>
-                  {card.quantity > 1 && (
-                    <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onUpdateQuantity(-1); }}>
-                      <Minus className="w-4 h-4 mr-2" />
-                      Decrease Quantity
+              <div className="absolute top-2 left-2 z-10" onClick={handleMenuClick}>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button className="bg-background/95 backdrop-blur-sm hover:bg-background rounded-full p-1.5 shadow-lg opacity-40 sm:opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all duration-200 hover:scale-110 active:scale-95">
+                      <DotsThreeVertical className="w-5 h-5" weight="bold" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-48">
+                    <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onClick(); }}>
+                      <Eye className="w-4 h-4 mr-2" />
+                      View Details
                     </DropdownMenuItem>
-                  )}
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem 
-                    onClick={handleDeleteClick}
-                    className="text-destructive focus:text-destructive"
-                  >
-                    <Trash className="w-4 h-4 mr-2" />
-                    Remove Card
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={handleAddToCollection}>
+                      <FolderPlus className="w-4 h-4 mr-2" />
+                      Add to Collection
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onUpdateQuantity(1); }}>
+                      <Plus className="w-4 h-4 mr-2" />
+                      Increase Quantity
+                    </DropdownMenuItem>
+                    {card.quantity > 1 && (
+                      <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onUpdateQuantity(-1); }}>
+                        <Minus className="w-4 h-4 mr-2" />
+                        Decrease Quantity
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem 
+                      onClick={handleDeleteClick}
+                      className="text-destructive focus:text-destructive"
+                    >
+                      <Trash className="w-4 h-4 mr-2" />
+                      Remove Card
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             )}
 
             {card.quantity > 1 && (
