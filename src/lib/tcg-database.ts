@@ -344,14 +344,19 @@ function _initializeIfNeeded(): Promise<void> {
         console.log('[TCG Database] Metadata loaded, cards will load on demand')
       } else {
         _metadata = null
+        _sets = []
         console.log('[TCG Database] No database found')
       }
+      // Initialization completed successfully — allow future calls to short-circuit
+      _initialized = true
     } catch (error) {
       console.error('[TCG Database] Failed to load from IndexedDB:', error)
       _metadata = null
+      _sets = []
+      // Clear the promise so transient errors allow a retry on next mount
+      _initPromise = null
     } finally {
       _isLoading = false
-      _initialized = true
       _notifyListeners()
     }
   })()
@@ -576,11 +581,18 @@ export function useTCGDatabase() {
         console.error('[TCG Database] ✗ Rollback failed:', rollbackError)
       }
 
+      // Ensure in-memory state reflects that no database is currently loaded
+      _metadata = null
+      _sets = []
+      _isLoading = false
+      _notifyListeners()
+
       return { success: false, error }
     }
   }
 
   const searchCards = async (query: string, limit = 10): Promise<TCGCard[]> => {
+    await _initializeIfNeeded()
     const lowerQuery = query.toLowerCase()
 
     const allCards = await db.getAll<TCGCard>('cards')
@@ -599,6 +611,8 @@ export function useTCGDatabase() {
   const findCard = async (name: string, setName?: string, cardNumber?: string): Promise<TCGCard | null> => {
     try {
       console.log('[TCG Database] findCard called:', { name, setName, cardNumber })
+
+      await _initializeIfNeeded()
 
       if (!_metadata || _metadata.cardCount === 0) {
         console.warn('[TCG Database] No database loaded, cannot find card')
@@ -665,6 +679,7 @@ export function useTCGDatabase() {
   }
 
   const getAllCards = async (): Promise<TCGCard[]> => {
+    await _initializeIfNeeded()
     return await db.getAll<TCGCard>('cards')
   }
 
