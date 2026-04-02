@@ -155,10 +155,10 @@ export function CardItem({ card, onClick, onUpdateQuantity, onDelete, onAddToCol
             )}
             
             {!isSelectionMode && (
-              <div className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200" onClick={handleMenuClick}>
+              <div className="absolute top-2 left-2" onClick={handleMenuClick}>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <button className="bg-background/90 backdrop-blur-sm hover:bg-background rounded-full p-1.5 shadow-lg">
+                  <button className="bg-background/90 backdrop-blur-sm hover:bg-background rounded-full p-1.5 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                     <DotsThreeVertical className="w-5 h-5" weight="bold" />
                   </button>
                 </DropdownMenuTrigger>
