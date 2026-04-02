@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useKV } from '@github/spark/hooks'
 import { Toaster } from '@/components/ui/sonner'
 import { Button } from '@/components/ui/button'
@@ -49,6 +49,7 @@ function App() {
   const [isSelectionMode, setIsSelectionMode] = useState(false)
   const [selectedCardIds, setSelectedCardIds] = useState<Set<string>>(new Set())
   const [hasCheckedDatabase, setHasCheckedDatabase] = useState(false)
+  const updatedCardIdsRef = useRef<Set<string>>(new Set())
   
   const { isLoaded: isDatabaseLoaded, metadata, isLoading: isDatabaseLoading, findCard } = useTCGDatabase()
 
@@ -68,7 +69,7 @@ function App() {
       if (!isDatabaseLoaded || !cards || cards.length === 0) return
 
       const cardsNeedingImages = cards.filter(card => 
-        card.imageUrl.includes('placehold.co') || !card.imageUrl
+        (card.imageUrl.includes('placehold.co') || !card.imageUrl) && !updatedCardIdsRef.current.has(card.id)
       )
 
       if (cardsNeedingImages.length === 0) return
@@ -79,7 +80,16 @@ function App() {
       const updatedCards = [...cards]
 
       for (const card of cardsNeedingImages) {
+        updatedCardIdsRef.current.add(card.id)
+        
         const dbCard = await findCard(card.name, card.set, card.cardNumber)
+        console.log(`[App] Looking up image for ${card.name}:`, {
+          found: !!dbCard,
+          hasImages: !!dbCard?.images,
+          largeImage: dbCard?.images?.large,
+          smallImage: dbCard?.images?.small
+        })
+        
         if (dbCard?.images?.large) {
           const index = updatedCards.findIndex(c => c.id === card.id)
           if (index !== -1) {
@@ -89,21 +99,34 @@ function App() {
               tcgCardId: dbCard.id
             }
             updated = true
-            console.log(`[App] Updated image for ${card.name}`)
+            console.log(`[App] ✓ Updated image for ${card.name} to: ${dbCard.images.large}`)
           }
+        } else if (dbCard?.images?.small) {
+          const index = updatedCards.findIndex(c => c.id === card.id)
+          if (index !== -1) {
+            updatedCards[index] = {
+              ...updatedCards[index],
+              imageUrl: dbCard.images.small,
+              tcgCardId: dbCard.id
+            }
+            updated = true
+            console.log(`[App] ✓ Updated image for ${card.name} to: ${dbCard.images.small}`)
+          }
+        } else {
+          console.log(`[App] ✗ No image found for ${card.name}`)
         }
       }
 
       if (updated) {
         setCards(updatedCards)
         toast.success('Card images updated from database', {
-          description: `Updated ${cardsNeedingImages.length} ${cardsNeedingImages.length === 1 ? 'card' : 'cards'}`
+          description: `Updated images for ${cardsNeedingImages.length} ${cardsNeedingImages.length === 1 ? 'card' : 'cards'}`
         })
       }
     }
 
     updateCardImagesFromDatabase()
-  }, [isDatabaseLoaded, findCard])
+  }, [isDatabaseLoaded, cards, findCard])
 
   const handleCardScanned = (card: PokemonCard) => {
     setCards((currentCards) => {

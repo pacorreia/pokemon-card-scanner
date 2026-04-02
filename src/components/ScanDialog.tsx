@@ -83,11 +83,25 @@ If this is not a Pokémon card or the image is too unclear to read, return: {"er
 
   const tcgCard = await findCard(name, set, cardNumber)
   
+  console.log('[ScanDialog] TCG card match result:', {
+    name,
+    set,
+    cardNumber,
+    foundCard: tcgCard ? `${tcgCard.name} (${tcgCard.id})` : 'none',
+    hasImages: !!tcgCard?.images,
+    largeImage: tcgCard?.images?.large,
+    smallImage: tcgCard?.images?.small
+  })
+  
   let imageUrl = `https://placehold.co/400x560/88ccee/ffffff?text=${encodeURIComponent(name)}`
   if (tcgCard?.images?.large) {
     imageUrl = tcgCard.images.large
+    console.log('[ScanDialog] Using large image:', imageUrl)
   } else if (tcgCard?.images?.small) {
     imageUrl = tcgCard.images.small
+    console.log('[ScanDialog] Using small image:', imageUrl)
+  } else {
+    console.log('[ScanDialog] No image found in database, using placeholder')
   }
 
   const prices = tcgCard?.tcgplayer || tcgCard?.cardmarket ? {
