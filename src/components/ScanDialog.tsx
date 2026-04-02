@@ -381,7 +381,19 @@ export function ScanDialog({ open, onOpenChange, onCardScanned }: ScanDialogProp
                 muted
                 className="w-full h-full object-cover"
               />
-              <div className="absolute inset-0 border-2 border-accent/50 rounded-lg pointer-events-none" />
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div className="relative w-[70%] aspect-[5/7] border-4 border-accent rounded-xl shadow-2xl">
+                  <div className="absolute -top-3 -left-3 w-6 h-6 border-t-4 border-l-4 border-accent rounded-tl-lg" />
+                  <div className="absolute -top-3 -right-3 w-6 h-6 border-t-4 border-r-4 border-accent rounded-tr-lg" />
+                  <div className="absolute -bottom-3 -left-3 w-6 h-6 border-b-4 border-l-4 border-accent rounded-bl-lg" />
+                  <div className="absolute -bottom-3 -right-3 w-6 h-6 border-b-4 border-r-4 border-accent rounded-br-lg" />
+                </div>
+              </div>
+              <div className="absolute bottom-4 left-0 right-0 text-center">
+                <p className="text-white text-sm font-medium bg-black/60 backdrop-blur-sm px-4 py-2 rounded-full inline-block">
+                  Align card with frame
+                </p>
+              </div>
               {!videoReady && (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/70">
                   <p className="text-white text-sm">Camera warming up…</p>
