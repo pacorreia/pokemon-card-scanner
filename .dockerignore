@@ -1,4 +1,6 @@
 node_modules
+# dist is also excluded to prevent stale local builds from being copied into the
+# builder stage; the Dockerfile generates a fresh dist via `npm run build`.
 dist
 dist-ssr
 *-dist
