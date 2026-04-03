@@ -67,11 +67,8 @@ function App() {
   }, [isDatabaseLoaded, metadata, isDatabaseLoading, hasCheckedDatabase])
 
   useEffect(() => {
-    if (!isDatabaseLoaded) return
-
     const updateCardImagesFromDatabase = async () => {
-      if (!cards || cards.length === 0) {
-        console.log('[App] No cards to update')
+      if (!isDatabaseLoaded || !cards || cards.length === 0) {
         return
       }
 
