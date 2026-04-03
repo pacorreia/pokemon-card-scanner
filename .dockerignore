@@ -1,0 +1,18 @@
+node_modules
+# dist is also excluded to prevent stale local builds from being copied into the
+# builder stage; the Dockerfile generates a fresh dist via `npm run build`.
+dist
+dist-ssr
+*-dist
+*.local
+.git
+.github
+.vscode
+.idea
+.DS_Store
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.env
