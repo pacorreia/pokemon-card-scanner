@@ -13,6 +13,14 @@ import { useTCGDatabase } from '@/lib/tcg-database'
 const PAT_KEY = 'github-pat'
 const GITHUB_MODELS_URL = 'https://models.github.ai/inference/chat/completions'
 
+function getStoredToken(): string {
+  try {
+    return localStorage.getItem(PAT_KEY)?.trim() ?? ''
+  } catch {
+    return ''
+  }
+}
+
 interface ScanDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -227,7 +235,7 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onOpenSettings }
   }, [onCardScanned, onOpenChange])
 
   const handleUpload = async (file: File) => {
-    const apiKey = localStorage.getItem(PAT_KEY)?.trim()
+    const apiKey = getStoredToken()
     if (!apiKey) {
       toast.error('API key required to scan cards.', {
         description: 'Add your GitHub personal access token in Settings.',
@@ -301,7 +309,7 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onOpenSettings }
     stopCamera()
     setVideoReady(false)
 
-    const apiKey = localStorage.getItem(PAT_KEY)?.trim()
+    const apiKey = getStoredToken()
     if (!apiKey) {
       toast.error('API key required to scan cards.', {
         description: 'Add your GitHub personal access token in Settings.',

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -8,14 +8,33 @@ import { toast } from 'sonner'
 
 const PAT_KEY = 'github-pat'
 
+function readStoredToken(): string {
+  try {
+    return localStorage.getItem(PAT_KEY) ?? ''
+  } catch {
+    return ''
+  }
+}
+
 interface SettingsDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
 }
 
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
-  const [token, setToken] = useState(() => localStorage.getItem(PAT_KEY) ?? '')
+  const [token, setToken] = useState<string>(readStoredToken)
   const [showToken, setShowToken] = useState(false)
+  const [hasStoredToken, setHasStoredToken] = useState(() => readStoredToken() !== '')
+
+  // Sync input and stored-token indicator whenever the dialog opens
+  useEffect(() => {
+    if (open) {
+      const stored = readStoredToken()
+      setToken(stored)
+      setHasStoredToken(stored !== '')
+      setShowToken(false)
+    }
+  }, [open])
 
   const handleSave = () => {
     const trimmed = token.trim()
@@ -23,14 +42,25 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       toast.error('Please enter a token before saving.')
       return
     }
-    localStorage.setItem(PAT_KEY, trimmed)
+    try {
+      localStorage.setItem(PAT_KEY, trimmed)
+    } catch {
+      toast.error('Failed to save token. Check your browser storage settings.')
+      return
+    }
+    setHasStoredToken(true)
     toast.success('API key saved.')
     onOpenChange(false)
   }
 
   const handleClear = () => {
-    localStorage.removeItem(PAT_KEY)
+    try {
+      localStorage.removeItem(PAT_KEY)
+    } catch {
+      // ignore
+    }
     setToken('')
+    setHasStoredToken(false)
     toast.success('API key cleared.')
   }
 
@@ -97,7 +127,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         </div>
 
         <div className="flex gap-2 justify-end pt-2">
-          <Button variant="outline" onClick={handleClear} disabled={!token}>
+          <Button variant="outline" onClick={handleClear} disabled={!hasStoredToken}>
             Clear
           </Button>
           <Button onClick={handleSave}>Save</Button>
