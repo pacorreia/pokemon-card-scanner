@@ -52,6 +52,7 @@ function App() {
   const [selectedCardIds, setSelectedCardIds] = useState<Set<string>>(new Set())
   const [hasCheckedDatabase, setHasCheckedDatabase] = useState(false)
   const updatedCardIdsRef = useRef<Set<string>>(new Set())
+  const imageUpdateRunIdRef = useRef(0)
   
   const { isLoaded: isDatabaseLoaded, metadata, isLoading: isDatabaseLoading, findCard } = useTCGDatabase()
 
@@ -67,16 +68,10 @@ function App() {
   }, [isDatabaseLoaded, metadata, isDatabaseLoading, hasCheckedDatabase])
 
   useEffect(() => {
-    let isMounted = true
-    
-    const updateCardImagesFromDatabase = async () => {
-      if (!isMounted || !isDatabaseLoaded) {
-        console.log('[App] Database not loaded or component unmounted, skipping image update')
-        return
-      }
+    const runId = ++imageUpdateRunIdRef.current
 
-      if (!cards || cards.length === 0) {
-        console.log('[App] No cards to update')
+    const updateCardImagesFromDatabase = async () => {
+      if (!isDatabaseLoaded || !cards || cards.length === 0) {
         return
       }
 
@@ -94,12 +89,18 @@ function App() {
       let updatedCount = 0
 
       for (const card of cardsNeedingImages) {
-        if (!isMounted) break
-        
+        // Abort if a newer run has started or this card was handled by a concurrent run
+        if (imageUpdateRunIdRef.current !== runId) break
+        if (updatedCardIdsRef.current.has(card.id)) continue
+
         updatedCardIdsRef.current.add(card.id)
         
         try {
           const dbCard = await findCard(card.name, card.set, card.cardNumber)
+
+          // Discard result if a newer run has superseded this one
+          if (imageUpdateRunIdRef.current !== runId) break
+
           console.log(`[App] Looking up image for "${card.name}" (Set: ${card.set}, #${card.cardNumber}):`, {
             found: !!dbCard,
             hasImages: !!dbCard?.images,
@@ -107,7 +108,7 @@ function App() {
             smallImage: dbCard?.images?.small
           })
           
-          if (isMounted && (dbCard?.images?.large || dbCard?.images?.small)) {
+          if (dbCard?.images?.large || dbCard?.images?.small) {
             const imageUrl = dbCard.images.large || dbCard.images.small
             
             setCards((currentCards) => {
@@ -145,20 +146,14 @@ function App() {
         }
       }
 
-      if (isMounted && updatedCount > 0) {
+      if (imageUpdateRunIdRef.current === runId && updatedCount > 0) {
         toast.success('Card images updated from database', {
           description: `Updated images for ${updatedCount} ${updatedCount === 1 ? 'card' : 'cards'}`
         })
       }
     }
 
-    if (isDatabaseLoaded && cards && cards.length > 0) {
-      updateCardImagesFromDatabase()
-    }
-    
-    return () => {
-      isMounted = false
-    }
+    updateCardImagesFromDatabase()
   }, [isDatabaseLoaded, findCard, cards, setCards])
 
   const handleCardScanned = (card: PokemonCard) => {
