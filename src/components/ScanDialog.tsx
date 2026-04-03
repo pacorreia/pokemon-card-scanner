@@ -10,10 +10,22 @@ import { toast } from 'sonner'
 import type { PokemonCard } from '@/lib/types'
 import { useTCGDatabase } from '@/lib/tcg-database'
 
+const PAT_KEY = 'github-pat'
+const GITHUB_MODELS_URL = 'https://models.github.ai/inference/chat/completions'
+
+function getStoredToken(): string {
+  try {
+    return localStorage.getItem(PAT_KEY)?.trim() ?? ''
+  } catch {
+    return ''
+  }
+}
+
 interface ScanDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onCardScanned: (card: PokemonCard) => void
+  onOpenSettings: () => void
 }
 
 type Mode = 'idle' | 'camera' | 'analyzing' | 'manual'
@@ -21,7 +33,7 @@ type Mode = 'idle' | 'camera' | 'analyzing' | 'manual'
 const RARITIES = ['Common', 'Uncommon', 'Rare', 'Holo Rare', 'Ultra Rare', 'Secret Rare']
 const TYPES = ['Fire', 'Water', 'Grass', 'Electric', 'Psychic', 'Fighting', 'Darkness', 'Metal', 'Dragon', 'Fairy', 'Colorless']
 
-async function analyzeCardImage(imageDataUrl: string, findCard: (name: string, setName?: string, cardNumber?: string) => Promise<any>): Promise<Omit<PokemonCard, 'id' | 'quantity' | 'dateAdded'>> {
+async function analyzeCardImage(imageDataUrl: string, apiKey: string, findCard: (name: string, setName?: string, cardNumber?: string) => Promise<any>): Promise<Omit<PokemonCard, 'id' | 'quantity' | 'dateAdded'>> {
   const body = {
     messages: [
       {
@@ -57,10 +69,13 @@ If this is not a Pokémon card or the image is too unclear to read, return: {"er
     top_p: 1.0,
   }
 
-  const response = await fetch('/_spark/llm', {
+  const response = await fetch(GITHUB_MODELS_URL, {
     method: 'POST',
     body: JSON.stringify(body),
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
   })
 
   if (!response.ok) {
@@ -159,7 +174,7 @@ function fileToDataUrl(file: File): Promise<string> {
   })
 }
 
-export function ScanDialog({ open, onOpenChange, onCardScanned }: ScanDialogProps) {
+export function ScanDialog({ open, onOpenChange, onCardScanned, onOpenSettings }: ScanDialogProps) {
   const [mode, setMode] = useState<Mode>('idle')
   const [videoReady, setVideoReady] = useState(false)
   const [manualForm, setManualForm] = useState({
@@ -220,10 +235,24 @@ export function ScanDialog({ open, onOpenChange, onCardScanned }: ScanDialogProp
   }, [onCardScanned, onOpenChange])
 
   const handleUpload = async (file: File) => {
+    const apiKey = getStoredToken()
+    if (!apiKey) {
+      toast.error('API key required to scan cards.', {
+        description: 'Add your GitHub personal access token in Settings.',
+        action: {
+          label: 'Open Settings',
+          onClick: () => {
+            onOpenChange(false)
+            onOpenSettings()
+          },
+        },
+      })
+      return
+    }
     setMode('analyzing')
     try {
       const dataUrl = await fileToDataUrl(file)
-      const cardData = await analyzeCardImage(dataUrl, findCard)
+      const cardData = await analyzeCardImage(dataUrl, apiKey, findCard)
       processCard(cardData)
     } catch (error) {
       toast.error('Could not identify the card. Try manual entry instead.', {
@@ -279,9 +308,26 @@ export function ScanDialog({ open, onOpenChange, onCardScanned }: ScanDialogProp
     const dataUrl = canvas.toDataURL('image/jpeg', 0.9)
     stopCamera()
     setVideoReady(false)
+
+    const apiKey = getStoredToken()
+    if (!apiKey) {
+      toast.error('API key required to scan cards.', {
+        description: 'Add your GitHub personal access token in Settings.',
+        action: {
+          label: 'Open Settings',
+          onClick: () => {
+            onOpenChange(false)
+            onOpenSettings()
+          },
+        },
+      })
+      setMode('idle')
+      return
+    }
+
     setMode('analyzing')
     try {
-      const cardData = await analyzeCardImage(dataUrl, findCard)
+      const cardData = await analyzeCardImage(dataUrl, apiKey, findCard)
       processCard(cardData)
     } catch (error) {
       toast.error('Could not identify the card. Try manual entry instead.', {

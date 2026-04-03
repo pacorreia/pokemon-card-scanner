@@ -1,23 +1,60 @@
-# ✨ Welcome to Your Spark Template!
-You've just launched your brand-new Spark Template Codespace — everything’s fired up and ready for you to explore, build, and create with Spark!
+# PokéDex Scanner
 
-This template is your blank canvas. It comes with a minimal setup to help you get started quickly with Spark development.
+A web app for scanning and managing your Pokémon TCG card collection, powered by AI image recognition via GitHub Models.
 
-🚀 What's Inside?
-- A clean, minimal Spark environment
-- Pre-configured for local development
-- Ready to scale with your ideas
-  
-🧠 What Can You Do?
+## Features
 
-Right now, this is just a starting point — the perfect place to begin building and testing your Spark applications.
+- 📷 **Scan cards** with your camera or by uploading an image — AI identifies the card automatically
+- ✍️ **Manual entry** for cards you want to add without scanning
+- 📦 **Collection management** — organise cards into named collections
+- 🔍 **Search & filter** by name, set, type, and rarity
+- 📊 **Duplicate tracking** and estimated collection value
+- 💾 **Import / export** your collection as JSON
+- 🗄️ **Offline database** — downloads the full Pokémon TCG card database locally for accurate lookups and artwork
 
-🧹 Just Exploring?
-No problem! If you were just checking things out and don’t need to keep this code:
+## Setup
 
-- Simply delete your Spark.
-- Everything will be cleaned up — no traces left behind.
+### 1. Clone and install
 
-📄 License For Spark Template Resources 
+```bash
+git clone https://github.com/pacorreia/pokemon-card-scanner.git
+cd pokemon-card-scanner
+npm install
+```
 
-The Spark Template files and resources from GitHub are licensed under the terms of the MIT license, Copyright GitHub, Inc.
+### 2. Get a GitHub Personal Access Token
+
+The app uses [GitHub Models](https://models.github.ai) (`openai/gpt-4o`) to analyse card images.  
+You need a GitHub PAT — **no extra scopes are required**.
+
+1. Go to <https://github.com/settings/tokens/new?description=Pokemon+Card+Scanner&scopes=>
+2. Click **Generate token** and copy it.
+
+### 3. Start the dev server
+
+```bash
+npm run dev
+```
+
+Open <http://localhost:5173> in your browser.
+
+### 4. Enter your token
+
+Click the **⚙️ gear icon** in the top-right corner of the app, paste your token, and click **Save**.
+
+### 5. Download the card database
+
+On first launch the app will prompt you to download the Pokémon TCG database (card artwork, set info, and pricing).  
+Click **Download** and wait for it to complete — this is stored in your browser's IndexedDB and only needs to be done once.
+
+## Building for production
+
+```bash
+npm run build
+```
+
+Static output is written to `dist/`.
+
+## License
+
+MIT — Copyright GitHub, Inc.
