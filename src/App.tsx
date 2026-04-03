@@ -67,14 +67,9 @@ function App() {
   }, [isDatabaseLoaded, metadata, isDatabaseLoading, hasCheckedDatabase])
 
   useEffect(() => {
-    let isMounted = true
-    
-    const updateCardImagesFromDatabase = async () => {
-      if (!isMounted || !isDatabaseLoaded) {
-        console.log('[App] Database not loaded or component unmounted, skipping image update')
-        return
-      }
+    if (!isDatabaseLoaded) return
 
+    const updateCardImagesFromDatabase = async () => {
       if (!cards || cards.length === 0) {
         console.log('[App] No cards to update')
         return
@@ -94,8 +89,6 @@ function App() {
       let updatedCount = 0
 
       for (const card of cardsNeedingImages) {
-        if (!isMounted) break
-        
         updatedCardIdsRef.current.add(card.id)
         
         try {
@@ -107,7 +100,7 @@ function App() {
             smallImage: dbCard?.images?.small
           })
           
-          if (isMounted && (dbCard?.images?.large || dbCard?.images?.small)) {
+          if (dbCard?.images?.large || dbCard?.images?.small) {
             const imageUrl = dbCard.images.large || dbCard.images.small
             
             setCards((currentCards) => {
@@ -145,20 +138,14 @@ function App() {
         }
       }
 
-      if (isMounted && updatedCount > 0) {
+      if (updatedCount > 0) {
         toast.success('Card images updated from database', {
           description: `Updated images for ${updatedCount} ${updatedCount === 1 ? 'card' : 'cards'}`
         })
       }
     }
 
-    if (isDatabaseLoaded && cards && cards.length > 0) {
-      updateCardImagesFromDatabase()
-    }
-    
-    return () => {
-      isMounted = false
-    }
+    updateCardImagesFromDatabase()
   }, [isDatabaseLoaded, findCard, cards, setCards])
 
   const handleCardScanned = (card: PokemonCard) => {
