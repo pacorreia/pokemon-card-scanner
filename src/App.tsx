@@ -1,11 +1,11 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { useKV } from '@github/spark/hooks'
+import { useLocalStorage } from '@/hooks/useLocalStorage'
 import { Toaster } from '@/components/ui/sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
-import { Camera, MagnifyingGlass, Copy, Database, BookOpen, Funnel, X, CheckSquare, ArrowsDownUp, Folders } from '@phosphor-icons/react'
+import { Camera, MagnifyingGlass, Copy, Database, BookOpen, Funnel, X, CheckSquare, ArrowsDownUp, Folders, Gear } from '@phosphor-icons/react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ScanDialog } from '@/components/ScanDialog'
 import { CardItem } from '@/components/CardItem'
@@ -17,6 +17,7 @@ import { BulkActionsToolbar } from '@/components/BulkActionsToolbar'
 import { ExportImportDialog } from '@/components/ExportImportDialog'
 import { CollectionsManager } from '@/components/CollectionsManager'
 import { AddToCollectionDialog } from '@/components/AddToCollectionDialog'
+import { SettingsDialog } from '@/components/SettingsDialog'
 import { useTCGDatabase } from '@/lib/tcg-database'
 import type { PokemonCard, ViewMode, CardCollection } from '@/lib/types'
 import { toast } from 'sonner'
@@ -30,8 +31,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 
 function App() {
-  const [cards, setCards] = useKV<PokemonCard[]>('pokemon-cards', [])
-  const [collections, setCollections] = useKV<CardCollection[]>('card-collections', [])
+  const [cards, setCards] = useLocalStorage<PokemonCard[]>('pokemon-cards', [])
+  const [collections, setCollections] = useLocalStorage<CardCollection[]>('card-collections', [])
   const [scanDialogOpen, setScanDialogOpen] = useState(false)
   const [selectedCard, setSelectedCard] = useState<PokemonCard | null>(null)
   const [detailsOpen, setDetailsOpen] = useState(false)
@@ -43,6 +44,7 @@ function App() {
   const [collectionsManagerOpen, setCollectionsManagerOpen] = useState(false)
   const [addToCollectionOpen, setAddToCollectionOpen] = useState(false)
   const [selectedCardForCollection, setSelectedCardForCollection] = useState<PokemonCard | null>(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [selectedCollection, setSelectedCollection] = useState<CardCollection | null>(null)
   const [selectedTypes, setSelectedTypes] = useState<string[]>([])
   const [selectedRarities, setSelectedRarities] = useState<string[]>([])
@@ -537,6 +539,15 @@ function App() {
               <Button
                 variant="outline"
                 size="icon"
+                onClick={() => setSettingsOpen(true)}
+                className="shrink-0"
+                title="Settings"
+              >
+                <Gear className="w-5 h-5" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
                 onClick={() => setExportImportOpen(true)}
                 className="shrink-0"
                 title="Backup & Restore"
@@ -771,6 +782,7 @@ function App() {
         open={scanDialogOpen}
         onOpenChange={setScanDialogOpen}
         onCardScanned={handleCardScanned}
+        onOpenSettings={() => setSettingsOpen(true)}
       />
 
       <CardDetailsSheet
@@ -820,6 +832,11 @@ function App() {
           setAddToCollectionOpen(false)
           setCollectionsManagerOpen(true)
         }}
+      />
+
+      <SettingsDialog
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
       />
 
       <Toaster position="top-center" />
