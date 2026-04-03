@@ -97,7 +97,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         </div>
 
         <div className="flex gap-2 justify-end pt-2">
-          <Button variant="outline" onClick={handleClear} disabled={!localStorage.getItem(PAT_KEY)}>
+          <Button variant="outline" onClick={handleClear} disabled={!token}>
             Clear
           </Button>
           <Button onClick={handleSave}>Save</Button>

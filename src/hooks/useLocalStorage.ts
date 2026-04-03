@@ -8,6 +8,7 @@ export function useLocalStorage<T>(key: string, initialValue: T): [T, (value: Up
       const item = window.localStorage.getItem(key)
       return item !== null ? (JSON.parse(item) as T) : initialValue
     } catch {
+      // Ignore parse errors (e.g. corrupted data) and fall back to the initial value
       return initialValue
     }
   })
