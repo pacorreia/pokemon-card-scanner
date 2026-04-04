@@ -9,17 +9,9 @@ import { motion } from 'framer-motion'
 import { toast } from 'sonner'
 import type { PokemonCard } from '@/lib/types'
 import { useTCGDatabase } from '@/lib/tcg-database'
+import { useAuth } from '@/contexts/AuthContext'
 
-const PAT_KEY = 'github-pat'
 const GITHUB_MODELS_URL = 'https://models.github.ai/inference/chat/completions'
-
-function getStoredToken(): string {
-  try {
-    return localStorage.getItem(PAT_KEY)?.trim() ?? ''
-  } catch {
-    return ''
-  }
-}
 
 interface ScanDialogProps {
   open: boolean
@@ -187,6 +179,7 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onOpenSettings }
   })
 
   const { findCard } = useTCGDatabase()
+  const { token: authToken } = useAuth()
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -235,7 +228,7 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onOpenSettings }
   }, [onCardScanned, onOpenChange])
 
   const handleUpload = async (file: File) => {
-    const apiKey = getStoredToken()
+    const apiKey = authToken ?? ''
     if (!apiKey) {
       toast.error('API key required to scan cards.', {
         description: 'Add your GitHub personal access token in Settings.',
@@ -309,7 +302,7 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onOpenSettings }
     stopCamera()
     setVideoReady(false)
 
-    const apiKey = getStoredToken()
+    const apiKey = authToken ?? ''
     if (!apiKey) {
       toast.error('API key required to scan cards.', {
         description: 'Add your GitHub personal access token in Settings.',

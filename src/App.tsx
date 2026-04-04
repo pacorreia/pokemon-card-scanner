@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
-import { Camera, MagnifyingGlass, Copy, Database, BookOpen, Funnel, X, CheckSquare, ArrowsDownUp, Folders, Gear } from '@phosphor-icons/react'
+import { Camera, MagnifyingGlass, Copy, Database, BookOpen, Funnel, X, CheckSquare, ArrowsDownUp, Folders, Gear, SignOut } from '@phosphor-icons/react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ScanDialog } from '@/components/ScanDialog'
 import { CardItem } from '@/components/CardItem'
@@ -18,7 +18,9 @@ import { ExportImportDialog } from '@/components/ExportImportDialog'
 import { CollectionsManager } from '@/components/CollectionsManager'
 import { AddToCollectionDialog } from '@/components/AddToCollectionDialog'
 import { SettingsDialog } from '@/components/SettingsDialog'
+import { LoginPage } from '@/components/LoginPage'
 import { useTCGDatabase } from '@/lib/tcg-database'
+import { useAuth } from '@/contexts/AuthContext'
 import type { PokemonCard, ViewMode, CardCollection } from '@/lib/types'
 import { toast } from 'sonner'
 import {
@@ -31,6 +33,18 @@ import {
 } from '@/components/ui/dropdown-menu'
 
 function App() {
+  const { isAuthenticated } = useAuth()
+
+  return (
+    <>
+      {isAuthenticated ? <MainApp /> : <LoginPage />}
+      <Toaster position="top-center" />
+    </>
+  )
+}
+
+function MainApp() {
+  const { user, signOut } = useAuth()
   const [cards, setCards] = useLocalStorage<PokemonCard[]>('pokemon-cards', [])
   const [collections, setCollections] = useLocalStorage<CardCollection[]>('card-collections', [])
   const [scanDialogOpen, setScanDialogOpen] = useState(false)
@@ -588,6 +602,47 @@ function App() {
                   <CheckSquare className="w-5 h-5" />
                 </Button>
               )}
+
+              {/* User avatar + sign-out */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="shrink-0 overflow-hidden"
+                    title={user ? `Signed in as ${user.login}` : 'Account'}
+                  >
+                    {user?.avatar_url ? (
+                      <img
+                        src={user.avatar_url}
+                        alt={user.login}
+                        className="w-full h-full object-cover rounded-[inherit]"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <SignOut className="w-5 h-5" />
+                    )}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-52">
+                  {user && (
+                    <>
+                      <DropdownMenuLabel className="flex flex-col gap-0.5">
+                        <span className="font-semibold">{user.name ?? user.login}</span>
+                        <span className="font-normal text-muted-foreground text-xs">@{user.login}</span>
+                      </DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                    </>
+                  )}
+                  <button
+                    className="flex w-full items-center gap-2 px-2 py-1.5 text-sm rounded-sm hover:bg-accent hover:text-accent-foreground transition-colors"
+                    onClick={signOut}
+                  >
+                    <SignOut className="w-4 h-4" />
+                    Sign out
+                  </button>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
 
@@ -834,8 +889,6 @@ function App() {
         open={settingsOpen}
         onOpenChange={setSettingsOpen}
       />
-
-      <Toaster position="top-center" />
     </div>
   )
 }
