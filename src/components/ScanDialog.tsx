@@ -26,6 +26,7 @@ type Mode = 'idle' | 'camera' | 'analyzing' | 'manual' | 'bulk' | 'bulk-review'
 
 const RARITIES = ['Common', 'Uncommon', 'Rare', 'Holo Rare', 'Ultra Rare', 'Secret Rare']
 const TYPES = ['Fire', 'Water', 'Grass', 'Electric', 'Psychic', 'Fighting', 'Darkness', 'Metal', 'Dragon', 'Fairy', 'Colorless']
+const BULK_SCAN_JPEG_QUALITY = 0.92
 
 async function analyzeCardImage(imageDataUrl: string, apiKey: string, findCard: (name: string, setName?: string, cardNumber?: string) => Promise<any>): Promise<Omit<PokemonCard, 'id' | 'quantity' | 'dateAdded'>> {
   const body = {
@@ -382,7 +383,7 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onCardsScanned, 
     setMode(targetMode)
     try {
       // Landscape constraints for bulk (multiple cards on a table/binder)
-      // Portrait constraints for single-card scan
+      // Portrait constraints for camera mode (single-card scan)
       const videoConstraints = targetMode === 'bulk'
         ? { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }
         : { facingMode: 'environment', width: { ideal: 720 }, height: { ideal: 1280 } }
@@ -458,7 +459,7 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onCardsScanned, 
     const ctx = canvas.getContext('2d')
     if (!ctx) return
     ctx.drawImage(video, 0, 0)
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.92)
+    const dataUrl = canvas.toDataURL('image/jpeg', BULK_SCAN_JPEG_QUALITY)
     stopCamera()
     setVideoReady(false)
 
@@ -649,7 +650,7 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onCardsScanned, 
               <Button variant="ghost" size="icon" onClick={handleBack}>
                 <ArrowLeft className="w-5 h-5" />
               </Button>
-              <h2 className="text-xl font-bold font-display">Scan Multiple Cards</h2>
+              <h2 className="text-xl font-bold font-display">Scan All Cards</h2>
             </div>
 
             {/* Wide landscape viewfinder — optimised for table/binder shots */}
