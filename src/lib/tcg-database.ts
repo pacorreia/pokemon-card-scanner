@@ -652,7 +652,7 @@ export async function findCard(name: string, setName?: string, cardNumber?: stri
       return null
     }
 
-    let exactMatches = allCards.filter(card =>
+    const exactMatches = allCards.filter(card =>
       card.name.toLowerCase() === lowerName
     )
 

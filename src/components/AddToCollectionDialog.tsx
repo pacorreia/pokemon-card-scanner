@@ -21,7 +21,7 @@ interface AddToCollectionDialogProps {
 export function AddToCollectionDialog({
   open,
   onOpenChange,
-  cardId,
+  cardId: _cardId,
   cardName,
   collections,
   currentCollectionIds,

@@ -247,7 +247,7 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onOpenSettings }
       const dataUrl = await fileToDataUrl(file)
       const cardData = await analyzeCardImage(dataUrl, apiKey, findCard)
       processCard(cardData)
-    } catch (error) {
+    } catch {
       toast.error('Could not identify the card. Try manual entry instead.', {
         action: {
           label: 'Enter manually',
@@ -322,7 +322,7 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onOpenSettings }
     try {
       const cardData = await analyzeCardImage(dataUrl, apiKey, findCard)
       processCard(cardData)
-    } catch (error) {
+    } catch {
       toast.error('Could not identify the card. Try manual entry instead.', {
         action: {
           label: 'Enter manually',
