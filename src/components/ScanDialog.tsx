@@ -28,6 +28,33 @@ const RARITIES = ['Common', 'Uncommon', 'Rare', 'Holo Rare', 'Ultra Rare', 'Secr
 const TYPES = ['Fire', 'Water', 'Grass', 'Electric', 'Psychic', 'Fighting', 'Darkness', 'Metal', 'Dragon', 'Fairy', 'Colorless']
 const BULK_SCAN_JPEG_QUALITY = 0.92
 
+// Maps common LLM rarity variants (lowercase) to their canonical value
+const RARITY_ALIASES: Record<string, string> = {
+  'holo': 'Holo Rare',
+  'holo rare': 'Holo Rare',
+  'holofoil rare': 'Holo Rare',
+  'rare holo': 'Holo Rare',
+  'ultra-rare': 'Ultra Rare',
+  'secret': 'Secret Rare',
+}
+
+// Maps common LLM type variants (lowercase) to their canonical value
+const TYPE_ALIASES: Record<string, string> = {
+  'colourless': 'Colorless',
+  'lightning': 'Electric',
+  'dark': 'Darkness',
+  'steel': 'Metal',
+  'normal': 'Colorless',
+}
+
+function resolveListValue(value: string | undefined, allowed: readonly string[], aliases: Record<string, string>): string | undefined {
+  const normalized = value?.trim().toLowerCase()
+  if (!normalized) return undefined
+  const aliased = aliases[normalized]
+  if (aliased) return aliased
+  return allowed.find(v => v.toLowerCase() === normalized)
+}
+
 async function analyzeCardImage(imageDataUrl: string, apiKey: string, findCard: (name: string, setName?: string, cardNumber?: string) => Promise<any>): Promise<Omit<PokemonCard, 'id' | 'quantity' | 'dateAdded'>> {
   const body = {
     messages: [
@@ -224,13 +251,19 @@ Include every card that is clearly visible and identifiable. If no Pokémon card
   const rawCards: Array<{ name?: string; set?: string; cardNumber?: string; rarity?: string; type?: string }> =
     Array.isArray(parsed.cards) ? parsed.cards : []
 
+  // Filter out entries the AI could not identify (blank or placeholder names)
+  const identifiable = rawCards.filter(card => {
+    const name = card.name?.trim()
+    return name && name.toLowerCase() !== 'unknown'
+  })
+
   const results = await Promise.all(
-    rawCards.map(async (card) => {
-      const name = card.name || 'Unknown'
-      const set = card.set || 'Unknown Set'
-      const cardNumber = card.cardNumber || '?'
-      const rarity = RARITIES.includes(card.rarity ?? '') ? card.rarity! : 'Common'
-      const type = TYPES.includes(card.type ?? '') ? card.type! : 'Colorless'
+    identifiable.map(async (card) => {
+      const name = card.name!.trim()
+      const set = card.set?.trim() || 'Unknown Set'
+      const cardNumber = card.cardNumber?.trim() || '?'
+      const rarity = resolveListValue(card.rarity, RARITIES, RARITY_ALIASES) ?? 'Common'
+      const type = resolveListValue(card.type, TYPES, TYPE_ALIASES) ?? 'Colorless'
 
       const tcgCard = await findCard(name, set, cardNumber)
       let imageUrl = `https://placehold.co/400x560/88ccee/ffffff?text=${encodeURIComponent(name)}`

@@ -219,14 +219,20 @@ function MainApp() {
   const handleCardsScanned = (newCards: PokemonCard[]) => {
     let addedCount = 0
     let updatedCount = 0
+
     setCards((currentCards) => {
       let updated = currentCards || []
+      // Compute counts inside a local scope so the updater stays pure;
+      // we'll read the resulting counts from the captured variables after
+      // the updater runs (they are only used outside setCards).
+      let localAdded = 0
+      let localUpdated = 0
       newCards.forEach(card => {
         const existing = updated.find(
           c => c.name === card.name && c.set === card.set && c.cardNumber === card.cardNumber
         )
         if (existing) {
-          updatedCount++
+          localUpdated++
           updated = updated.map(c =>
             c.id === existing.id
               ? {
@@ -239,17 +245,24 @@ function MainApp() {
               : c
           )
         } else {
-          addedCount++
+          localAdded++
           updated = [...updated, card]
         }
       })
+      addedCount = localAdded
+      updatedCount = localUpdated
       return updated
     })
-    if (addedCount === 0 && updatedCount === 0) return
-    const parts: string[] = []
-    if (addedCount > 0) parts.push(`${addedCount} new card${addedCount !== 1 ? 's' : ''} added`)
-    if (updatedCount > 0) parts.push(`${updatedCount} duplicate${updatedCount !== 1 ? 's' : ''} incremented`)
-    toast.success(parts.join(', ') + '!')
+
+    // Use a microtask so the values are settled after the updater runs
+    // (React may batch but the same-tick promise ensures the toast fires once)
+    Promise.resolve().then(() => {
+      if (addedCount === 0 && updatedCount === 0) return
+      const parts: string[] = []
+      if (addedCount > 0) parts.push(`${addedCount} new card${addedCount !== 1 ? 's' : ''} added`)
+      if (updatedCount > 0) parts.push(`${updatedCount} duplicate${updatedCount !== 1 ? 's' : ''} incremented`)
+      toast.success(parts.join(', ') + '!')
+    })
   }
 
 
