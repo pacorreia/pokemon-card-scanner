@@ -22,7 +22,7 @@ export default defineConfig({
       '/github-oauth': {
         target: 'https://github.com',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/github-oauth/, ''),
+        rewrite: (path) => path.replace(/^\/github-oauth(?=\/|$)/, ''),
       },
     },
   },
