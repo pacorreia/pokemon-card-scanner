@@ -245,6 +245,7 @@ function MainApp() {
       })
       return updated
     })
+    if (addedCount === 0 && updatedCount === 0) return
     const parts: string[] = []
     if (addedCount > 0) parts.push(`${addedCount} new card${addedCount !== 1 ? 's' : ''} added`)
     if (updatedCount > 0) parts.push(`${updatedCount} duplicate${updatedCount !== 1 ? 's' : ''} incremented`)

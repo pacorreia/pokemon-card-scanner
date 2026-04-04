@@ -381,8 +381,8 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onCardsScanned, 
   }
 
   const handleBulkDone = useCallback(() => {
-    const newCards: PokemonCard[] = bulkQueue.map((cardData, index) => ({
-      id: `${Date.now()}-${index}`,
+    const newCards: PokemonCard[] = bulkQueue.map((cardData) => ({
+      id: crypto.randomUUID(),
       ...cardData,
       quantity: 1,
       dateAdded: Date.now(),
@@ -593,7 +593,7 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onCardsScanned, 
                       >
                         <X className="w-3 h-3" />
                       </button>
-                      <p className="text-[10px] text-center text-muted-foreground mt-0.5 w-14 truncate">{card.name}</p>
+                      <p className="text-[10px] text-center text-muted-foreground mt-0.5 w-14 truncate" title={card.name}>{card.name}</p>
                     </div>
                   ))}
                 </div>
