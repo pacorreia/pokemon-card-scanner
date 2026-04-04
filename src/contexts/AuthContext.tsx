@@ -82,29 +82,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [deviceFlow, setDeviceFlow] = useState<DeviceFlowStatus>({ status: 'idle' })
   const abortDeviceFlowRef = useRef<(() => void) | null>(null)
 
-  // Validate stored token on first mount (fetch profile if token present but no user)
+  // Validate stored token on first mount — always revalidate to catch expired/revoked tokens
   useEffect(() => {
     const stored = readStoredToken()
-    if (stored && !readStoredUser()) {
-      fetchGitHubUser(stored).then((u) => {
-        if (u) {
-          setUser(u)
-          try {
-            localStorage.setItem(USER_KEY, JSON.stringify(u))
-          } catch {
-            // ignore
-          }
-        } else {
-          // Token invalid – clear it
-          setToken(null)
-          try {
-            localStorage.removeItem(TOKEN_KEY)
-          } catch {
-            // ignore
-          }
+    if (!stored) return
+    fetchGitHubUser(stored).then((u) => {
+      if (u) {
+        setUser(u)
+        try {
+          localStorage.setItem(USER_KEY, JSON.stringify(u))
+        } catch {
+          // ignore
         }
-      })
-    }
+      } else {
+        // Token invalid – clear everything
+        setToken(null)
+        setUser(null)
+        try {
+          localStorage.removeItem(TOKEN_KEY)
+          localStorage.removeItem(USER_KEY)
+        } catch {
+          // ignore
+        }
+      }
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -133,7 +134,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         },
       })
 
-      const authentication = await auth({ type: 'oauth' })
+      const authPromise = auth({ type: 'oauth' })
+
+      // Once the device code has been displayed, switch to 'polling' so the
+      // UI can show the spinner while we wait for the user to authorize.
+      authPromise.then(() => {
+        // handled below
+      }).catch(() => {
+        // handled below
+      })
+
+      // Yield to let the onVerification state update render, then mark polling
+      await new Promise<void>((resolve) => setTimeout(resolve, 0))
+      if (!aborted) {
+        setDeviceFlow((prev) =>
+          prev.status === 'pending' ? { status: 'polling' } : prev
+        )
+      }
+
+      const authentication = await authPromise
 
       if (aborted) return
 
@@ -178,31 +197,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const setManualToken = useCallback(async (t: string) => {
     const trimmed = t.trim()
-    try {
-      if (trimmed) {
-        localStorage.setItem(TOKEN_KEY, trimmed)
-      } else {
+
+    if (!trimmed) {
+      try {
         localStorage.removeItem(TOKEN_KEY)
         localStorage.removeItem(USER_KEY)
+      } catch {
+        // ignore
       }
-    } catch {
-      // ignore
+      setToken(null)
+      setUser(null)
+      return
     }
 
-    setToken(trimmed || null)
-
-    if (trimmed) {
+    try {
       const u = await fetchGitHubUser(trimmed)
-      setUser(u)
-      if (u) {
+      if (!u) {
         try {
-          localStorage.setItem(USER_KEY, JSON.stringify(u))
+          localStorage.removeItem(TOKEN_KEY)
+          localStorage.removeItem(USER_KEY)
         } catch {
           // ignore
         }
+        setToken(null)
+        setUser(null)
+        throw new Error('Invalid GitHub token — check the token and try again.')
       }
-    } else {
+
+      setToken(trimmed)
+      setUser(u)
+
+      try {
+        localStorage.setItem(TOKEN_KEY, trimmed)
+        localStorage.setItem(USER_KEY, JSON.stringify(u))
+      } catch {
+        // ignore
+      }
+    } catch (error) {
+      try {
+        localStorage.removeItem(TOKEN_KEY)
+        localStorage.removeItem(USER_KEY)
+      } catch {
+        // ignore
+      }
+      setToken(null)
       setUser(null)
+      throw error
     }
   }, [])
 

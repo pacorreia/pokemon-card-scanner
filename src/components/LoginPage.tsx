@@ -24,15 +24,23 @@ export function LoginPage() {
       return
     }
     setIsSubmitting(true)
-    await setManualToken(trimmed)
-    setIsSubmitting(false)
+    try {
+      await setManualToken(trimmed)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Invalid token.')
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
-  const handleCopyCode = () => {
+  const handleCopyCode = async () => {
     if (deviceFlow.status === 'pending') {
-      navigator.clipboard.writeText(deviceFlow.userCode).then(() => {
+      try {
+        await navigator.clipboard.writeText(deviceFlow.userCode)
         toast.success('Code copied to clipboard!')
-      })
+      } catch {
+        toast.error('Unable to copy code — please copy it manually.')
+      }
     }
   }
 

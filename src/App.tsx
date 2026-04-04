@@ -27,6 +27,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuCheckboxItem,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
@@ -634,13 +635,10 @@ function MainApp() {
                       <DropdownMenuSeparator />
                     </>
                   )}
-                  <button
-                    className="flex w-full items-center gap-2 px-2 py-1.5 text-sm rounded-sm hover:bg-accent hover:text-accent-foreground transition-colors"
-                    onClick={signOut}
-                  >
+                  <DropdownMenuItem onClick={signOut} className="gap-2">
                     <SignOut className="w-4 h-4" />
                     Sign out
-                  </button>
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
