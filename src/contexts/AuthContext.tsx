@@ -1,8 +1,8 @@
-import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
-import { createOAuthDeviceAuth } from '@octokit/auth-oauth-device'
+import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react'
 
 const TOKEN_KEY = 'github-pat'
 const USER_KEY = 'github-user'
+const OAUTH_STATE_KEY = 'github_oauth_state'
 
 const CLIENT_ID = (import.meta.env.VITE_GITHUB_CLIENT_ID as string | undefined) ?? ''
 
@@ -15,8 +15,7 @@ export interface GitHubUser {
 
 export type DeviceFlowStatus =
   | { status: 'idle' }
-  | { status: 'pending'; userCode: string; verificationUri: string; expiresAt: Date }
-  | { status: 'polling' }
+  | { status: 'loading' }
   | { status: 'error'; message: string }
 
 export interface AuthContextValue {
@@ -25,7 +24,7 @@ export interface AuthContextValue {
   isAuthenticated: boolean
   isOAuthEnabled: boolean
   deviceFlow: DeviceFlowStatus
-  signIn: () => Promise<void>
+  signIn: () => void
   signOut: () => void
   setManualToken: (token: string) => Promise<void>
   cancelDeviceFlow: () => void
@@ -80,7 +79,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(readStoredToken)
   const [user, setUser] = useState<GitHubUser | null>(readStoredUser)
   const [deviceFlow, setDeviceFlow] = useState<DeviceFlowStatus>({ status: 'idle' })
-  const abortDeviceFlowRef = useRef<(() => void) | null>(null)
 
   // Validate stored token on first mount — always revalidate to catch expired/revoked tokens
   useEffect(() => {
@@ -109,78 +107,81 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const signIn = useCallback(async () => {
+  // Handle OAuth redirect callback
+  useEffect(() => {
+    if (window.location.pathname !== '/auth/callback') return
+
+    const url = new URL(window.location.href)
+    const code = url.searchParams.get('code')
+    const state = url.searchParams.get('state')
+
+    if (!code) return
+
+    // Clear the callback URL immediately so refreshing doesn't re-use the code
+    window.history.replaceState({}, '', '/')
+
+    const expectedState = sessionStorage.getItem(OAUTH_STATE_KEY)
+    sessionStorage.removeItem(OAUTH_STATE_KEY)
+
+    if (!state || state !== expectedState) {
+      setDeviceFlow({ status: 'error', message: 'Invalid OAuth state. Please sign in again.' })
+      return
+    }
+
+    setDeviceFlow({ status: 'loading' })
+
+    const redirectUri = `${window.location.origin}/auth/callback`
+
+    fetch('/api/github/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, redirectUri }),
+    })
+      .then(async (res) => {
+        const data = (await res.json()) as {
+          access_token?: string
+          error?: string
+          error_description?: string
+        }
+        if (!res.ok || data.error || !data.access_token) {
+          throw new Error(data.error_description ?? data.error ?? 'Token exchange failed')
+        }
+        return data.access_token
+      })
+      .then(async (newToken) => {
+        const u = await fetchGitHubUser(newToken)
+        try {
+          localStorage.setItem(TOKEN_KEY, newToken)
+          if (u) localStorage.setItem(USER_KEY, JSON.stringify(u))
+        } catch {
+          // ignore
+        }
+        setToken(newToken)
+        setUser(u)
+        setDeviceFlow({ status: 'idle' })
+      })
+      .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : 'Authentication failed'
+        setDeviceFlow({ status: 'error', message })
+      })
+  }, [])
+
+  const signIn = useCallback(() => {
     if (!CLIENT_ID) return
-
-    setDeviceFlow({ status: 'idle' })
-
-    let aborted = false
-    abortDeviceFlowRef.current = () => {
-      aborted = true
-    }
-
-    try {
-      let notifyVerified!: () => void
-      const verified = new Promise<void>((resolve) => {
-        notifyVerified = resolve
-      })
-
-      const auth = createOAuthDeviceAuth({
-        clientType: 'oauth-app',
-        clientId: CLIENT_ID,
-        scopes: ['read:user'],
-        onVerification: (verification) => {
-          setDeviceFlow({
-            status: 'pending',
-            userCode: verification.user_code,
-            verificationUri: verification.verification_uri,
-            expiresAt: new Date(Date.now() + verification.expires_in * 1000),
-          })
-          notifyVerified()
-        },
-      })
-
-      const authPromise = auth({ type: 'oauth' })
-
-      // Wait for the device code to be shown, then switch to 'polling'
-      // so the spinner UI is displayed while the user authorizes.
-      // Race against authPromise so that any early failure (e.g. CORS, invalid
-      // client ID) propagates to the catch block instead of hanging forever.
-      await Promise.race([verified, authPromise])
-      if (!aborted) {
-        setDeviceFlow((prev) =>
-          prev.status === 'pending' ? { status: 'polling' } : prev
-        )
-      }
-
-      const authentication = await authPromise
-
-      if (aborted) return
-
-      const newToken = authentication.token
-      const u = await fetchGitHubUser(newToken)
-
-      try {
-        localStorage.setItem(TOKEN_KEY, newToken)
-        if (u) localStorage.setItem(USER_KEY, JSON.stringify(u))
-      } catch {
-        // ignore
-      }
-
-      setToken(newToken)
-      setUser(u)
-      setDeviceFlow({ status: 'idle' })
-    } catch (err) {
-      if (aborted) return
-      const message = err instanceof Error ? err.message : 'Authentication failed'
-      setDeviceFlow({ status: 'error', message })
-    } finally {
-      abortDeviceFlowRef.current = null
-    }
+    const state = crypto.randomUUID()
+    sessionStorage.setItem(OAUTH_STATE_KEY, state)
+    const redirectUri = `${window.location.origin}/auth/callback`
+    const params = new URLSearchParams({
+      client_id: CLIENT_ID,
+      redirect_uri: redirectUri,
+      scope: 'read:user',
+      state,
+    })
+    window.location.href = `https://github.com/login/oauth/authorize?${params}`
   }, [])
 
   const cancelDeviceFlow = useCallback(() => {
-    if (abortDeviceFlowRef.current) abortDeviceFlowRef.current()
+    sessionStorage.removeItem(OAUTH_STATE_KEY)
     setDeviceFlow({ status: 'idle' })
   }, [])
 
