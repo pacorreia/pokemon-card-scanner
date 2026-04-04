@@ -16,4 +16,14 @@ export default defineConfig({
       '@': resolve(projectRoot, 'src')
     }
   },
+  server: {
+    proxy: {
+      // Mirror the nginx proxy so device-flow OAuth works in development too.
+      '/github-oauth': {
+        target: 'https://github.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/github-oauth/, ''),
+      },
+    },
+  },
 });

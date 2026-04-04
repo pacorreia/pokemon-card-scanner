@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { GithubLogo, Key, ArrowRight, Warning } from '@phosphor-icons/react'
+import { GithubLogo, Key, ArrowRight, Warning, Copy } from '@phosphor-icons/react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -12,6 +12,10 @@ export function LoginPage() {
   const [showPat, setShowPat] = useState(false)
   const [patValue, setPatValue] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+
+  const handleSignIn = async () => {
+    await signIn()
+  }
 
   const handlePatSubmit = async () => {
     const trimmed = patValue.trim()
@@ -29,13 +33,24 @@ export function LoginPage() {
     }
   }
 
+  const handleCopyCode = async () => {
+    if (deviceFlow.status === 'pending') {
+      try {
+        await navigator.clipboard.writeText(deviceFlow.userCode)
+        toast.success('Code copied to clipboard!')
+      } catch {
+        toast.error('Unable to copy code — please copy it manually.')
+      }
+    }
+  }
+
   const handleBack = () => {
     setShowPat(false)
     setPatValue('')
-    cancelDeviceFlow()
   }
 
-  const isLoading = deviceFlow.status === 'loading'
+  const isDeviceFlowActive =
+    deviceFlow.status === 'pending' || deviceFlow.status === 'polling'
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
@@ -58,10 +73,59 @@ export function LoginPage() {
 
         <div className="rounded-2xl border bg-card shadow-sm p-6 space-y-4">
           <AnimatePresence mode="wait">
-            {/* Loading — exchanging OAuth code for token */}
-            {isLoading && (
+            {/* Device-flow pending — show user code */}
+            {deviceFlow.status === 'pending' && (
               <motion.div
-                key="loading"
+                key="device-pending"
+                initial={{ opacity: 0, scale: 0.97 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.97 }}
+                className="space-y-4"
+              >
+                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                  <GithubLogo className="w-4 h-4" />
+                  Complete sign-in on GitHub
+                </div>
+
+                <p className="text-sm text-muted-foreground">
+                  Open{' '}
+                  <a
+                    href={deviceFlow.verificationUri}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline font-medium text-foreground hover:text-primary"
+                  >
+                    {deviceFlow.verificationUri}
+                  </a>{' '}
+                  and enter this code:
+                </p>
+
+                <button
+                  type="button"
+                  onClick={handleCopyCode}
+                  className="w-full flex items-center justify-between rounded-xl border-2 border-primary/30 bg-primary/5 px-5 py-3 hover:bg-primary/10 transition-colors group"
+                  aria-label="Copy device code"
+                >
+                  <span className="text-2xl font-mono font-bold tracking-[0.25em] text-primary">
+                    {deviceFlow.userCode}
+                  </span>
+                  <Copy className="w-5 h-5 text-muted-foreground group-hover:text-foreground transition-colors" />
+                </button>
+
+                <p className="text-xs text-muted-foreground text-center">
+                  Waiting for you to authorize… this page will update automatically.
+                </p>
+
+                <Button variant="ghost" size="sm" className="w-full" onClick={cancelDeviceFlow}>
+                  Cancel
+                </Button>
+              </motion.div>
+            )}
+
+            {/* Device-flow polling — spinner */}
+            {deviceFlow.status === 'polling' && (
+              <motion.div
+                key="device-polling"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
@@ -72,14 +136,17 @@ export function LoginPage() {
                   transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
                   className="w-8 h-8 rounded-full border-2 border-primary border-t-transparent"
                 />
-                <p className="text-sm text-muted-foreground">Signing you in…</p>
+                <p className="text-sm text-muted-foreground">Waiting for authorization…</p>
+                <Button variant="ghost" size="sm" onClick={cancelDeviceFlow}>
+                  Cancel
+                </Button>
               </motion.div>
             )}
 
             {/* Error */}
             {deviceFlow.status === 'error' && (
               <motion.div
-                key="error"
+                key="device-error"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
@@ -91,7 +158,7 @@ export function LoginPage() {
             )}
 
             {/* Default: sign-in options */}
-            {!isLoading && (
+            {!isDeviceFlowActive && (
               <motion.div
                 key="options"
                 initial={{ opacity: 0 }}
@@ -103,7 +170,7 @@ export function LoginPage() {
                   <Button
                     className="w-full gap-2"
                     size="lg"
-                    onClick={signIn}
+                    onClick={handleSignIn}
                   >
                     <GithubLogo className="w-5 h-5" weight="fill" />
                     Sign in with GitHub

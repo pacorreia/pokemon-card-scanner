@@ -1,10 +1,16 @@
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
+import { createOAuthDeviceAuth } from '@octokit/auth-oauth-device'
+import { request as octokitRequest } from '@octokit/request'
 
 const TOKEN_KEY = 'github-pat'
 const USER_KEY = 'github-user'
-const OAUTH_STATE_KEY = 'github_oauth_state'
 
 const CLIENT_ID = (import.meta.env.VITE_GITHUB_CLIENT_ID as string | undefined) ?? ''
+
+// Route GitHub OAuth requests through the same-origin proxy to avoid CORS errors.
+// The proxy path /github-oauth/ is forwarded to https://github.com/ by
+// nginx in production and by the Vite dev server in development.
+const GITHUB_OAUTH_BASE = `${window.location.origin}/github-oauth`
 
 export interface GitHubUser {
   login: string
@@ -15,7 +21,8 @@ export interface GitHubUser {
 
 export type DeviceFlowStatus =
   | { status: 'idle' }
-  | { status: 'loading' }
+  | { status: 'pending'; userCode: string; verificationUri: string; expiresAt: Date }
+  | { status: 'polling' }
   | { status: 'error'; message: string }
 
 export interface AuthContextValue {
@@ -24,7 +31,7 @@ export interface AuthContextValue {
   isAuthenticated: boolean
   isOAuthEnabled: boolean
   deviceFlow: DeviceFlowStatus
-  signIn: () => void
+  signIn: () => Promise<void>
   signOut: () => void
   setManualToken: (token: string) => Promise<void>
   cancelDeviceFlow: () => void
@@ -79,6 +86,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(readStoredToken)
   const [user, setUser] = useState<GitHubUser | null>(readStoredUser)
   const [deviceFlow, setDeviceFlow] = useState<DeviceFlowStatus>({ status: 'idle' })
+  const abortDeviceFlowRef = useRef<(() => void) | null>(null)
 
   // Validate stored token on first mount — always revalidate to catch expired/revoked tokens
   useEffect(() => {
@@ -107,81 +115,81 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Handle OAuth redirect callback
-  useEffect(() => {
-    if (window.location.pathname !== '/auth/callback') return
+  const signIn = useCallback(async () => {
+    if (!CLIENT_ID) return
 
-    const url = new URL(window.location.href)
-    const code = url.searchParams.get('code')
-    const state = url.searchParams.get('state')
+    setDeviceFlow({ status: 'idle' })
 
-    if (!code) return
-
-    // Clear the callback URL immediately so refreshing doesn't re-use the code
-    window.history.replaceState({}, '', '/')
-
-    const expectedState = sessionStorage.getItem(OAUTH_STATE_KEY)
-    sessionStorage.removeItem(OAUTH_STATE_KEY)
-
-    if (!state || state !== expectedState) {
-      setDeviceFlow({ status: 'error', message: 'Invalid OAuth state. Please sign in again.' })
-      return
+    let aborted = false
+    abortDeviceFlowRef.current = () => {
+      aborted = true
     }
 
-    setDeviceFlow({ status: 'loading' })
-
-    const redirectUri = `${window.location.origin}/auth/callback`
-
-    fetch('/api/github/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code, redirectUri }),
-    })
-      .then(async (res) => {
-        const data = (await res.json()) as {
-          access_token?: string
-          error?: string
-          error_description?: string
-        }
-        if (!res.ok || data.error || !data.access_token) {
-          throw new Error(data.error_description ?? data.error ?? 'Token exchange failed')
-        }
-        return data.access_token
+    try {
+      let notifyVerified!: () => void
+      const verified = new Promise<void>((resolve) => {
+        notifyVerified = resolve
       })
-      .then(async (newToken) => {
-        const u = await fetchGitHubUser(newToken)
-        try {
-          localStorage.setItem(TOKEN_KEY, newToken)
-          if (u) localStorage.setItem(USER_KEY, JSON.stringify(u))
-        } catch {
-          // ignore
-        }
-        setToken(newToken)
-        setUser(u)
-        setDeviceFlow({ status: 'idle' })
-      })
-      .catch((err: unknown) => {
-        const message = err instanceof Error ? err.message : 'Authentication failed'
-        setDeviceFlow({ status: 'error', message })
-      })
-  }, [])
 
-  const signIn = useCallback(() => {
-    if (!CLIENT_ID) return
-    const state = crypto.randomUUID()
-    sessionStorage.setItem(OAUTH_STATE_KEY, state)
-    const redirectUri = `${window.location.origin}/auth/callback`
-    const params = new URLSearchParams({
-      client_id: CLIENT_ID,
-      redirect_uri: redirectUri,
-      scope: 'read:user',
-      state,
-    })
-    window.location.href = `https://github.com/login/oauth/authorize?${params}`
+      const auth = createOAuthDeviceAuth({
+        clientType: 'oauth-app',
+        clientId: CLIENT_ID,
+        scopes: ['read:user'],
+        onVerification: (verification) => {
+          setDeviceFlow({
+            status: 'pending',
+            userCode: verification.user_code,
+            verificationUri: verification.verification_uri,
+            expiresAt: new Date(Date.now() + verification.expires_in * 1000),
+          })
+          notifyVerified()
+        },
+        // Route through the same-origin proxy so the browser never makes a
+        // cross-origin request to github.com/login/... (which lacks CORS headers).
+        request: octokitRequest.defaults({ baseUrl: GITHUB_OAUTH_BASE }),
+      })
+
+      const authPromise = auth({ type: 'oauth' })
+
+      // Wait for the device code to be shown, then switch to 'polling'
+      // so the spinner UI is displayed while the user authorizes.
+      // Race against authPromise so that any early failure propagates to
+      // the catch block instead of hanging forever.
+      await Promise.race([verified, authPromise])
+      if (!aborted) {
+        setDeviceFlow((prev) =>
+          prev.status === 'pending' ? { status: 'polling' } : prev
+        )
+      }
+
+      const authentication = await authPromise
+
+      if (aborted) return
+
+      const newToken = authentication.token
+      const u = await fetchGitHubUser(newToken)
+
+      try {
+        localStorage.setItem(TOKEN_KEY, newToken)
+        if (u) localStorage.setItem(USER_KEY, JSON.stringify(u))
+      } catch {
+        // ignore
+      }
+
+      setToken(newToken)
+      setUser(u)
+      setDeviceFlow({ status: 'idle' })
+    } catch (err) {
+      if (aborted) return
+      const message = err instanceof Error ? err.message : 'Authentication failed'
+      setDeviceFlow({ status: 'error', message })
+    } finally {
+      abortDeviceFlowRef.current = null
+    }
   }, [])
 
   const cancelDeviceFlow = useCallback(() => {
-    sessionStorage.removeItem(OAUTH_STATE_KEY)
+    if (abortDeviceFlowRef.current) abortDeviceFlowRef.current()
     setDeviceFlow({ status: 'idle' })
   }, [])
 
