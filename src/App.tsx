@@ -89,12 +89,10 @@ function App() {
       let updatedCount = 0
 
       for (const card of cardsNeedingImages) {
-        // Abort if a newer run has started or this card was handled by a concurrent run
+        // Abort if a newer run has started or this card was already successfully updated
         if (imageUpdateRunIdRef.current !== runId) break
         if (updatedCardIdsRef.current.has(card.id)) continue
 
-        updatedCardIdsRef.current.add(card.id)
-        
         try {
           const dbCard = await findCard(card.name, card.set, card.cardNumber)
 
@@ -136,6 +134,9 @@ function App() {
               )
             })
             
+            // Mark as successfully updated only after setCards — prevents the card from
+            // being permanently locked out if this run was aborted before reaching setCards
+            updatedCardIdsRef.current.add(card.id)
             updatedCount++
             console.log(`[App] ✓ Updated image for ${card.name} to: ${imageUrl}`)
           } else {
