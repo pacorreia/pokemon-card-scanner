@@ -120,6 +120,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     try {
+      let notifyVerified!: () => void
+      const verified = new Promise<void>((resolve) => {
+        notifyVerified = resolve
+      })
+
       const auth = createOAuthDeviceAuth({
         clientType: 'oauth-app',
         clientId: CLIENT_ID,
@@ -131,21 +136,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             verificationUri: verification.verification_uri,
             expiresAt: new Date(Date.now() + verification.expires_in * 1000),
           })
+          notifyVerified()
         },
       })
 
       const authPromise = auth({ type: 'oauth' })
 
-      // Once the device code has been displayed, switch to 'polling' so the
-      // UI can show the spinner while we wait for the user to authorize.
-      authPromise.then(() => {
-        // handled below
-      }).catch(() => {
-        // handled below
-      })
-
-      // Yield to let the onVerification state update render, then mark polling
-      await new Promise<void>((resolve) => setTimeout(resolve, 0))
+      // Wait for the device code to be shown, then switch to 'polling'
+      // so the spinner UI is displayed while the user authorizes.
+      await verified
       if (!aborted) {
         setDeviceFlow((prev) =>
           prev.status === 'pending' ? { status: 'polling' } : prev
