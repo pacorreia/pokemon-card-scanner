@@ -4,7 +4,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Camera, Upload, Sparkle, PencilSimple, ArrowLeft } from '@phosphor-icons/react'
+import { Camera, Upload, Sparkle, PencilSimple, ArrowLeft, Stack, CheckCircle, Trash } from '@phosphor-icons/react'
+import { Badge } from '@/components/ui/badge'
 import { motion } from 'framer-motion'
 import { toast } from 'sonner'
 import type { PokemonCard } from '@/lib/types'
@@ -17,13 +18,42 @@ interface ScanDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onCardScanned: (card: PokemonCard) => void
+  onCardsScanned?: (cards: PokemonCard[]) => void
   onOpenSettings: () => void
 }
 
-type Mode = 'idle' | 'camera' | 'analyzing' | 'manual'
+type Mode = 'idle' | 'camera' | 'analyzing' | 'manual' | 'bulk' | 'bulk-review'
 
 const RARITIES = ['Common', 'Uncommon', 'Rare', 'Holo Rare', 'Ultra Rare', 'Secret Rare']
 const TYPES = ['Fire', 'Water', 'Grass', 'Electric', 'Psychic', 'Fighting', 'Darkness', 'Metal', 'Dragon', 'Fairy', 'Colorless']
+const BULK_SCAN_JPEG_QUALITY = 0.92
+
+// Maps common LLM rarity variants (lowercase) to their canonical value
+const RARITY_ALIASES: Record<string, string> = {
+  'holo': 'Holo Rare',
+  'holo rare': 'Holo Rare',
+  'holofoil rare': 'Holo Rare',
+  'rare holo': 'Holo Rare',
+  'ultra-rare': 'Ultra Rare',
+  'secret': 'Secret Rare',
+}
+
+// Maps common LLM type variants (lowercase) to their canonical value
+const TYPE_ALIASES: Record<string, string> = {
+  'colourless': 'Colorless',
+  'lightning': 'Electric',
+  'dark': 'Darkness',
+  'steel': 'Metal',
+  'normal': 'Colorless',
+}
+
+function resolveListValue(value: string | undefined, allowed: readonly string[], aliases: Record<string, string>): string | undefined {
+  const normalized = value?.trim().toLowerCase()
+  if (!normalized) return undefined
+  const aliased = aliases[normalized]
+  if (aliased) return aliased
+  return allowed.find(v => v.toLowerCase() === normalized)
+}
 
 async function analyzeCardImage(imageDataUrl: string, apiKey: string, findCard: (name: string, setName?: string, cardNumber?: string) => Promise<any>): Promise<Omit<PokemonCard, 'id' | 'quantity' | 'dateAdded'>> {
   const body = {
@@ -157,6 +187,116 @@ If this is not a Pokémon card or the image is too unclear to read, return: {"er
   }
 }
 
+async function analyzeMultipleCardsImage(
+  imageDataUrl: string,
+  apiKey: string,
+  findCard: (name: string, setName?: string, cardNumber?: string) => Promise<any>,
+): Promise<Array<Omit<PokemonCard, 'id' | 'quantity' | 'dateAdded'>>> {
+  const body = {
+    messages: [
+      {
+        role: 'system',
+        content: 'You are a Pokémon TCG card recognition expert. Analyze card images and return accurate JSON data.',
+      },
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'text',
+            text: `Analyze this image and identify ALL visible Pokémon TCG cards.
+Return a JSON object with a "cards" array — one entry per card you can clearly identify:
+{
+  "cards": [
+    {
+      "name": "Exact Pokémon name on the card (just the Pokémon name, not form variations)",
+      "set": "Set name (e.g., Base Set, Jungle, Fossil, Team Rocket, Sword & Shield, Scarlet & Violet, etc.)",
+      "cardNumber": "Card number as shown (e.g., 25/102)",
+      "rarity": "One of: Common, Uncommon, Rare, Holo Rare, Ultra Rare, Secret Rare",
+      "type": "One of: Fire, Water, Grass, Electric, Psychic, Fighting, Darkness, Metal, Dragon, Fairy, Colorless"
+    }
+  ]
+}
+Include every card that is clearly visible and identifiable. If no Pokémon cards are visible, return: {"cards": []}`,
+          },
+          {
+            type: 'image_url',
+            image_url: { url: imageDataUrl },
+          },
+        ],
+      },
+    ],
+    model: 'openai/gpt-4o',
+    response_format: { type: 'json_object' },
+    max_tokens: 2000,
+    temperature: 0.1,
+    top_p: 1.0,
+  }
+
+  const response = await fetch(GITHUB_MODELS_URL, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(`LLM request failed: ${response.status} - ${errorText}`)
+  }
+
+  const data = await response.json() as { choices: Array<{ message: { content: string } }> }
+  const parsed = JSON.parse(data.choices[0].message.content)
+  const rawCards: Array<{ name?: string; set?: string; cardNumber?: string; rarity?: string; type?: string }> =
+    Array.isArray(parsed.cards) ? parsed.cards : []
+
+  // Filter out entries the AI could not identify (blank or placeholder names)
+  const identifiable = rawCards.filter(card => {
+    const name = card.name?.trim()
+    return name && name.toLowerCase() !== 'unknown'
+  })
+
+  const results = await Promise.all(
+    identifiable.map(async (card) => {
+      const name = card.name!.trim()
+      const set = card.set?.trim() || 'Unknown Set'
+      const cardNumber = card.cardNumber?.trim() || '?'
+      const rarity = resolveListValue(card.rarity, RARITIES, RARITY_ALIASES) ?? 'Common'
+      const type = resolveListValue(card.type, TYPES, TYPE_ALIASES) ?? 'Colorless'
+
+      const tcgCard = await findCard(name, set, cardNumber)
+      let imageUrl = `https://placehold.co/400x560/88ccee/ffffff?text=${encodeURIComponent(name)}`
+      if (tcgCard?.images?.large) imageUrl = tcgCard.images.large
+      else if (tcgCard?.images?.small) imageUrl = tcgCard.images.small
+
+      const prices = tcgCard?.tcgplayer || tcgCard?.cardmarket ? {
+        tcgplayer: tcgCard.tcgplayer ? {
+          url: tcgCard.tcgplayer.url,
+          updatedAt: tcgCard.tcgplayer.updatedAt,
+          ...(tcgCard.tcgplayer.prices?.normal?.market && { market: tcgCard.tcgplayer.prices.normal.market }),
+          ...(tcgCard.tcgplayer.prices?.normal?.low && { low: tcgCard.tcgplayer.prices.normal.low }),
+          ...(tcgCard.tcgplayer.prices?.normal?.mid && { mid: tcgCard.tcgplayer.prices.normal.mid }),
+          ...(tcgCard.tcgplayer.prices?.normal?.high && { high: tcgCard.tcgplayer.prices.normal.high }),
+          ...(tcgCard.tcgplayer.prices?.holofoil?.market && { holofoil: tcgCard.tcgplayer.prices.holofoil.market }),
+          ...(tcgCard.tcgplayer.prices?.reverseHolofoil?.market && { reverseHolofoil: tcgCard.tcgplayer.prices.reverseHolofoil.market }),
+        } : undefined,
+        cardmarket: tcgCard.cardmarket ? {
+          url: tcgCard.cardmarket.url,
+          updatedAt: tcgCard.cardmarket.updatedAt,
+          ...(tcgCard.cardmarket.prices?.averageSellPrice && { averageSellPrice: tcgCard.cardmarket.prices.averageSellPrice }),
+          ...(tcgCard.cardmarket.prices?.lowPrice && { lowPrice: tcgCard.cardmarket.prices.lowPrice }),
+          ...(tcgCard.cardmarket.prices?.trendPrice && { trendPrice: tcgCard.cardmarket.prices.trendPrice }),
+        } : undefined,
+      } : undefined
+
+      return { name, set, cardNumber, rarity, type, imageUrl, prices, tcgCardId: tcgCard?.id } as Omit<PokemonCard, 'id' | 'quantity' | 'dateAdded'>
+    })
+  )
+
+  return results
+}
+
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -166,7 +306,7 @@ function fileToDataUrl(file: File): Promise<string> {
   })
 }
 
-export function ScanDialog({ open, onOpenChange, onCardScanned, onOpenSettings }: ScanDialogProps) {
+export function ScanDialog({ open, onOpenChange, onCardScanned, onCardsScanned, onOpenSettings }: ScanDialogProps) {
   const [mode, setMode] = useState<Mode>('idle')
   const [videoReady, setVideoReady] = useState(false)
   const [manualForm, setManualForm] = useState({
@@ -184,6 +324,8 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onOpenSettings }
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
+  const [bulkQueue, setBulkQueue] = useState<Array<Omit<PokemonCard, 'id' | 'quantity' | 'dateAdded'>>>([])
+  const [isMultiAnalyzing, setIsMultiAnalyzing] = useState(false)
 
   const stopCamera = useCallback(() => {
     if (streamRef.current) {
@@ -197,6 +339,8 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onOpenSettings }
       stopCamera()
       setMode('idle')
       setVideoReady(false)
+      setBulkQueue([])
+      setIsMultiAnalyzing(false)
     }
   }, [open, stopCamera])
 
@@ -211,6 +355,8 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onOpenSettings }
     stopCamera()
     setVideoReady(false)
     setMode('idle')
+    setBulkQueue([])
+    setIsMultiAnalyzing(false)
   }
 
   const processCard = useCallback((cardData: Omit<PokemonCard, 'id' | 'quantity' | 'dateAdded'>) => {
@@ -247,7 +393,7 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onOpenSettings }
       const dataUrl = await fileToDataUrl(file)
       const cardData = await analyzeCardImage(dataUrl, apiKey, findCard)
       processCard(cardData)
-    } catch (error) {
+    } catch {
       toast.error('Could not identify the card. Try manual entry instead.', {
         action: {
           label: 'Enter manually',
@@ -266,12 +412,15 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onOpenSettings }
     e.target.value = ''
   }
 
-  const startCamera = async () => {
-    setMode('camera')
+  const startCamera = async (targetMode: 'camera' | 'bulk' = 'camera') => {
+    setMode(targetMode)
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 720 }, height: { ideal: 1280 } },
-      })
+      // Landscape constraints for bulk (multiple cards on a table/binder)
+      // Portrait constraints for camera mode (single-card scan)
+      const videoConstraints = targetMode === 'bulk'
+        ? { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }
+        : { facingMode: 'environment', width: { ideal: 720 }, height: { ideal: 1280 } }
+      const stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints })
       streamRef.current = stream
       if (videoRef.current) {
         videoRef.current.srcObject = stream
@@ -322,7 +471,7 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onOpenSettings }
     try {
       const cardData = await analyzeCardImage(dataUrl, apiKey, findCard)
       processCard(cardData)
-    } catch (error) {
+    } catch {
       toast.error('Could not identify the card. Try manual entry instead.', {
         action: {
           label: 'Enter manually',
@@ -332,6 +481,73 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onOpenSettings }
       setMode('idle')
     }
   }
+
+  const captureMultipleCards = async () => {
+    if (!videoRef.current || !canvasRef.current) return
+    const video = videoRef.current
+    const canvas = canvasRef.current
+    if (!video.videoWidth || !video.videoHeight) return
+    canvas.width = video.videoWidth
+    canvas.height = video.videoHeight
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    ctx.drawImage(video, 0, 0)
+    const dataUrl = canvas.toDataURL('image/jpeg', BULK_SCAN_JPEG_QUALITY)
+    stopCamera()
+    setVideoReady(false)
+
+    const apiKey = authToken ?? ''
+    if (!apiKey) {
+      toast.error('API key required to scan cards.', {
+        description: 'Add your GitHub personal access token in Settings.',
+        action: {
+          label: 'Open Settings',
+          onClick: () => {
+            onOpenChange(false)
+            onOpenSettings()
+          },
+        },
+      })
+      setMode('idle')
+      return
+    }
+
+    setIsMultiAnalyzing(true)
+    try {
+      const cards = await analyzeMultipleCardsImage(dataUrl, apiKey, findCard)
+      if (cards.length === 0) {
+        toast.error('No Pokémon cards detected. Try again with better lighting or angle.')
+        setMode('bulk')
+        await startCamera('bulk')
+      } else {
+        setBulkQueue(cards)
+        setMode('bulk-review')
+      }
+    } catch {
+      toast.error('Could not analyze the image. Please try again.')
+      setMode('bulk')
+      await startCamera('bulk')
+    } finally {
+      setIsMultiAnalyzing(false)
+    }
+  }
+
+  const handleBulkDone = useCallback(() => {
+    const newCards: PokemonCard[] = bulkQueue.map((cardData) => ({
+      id: crypto.randomUUID(),
+      ...cardData,
+      quantity: 1,
+      dateAdded: Date.now(),
+    }))
+    if (onCardsScanned) {
+      onCardsScanned(newCards)
+    } else {
+      newCards.forEach(card => onCardScanned(card))
+    }
+    stopCamera()
+    setBulkQueue([])
+    onOpenChange(false)
+  }, [bulkQueue, onCardsScanned, onCardScanned, onOpenChange, stopCamera])
 
   const handleManualSubmit = (e: FormEvent) => {
     e.preventDefault()
@@ -370,10 +586,19 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onOpenSettings }
               <Button
                 size="lg"
                 className="w-full bg-accent hover:bg-accent/90 text-accent-foreground font-display font-semibold"
-                onClick={startCamera}
+                onClick={() => startCamera('camera')}
               >
                 <Camera className="w-5 h-5 mr-2" />
                 Scan with Camera
+              </Button>
+              <Button
+                size="lg"
+                variant="outline"
+                className="w-full font-display font-semibold"
+                onClick={() => startCamera('bulk')}
+              >
+                <Stack className="w-5 h-5 mr-2" />
+                Bulk Scan (Multiple Cards)
               </Button>
               <Button
                 size="lg"
@@ -449,6 +674,130 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onOpenSettings }
               <Camera className="w-5 h-5 mr-2" />
               {videoReady ? 'Capture Card' : 'Waiting for camera…'}
             </Button>
+          </div>
+        )}
+
+        {mode === 'bulk' && (
+          <div className="flex flex-col gap-4 py-4">
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="icon" onClick={handleBack}>
+                <ArrowLeft className="w-5 h-5" />
+              </Button>
+              <h2 className="text-xl font-bold font-display">Scan All Cards</h2>
+            </div>
+
+            {/* Wide landscape viewfinder — optimised for table/binder shots */}
+            <div className="relative rounded-lg overflow-hidden bg-black aspect-video">
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted
+                className="w-full h-full object-cover"
+              />
+              {/* Dashed wide-area guide — not a single card frame */}
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div className="w-[88%] h-[80%] border-2 border-dashed border-accent/70 rounded-xl" />
+              </div>
+              <div className="absolute bottom-3 left-0 right-0 text-center">
+                <p className="text-white text-xs font-medium bg-black/60 backdrop-blur-sm px-3 py-1.5 rounded-full inline-block">
+                  Frame all cards within the dashed area
+                </p>
+              </div>
+              {/* Analysing overlay */}
+              {isMultiAnalyzing && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/75 backdrop-blur-sm">
+                  <motion.div
+                    animate={{ scale: [1, 1.1, 1], rotate: [0, 5, -5, 0] }}
+                    transition={{ duration: 0.6, repeat: Infinity }}
+                  >
+                    <Sparkle className="w-10 h-10 text-primary" weight="fill" />
+                  </motion.div>
+                  <p className="text-white text-sm font-semibold">Scanning for cards…</p>
+                  <p className="text-white/70 text-xs">AI is identifying all visible cards</p>
+                </div>
+              )}
+              {!videoReady && !isMultiAnalyzing && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/70">
+                  <p className="text-white text-sm">Camera warming up…</p>
+                </div>
+              )}
+            </div>
+            <canvas ref={canvasRef} className="hidden" />
+
+            <Button
+              size="lg"
+              className="w-full bg-accent hover:bg-accent/90 text-accent-foreground font-display font-semibold"
+              onClick={captureMultipleCards}
+              disabled={!videoReady || isMultiAnalyzing}
+            >
+              <Stack className="w-5 h-5 mr-2" />
+              {isMultiAnalyzing ? 'Scanning…' : videoReady ? 'Scan All Cards' : 'Waiting for camera…'}
+            </Button>
+          </div>
+        )}
+
+        {mode === 'bulk-review' && (
+          <div className="flex flex-col gap-4 py-4">
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="icon" onClick={handleBack}>
+                <ArrowLeft className="w-5 h-5" />
+              </Button>
+              <h2 className="text-xl font-bold font-display">Cards Found</h2>
+              <Badge variant="secondary" className="ml-auto">
+                {bulkQueue.length} card{bulkQueue.length !== 1 ? 's' : ''}
+              </Badge>
+            </div>
+
+            {bulkQueue.length === 0 ? (
+              <div className="flex flex-col items-center gap-3 py-8 text-center">
+                <p className="text-muted-foreground text-sm">All cards removed. Go back and try again.</p>
+              </div>
+            ) : (
+              <div className="overflow-y-auto max-h-[50vh] space-y-2 pr-1">
+                {bulkQueue.map((card, i) => (
+                  <div key={i} className="flex items-center gap-3 p-2 rounded-lg border border-border bg-muted/30">
+                    <div className="w-10 h-14 flex-shrink-0 rounded overflow-hidden bg-muted border border-border">
+                      <img src={card.imageUrl} alt={card.name} className="w-full h-full object-cover" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-sm truncate">{card.name}</p>
+                      <p className="text-xs text-muted-foreground truncate">{card.set} · #{card.cardNumber}</p>
+                      <p className="text-xs text-muted-foreground">{card.rarity} · {card.type}</p>
+                    </div>
+                    <button
+                      onClick={() => setBulkQueue(prev => prev.filter((_, idx) => idx !== i))}
+                      className="flex-shrink-0 w-8 h-8 flex items-center justify-center text-muted-foreground hover:text-destructive transition-colors rounded-md hover:bg-destructive/10"
+                      aria-label={`Remove ${card.name}`}
+                    >
+                      <Trash className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex flex-col gap-2">
+              {bulkQueue.length > 0 && (
+                <Button
+                  size="lg"
+                  className="w-full bg-accent hover:bg-accent/90 text-accent-foreground font-display font-semibold"
+                  onClick={handleBulkDone}
+                >
+                  <CheckCircle className="w-5 h-5 mr-2" />
+                  Add {bulkQueue.length} Card{bulkQueue.length !== 1 ? 's' : ''} to Collection
+                </Button>
+              )}
+              <Button
+                size="lg"
+                variant="outline"
+                className="w-full font-display font-semibold"
+                onClick={() => { setBulkQueue([]); startCamera('bulk') }}
+              >
+                <Camera className="w-5 h-5 mr-2" />
+                Scan Again
+              </Button>
+            </div>
           </div>
         )}
 

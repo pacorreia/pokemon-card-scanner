@@ -144,7 +144,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       // Wait for the device code to be shown, then switch to 'polling'
       // so the spinner UI is displayed while the user authorizes.
-      await verified
+      // Race against authPromise so that any early failure (e.g. CORS, invalid
+      // client ID) propagates to the catch block instead of hanging forever.
+      await Promise.race([verified, authPromise])
       if (!aborted) {
         setDeviceFlow((prev) =>
           prev.status === 'pending' ? { status: 'polling' } : prev
