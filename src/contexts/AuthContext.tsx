@@ -1,10 +1,16 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
 import { createOAuthDeviceAuth } from '@octokit/auth-oauth-device'
+import { request as octokitRequest } from '@octokit/request'
 
 const TOKEN_KEY = 'github-pat'
 const USER_KEY = 'github-user'
 
 const CLIENT_ID = (import.meta.env.VITE_GITHUB_CLIENT_ID as string | undefined) ?? ''
+
+// Route GitHub OAuth requests through the same-origin proxy to avoid CORS errors.
+// The proxy path /github-oauth/ is forwarded to https://github.com/ by
+// nginx in production and by the Vite dev server in development.
+const GITHUB_OAUTH_BASE = `${window.location.origin}/github-oauth`
 
 export interface GitHubUser {
   login: string
@@ -138,14 +144,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           })
           notifyVerified()
         },
+        // Route through the same-origin proxy so the browser never makes a
+        // cross-origin request to github.com/login/... (which lacks CORS headers).
+        request: octokitRequest.defaults({ baseUrl: GITHUB_OAUTH_BASE }),
       })
 
       const authPromise = auth({ type: 'oauth' })
 
       // Wait for the device code to be shown, then switch to 'polling'
       // so the spinner UI is displayed while the user authorizes.
-      // Race against authPromise so that any early failure (e.g. CORS, invalid
-      // client ID) propagates to the catch block instead of hanging forever.
+      // Race against authPromise so that any early failure propagates to
+      // the catch block instead of hanging forever.
       await Promise.race([verified, authPromise])
       if (!aborted) {
         setDeviceFlow((prev) =>
