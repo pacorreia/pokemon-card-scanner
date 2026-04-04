@@ -216,6 +216,42 @@ function MainApp() {
     })
   }
 
+  const handleCardsScanned = (newCards: PokemonCard[]) => {
+    let addedCount = 0
+    let updatedCount = 0
+    setCards((currentCards) => {
+      let updated = currentCards || []
+      newCards.forEach(card => {
+        const existing = updated.find(
+          c => c.name === card.name && c.set === card.set && c.cardNumber === card.cardNumber
+        )
+        if (existing) {
+          updatedCount++
+          updated = updated.map(c =>
+            c.id === existing.id
+              ? {
+                  ...c,
+                  quantity: c.quantity + 1,
+                  imageUrl: card.imageUrl && !card.imageUrl.includes('placehold.co') ? card.imageUrl : c.imageUrl,
+                  prices: card.prices || c.prices,
+                  tcgCardId: card.tcgCardId || c.tcgCardId,
+                }
+              : c
+          )
+        } else {
+          addedCount++
+          updated = [...updated, card]
+        }
+      })
+      return updated
+    })
+    const parts: string[] = []
+    if (addedCount > 0) parts.push(`${addedCount} new card${addedCount !== 1 ? 's' : ''} added`)
+    if (updatedCount > 0) parts.push(`${updatedCount} duplicate${updatedCount !== 1 ? 's' : ''} incremented`)
+    toast.success(parts.join(', ') + '!')
+  }
+
+
   const handleUpdateQuantity = (cardId: string, delta: number) => {
     setCards((currentCards) => {
       const current = currentCards || []
@@ -831,6 +867,7 @@ function MainApp() {
         open={scanDialogOpen}
         onOpenChange={setScanDialogOpen}
         onCardScanned={handleCardScanned}
+        onCardsScanned={handleCardsScanned}
         onOpenSettings={() => setSettingsOpen(true)}
       />
 

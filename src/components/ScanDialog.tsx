@@ -4,7 +4,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Camera, Upload, Sparkle, PencilSimple, ArrowLeft } from '@phosphor-icons/react'
+import { Camera, Upload, Sparkle, PencilSimple, ArrowLeft, Stack, CheckCircle, X } from '@phosphor-icons/react'
+import { Badge } from '@/components/ui/badge'
 import { motion } from 'framer-motion'
 import { toast } from 'sonner'
 import type { PokemonCard } from '@/lib/types'
@@ -17,10 +18,11 @@ interface ScanDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onCardScanned: (card: PokemonCard) => void
+  onCardsScanned?: (cards: PokemonCard[]) => void
   onOpenSettings: () => void
 }
 
-type Mode = 'idle' | 'camera' | 'analyzing' | 'manual'
+type Mode = 'idle' | 'camera' | 'analyzing' | 'manual' | 'bulk'
 
 const RARITIES = ['Common', 'Uncommon', 'Rare', 'Holo Rare', 'Ultra Rare', 'Secret Rare']
 const TYPES = ['Fire', 'Water', 'Grass', 'Electric', 'Psychic', 'Fighting', 'Darkness', 'Metal', 'Dragon', 'Fairy', 'Colorless']
@@ -166,7 +168,7 @@ function fileToDataUrl(file: File): Promise<string> {
   })
 }
 
-export function ScanDialog({ open, onOpenChange, onCardScanned, onOpenSettings }: ScanDialogProps) {
+export function ScanDialog({ open, onOpenChange, onCardScanned, onCardsScanned, onOpenSettings }: ScanDialogProps) {
   const [mode, setMode] = useState<Mode>('idle')
   const [videoReady, setVideoReady] = useState(false)
   const [manualForm, setManualForm] = useState({
@@ -184,6 +186,8 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onOpenSettings }
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
+  const [bulkQueue, setBulkQueue] = useState<Array<Omit<PokemonCard, 'id' | 'quantity' | 'dateAdded'>>>([])
+  const [isBulkAnalyzing, setIsBulkAnalyzing] = useState(false)
 
   const stopCamera = useCallback(() => {
     if (streamRef.current) {
@@ -197,6 +201,8 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onOpenSettings }
       stopCamera()
       setMode('idle')
       setVideoReady(false)
+      setBulkQueue([])
+      setIsBulkAnalyzing(false)
     }
   }, [open, stopCamera])
 
@@ -211,6 +217,8 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onOpenSettings }
     stopCamera()
     setVideoReady(false)
     setMode('idle')
+    setBulkQueue([])
+    setIsBulkAnalyzing(false)
   }
 
   const processCard = useCallback((cardData: Omit<PokemonCard, 'id' | 'quantity' | 'dateAdded'>) => {
@@ -266,8 +274,8 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onOpenSettings }
     e.target.value = ''
   }
 
-  const startCamera = async () => {
-    setMode('camera')
+  const startCamera = async (targetMode: 'camera' | 'bulk' = 'camera') => {
+    setMode(targetMode)
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'environment', width: { ideal: 720 }, height: { ideal: 1280 } },
@@ -333,6 +341,62 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onOpenSettings }
     }
   }
 
+  const bulkCapture = async () => {
+    if (!videoRef.current || !canvasRef.current) return
+    const video = videoRef.current
+    const canvas = canvasRef.current
+    if (!video.videoWidth || !video.videoHeight) return
+    canvas.width = video.videoWidth
+    canvas.height = video.videoHeight
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    ctx.drawImage(video, 0, 0)
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.9)
+
+    const apiKey = authToken ?? ''
+    if (!apiKey) {
+      toast.error('API key required to scan cards.', {
+        description: 'Add your GitHub personal access token in Settings.',
+        action: {
+          label: 'Open Settings',
+          onClick: () => {
+            onOpenChange(false)
+            onOpenSettings()
+          },
+        },
+      })
+      return
+    }
+
+    setIsBulkAnalyzing(true)
+    try {
+      const cardData = await analyzeCardImage(dataUrl, apiKey, findCard)
+      setBulkQueue(prev => [...prev, cardData])
+      toast.success(`${cardData.name} queued!`, { description: `${cardData.set} · ${cardData.rarity}` })
+    } catch {
+      toast.error('Could not identify the card. Please try again or adjust the frame.')
+    } finally {
+      setIsBulkAnalyzing(false)
+    }
+  }
+
+  const handleBulkDone = useCallback(() => {
+    const newCards: PokemonCard[] = bulkQueue.map((cardData, index) => ({
+      id: `${Date.now()}-${index}`,
+      ...cardData,
+      quantity: 1,
+      dateAdded: Date.now(),
+    }))
+    if (onCardsScanned) {
+      onCardsScanned(newCards)
+    } else {
+      newCards.forEach(card => onCardScanned(card))
+    }
+    stopCamera()
+    setBulkQueue([])
+    onOpenChange(false)
+  }, [bulkQueue, onCardsScanned, onCardScanned, onOpenChange, stopCamera])
+
   const handleManualSubmit = (e: FormEvent) => {
     e.preventDefault()
     if (!manualForm.name || !manualForm.set || !manualForm.rarity || !manualForm.type) {
@@ -370,10 +434,19 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onOpenSettings }
               <Button
                 size="lg"
                 className="w-full bg-accent hover:bg-accent/90 text-accent-foreground font-display font-semibold"
-                onClick={startCamera}
+                onClick={() => startCamera('camera')}
               >
                 <Camera className="w-5 h-5 mr-2" />
                 Scan with Camera
+              </Button>
+              <Button
+                size="lg"
+                variant="outline"
+                className="w-full font-display font-semibold"
+                onClick={() => startCamera('bulk')}
+              >
+                <Stack className="w-5 h-5 mr-2" />
+                Bulk Scan (Multiple Cards)
               </Button>
               <Button
                 size="lg"
@@ -449,6 +522,105 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onOpenSettings }
               <Camera className="w-5 h-5 mr-2" />
               {videoReady ? 'Capture Card' : 'Waiting for camera…'}
             </Button>
+          </div>
+        )}
+
+        {mode === 'bulk' && (
+          <div className="flex flex-col gap-4 py-4">
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="icon" onClick={handleBack}>
+                <ArrowLeft className="w-5 h-5" />
+              </Button>
+              <h2 className="text-xl font-bold font-display">Bulk Scan</h2>
+              {bulkQueue.length > 0 && (
+                <Badge variant="secondary" className="ml-auto">
+                  {bulkQueue.length} card{bulkQueue.length !== 1 ? 's' : ''}
+                </Badge>
+              )}
+            </div>
+
+            {/* Camera viewfinder */}
+            <div className="relative rounded-lg overflow-hidden bg-black aspect-[4/5]">
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div className="relative w-[55%] aspect-[5/7] border-4 border-accent rounded-xl shadow-2xl">
+                  <div className="absolute -top-3 -left-3 w-6 h-6 border-t-4 border-l-4 border-accent rounded-tl-lg" />
+                  <div className="absolute -top-3 -right-3 w-6 h-6 border-t-4 border-r-4 border-accent rounded-tr-lg" />
+                  <div className="absolute -bottom-3 -left-3 w-6 h-6 border-b-4 border-l-4 border-accent rounded-bl-lg" />
+                  <div className="absolute -bottom-3 -right-3 w-6 h-6 border-b-4 border-r-4 border-accent rounded-br-lg" />
+                </div>
+              </div>
+              {/* Analysing overlay */}
+              {isBulkAnalyzing && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/70 backdrop-blur-sm">
+                  <motion.div
+                    animate={{ scale: [1, 1.1, 1], rotate: [0, 5, -5, 0] }}
+                    transition={{ duration: 0.6, repeat: Infinity }}
+                  >
+                    <Sparkle className="w-10 h-10 text-primary" weight="fill" />
+                  </motion.div>
+                  <p className="text-white text-sm font-medium">Identifying card…</p>
+                </div>
+              )}
+              {!videoReady && !isBulkAnalyzing && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/70">
+                  <p className="text-white text-sm">Camera warming up…</p>
+                </div>
+              )}
+            </div>
+            <canvas ref={canvasRef} className="hidden" />
+
+            {/* Queued cards */}
+            {bulkQueue.length > 0 && (
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Queued cards</p>
+                <div className="flex gap-2 overflow-x-auto pb-1">
+                  {bulkQueue.map((card, i) => (
+                    <div key={i} className="relative flex-shrink-0 group">
+                      <div className="w-14 h-20 rounded-md overflow-hidden bg-muted border border-border">
+                        <img src={card.imageUrl} alt={card.name} className="w-full h-full object-cover" />
+                      </div>
+                      <button
+                        onClick={() => setBulkQueue(prev => prev.filter((_, idx) => idx !== i))}
+                        className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-destructive text-destructive-foreground rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                        aria-label={`Remove ${card.name}`}
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                      <p className="text-[10px] text-center text-muted-foreground mt-0.5 w-14 truncate">{card.name}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Action buttons */}
+            <Button
+              size="lg"
+              className="w-full bg-accent hover:bg-accent/90 text-accent-foreground font-display font-semibold"
+              onClick={bulkCapture}
+              disabled={!videoReady || isBulkAnalyzing}
+            >
+              <Camera className="w-5 h-5 mr-2" />
+              {isBulkAnalyzing ? 'Identifying…' : videoReady ? 'Capture Card' : 'Waiting for camera…'}
+            </Button>
+            {bulkQueue.length > 0 && (
+              <Button
+                size="lg"
+                variant="outline"
+                className="w-full font-display font-semibold border-accent text-accent hover:bg-accent hover:text-accent-foreground"
+                onClick={handleBulkDone}
+              >
+                <CheckCircle className="w-5 h-5 mr-2" />
+                Add {bulkQueue.length} Card{bulkQueue.length !== 1 ? 's' : ''} to Collection
+              </Button>
+            )}
           </div>
         )}
 
