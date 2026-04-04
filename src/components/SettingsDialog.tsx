@@ -3,18 +3,9 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/compone
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Eye, EyeSlash } from '@phosphor-icons/react'
+import { Eye, EyeSlash, GithubLogo, SignOut } from '@phosphor-icons/react'
 import { toast } from 'sonner'
-
-const PAT_KEY = 'github-pat'
-
-function readStoredToken(): string {
-  try {
-    return localStorage.getItem(PAT_KEY) ?? ''
-  } catch {
-    return ''
-  }
-}
+import { useAuth } from '@/contexts/AuthContext'
 
 interface SettingsDialogProps {
   open: boolean
@@ -22,46 +13,44 @@ interface SettingsDialogProps {
 }
 
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
-  const [token, setToken] = useState<string>(readStoredToken)
+  const { user, token, isOAuthEnabled, signIn, signOut, setManualToken } = useAuth()
+  const [editToken, setEditToken] = useState('')
   const [showToken, setShowToken] = useState(false)
-  const [hasStoredToken, setHasStoredToken] = useState(() => readStoredToken() !== '')
 
-  // Sync input and stored-token indicator whenever the dialog opens
+  // Sync edit field whenever dialog opens
   useEffect(() => {
     if (open) {
-      const stored = readStoredToken()
-      setToken(stored)
-      setHasStoredToken(stored !== '')
+      setEditToken(token ?? '')
       setShowToken(false)
     }
-  }, [open])
+  }, [open, token])
 
-  const handleSave = () => {
-    const trimmed = token.trim()
+  const handleSave = async () => {
+    const trimmed = editToken.trim()
     if (!trimmed) {
       toast.error('Please enter a token before saving.')
       return
     }
-    try {
-      localStorage.setItem(PAT_KEY, trimmed)
-    } catch {
-      toast.error('Failed to save token. Check your browser storage settings.')
-      return
-    }
-    setHasStoredToken(true)
+    await setManualToken(trimmed)
     toast.success('API key saved.')
     onOpenChange(false)
   }
 
-  const handleClear = () => {
-    try {
-      localStorage.removeItem(PAT_KEY)
-    } catch {
-      // ignore
-    }
-    setToken('')
-    setHasStoredToken(false)
+  const handleClear = async () => {
+    await setManualToken('')
+    setEditToken('')
     toast.success('API key cleared.')
+  }
+
+  const handleSignIn = async () => {
+    onOpenChange(false)
+    await signIn()
+  }
+
+  const handleSignOut = () => {
+    signOut()
+    onOpenChange(false)
+    toast.success('Signed out.')
   }
 
   return (
@@ -69,19 +58,50 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       <DialogContent className="sm:max-w-md">
         <DialogTitle>Settings</DialogTitle>
         <DialogDescription>
-          Configure your GitHub personal access token to enable AI-powered card scanning.
+          Configure GitHub authentication to enable AI-powered card scanning.
         </DialogDescription>
 
-        <div className="space-y-4 py-2">
+        <div className="space-y-5 py-2">
+          {/* GitHub account info */}
+          {user && (
+            <div className="flex items-center gap-3 rounded-lg border bg-muted/40 px-4 py-3">
+              <img
+                src={user.avatar_url}
+                alt={user.login}
+                className="w-9 h-9 rounded-full shrink-0"
+                referrerPolicy="no-referrer"
+              />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold truncate">{user.name ?? user.login}</p>
+                <p className="text-xs text-muted-foreground truncate">@{user.login}</p>
+              </div>
+              <Button variant="ghost" size="sm" onClick={handleSignOut} className="shrink-0 gap-1.5 text-xs">
+                <SignOut className="w-3.5 h-3.5" />
+                Sign out
+              </Button>
+            </div>
+          )}
+
+          {/* OAuth sign-in (shown when no user and OAuth is configured) */}
+          {!user && isOAuthEnabled && (
+            <Button className="w-full gap-2" variant="outline" onClick={handleSignIn}>
+              <GithubLogo className="w-4 h-4" weight="fill" />
+              Sign in with GitHub
+            </Button>
+          )}
+
+          {/* Manual PAT section */}
           <div className="space-y-2">
-            <Label htmlFor="pat-input">GitHub Personal Access Token</Label>
+            <Label htmlFor="settings-pat-input">
+              {user ? 'Override Token (optional)' : 'GitHub Personal Access Token'}
+            </Label>
             <div className="relative">
               <Input
-                id="pat-input"
+                id="settings-pat-input"
                 type={showToken ? 'text' : 'password'}
                 placeholder="ghp_…"
-                value={token}
-                onChange={(e) => setToken(e.target.value)}
+                value={editToken}
+                onChange={(e) => setEditToken(e.target.value)}
                 className="pr-10 font-mono text-sm"
                 autoComplete="off"
               />
@@ -112,22 +132,24 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
             </p>
           </div>
 
-          <p className="text-sm text-muted-foreground">
-            Don't have a token?{' '}
-            <a
-              href="https://github.com/settings/tokens/new?description=Pokemon+Card+Scanner&scopes="
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline hover:text-foreground font-medium"
-            >
-              Create one on GitHub
-            </a>{' '}
-            (no scopes needed for GitHub Models).
-          </p>
+          {!user && (
+            <p className="text-sm text-muted-foreground">
+              Don't have a token?{' '}
+              <a
+                href="https://github.com/settings/tokens/new?description=Pokemon+Card+Scanner&scopes="
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:text-foreground font-medium"
+              >
+                Create one on GitHub
+              </a>{' '}
+              (no scopes needed for GitHub Models).
+            </p>
+          )}
         </div>
 
         <div className="flex gap-2 justify-end pt-2">
-          <Button variant="outline" onClick={handleClear} disabled={!hasStoredToken}>
+          <Button variant="outline" onClick={handleClear} disabled={!token}>
             Clear
           </Button>
           <Button onClick={handleSave}>Save</Button>
