@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react'
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
@@ -40,6 +40,11 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
   const [isLoadingCards, setIsLoadingCards] = useState(false)
   const [cols, setCols] = useState(3)
   const parentRef = useRef<HTMLDivElement>(null)
+
+  const handleOpenChange = useCallback((isOpen: boolean) => {
+    if (!isOpen) setSelectedCard(null)
+    onOpenChange(isOpen)
+  }, [onOpenChange])
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -236,7 +241,7 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
   })
 
   return (
-    <Sheet open={open} onOpenChange={(isOpen) => { if (!isOpen) setSelectedCard(null); onOpenChange(isOpen); }}>
+    <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetContent side="right" className="w-full sm:max-w-2xl p-0 flex flex-col h-full">
         {selectedCard ? (
           <>
@@ -355,29 +360,29 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
           </>
         ) : (
           <>
-          <SheetHeader className="px-6 pt-6 pb-4 border-b shrink-0">
-            <SheetTitle className="font-display text-2xl flex items-center gap-2">
-              <Package className="w-6 h-6" weight="duotone" />
-              Browse Database
-            </SheetTitle>
-            <SheetDescription>
-              Explore all cards and sets from the local TCG database
-            </SheetDescription>
-          </SheetHeader>
+            <SheetHeader className="px-6 pt-6 pb-4 border-b shrink-0">
+              <SheetTitle className="font-display text-2xl flex items-center gap-2">
+                <Package className="w-6 h-6" weight="duotone" />
+                Browse Database
+              </SheetTitle>
+              <SheetDescription>
+                Explore all cards and sets from the local TCG database
+              </SheetDescription>
+            </SheetHeader>
 
-          {!isLoaded ? (
-            <div className="flex-1 flex items-center justify-center p-6">
-              <div className="text-center space-y-4">
-                <Warning className="w-16 h-16 mx-auto text-yellow-600" weight="duotone" />
-                <div>
-                  <p className="font-semibold text-lg mb-2">Database not loaded</p>
-                  <p className="text-sm text-muted-foreground">
-                    Please download the database first to browse cards and sets
-                  </p>
+            {!isLoaded ? (
+              <div className="flex-1 flex items-center justify-center p-6">
+                <div className="text-center space-y-4">
+                  <Warning className="w-16 h-16 mx-auto text-yellow-600" weight="duotone" />
+                  <div>
+                    <p className="font-semibold text-lg mb-2">Database not loaded</p>
+                    <p className="text-sm text-muted-foreground">
+                      Please download the database first to browse cards and sets
+                    </p>
+                  </div>
                 </div>
               </div>
-            </div>
-          ) : (
+            ) : (
             <>
               <div className="px-6 py-4 space-y-4 border-b shrink-0">
                 <div className="relative">
