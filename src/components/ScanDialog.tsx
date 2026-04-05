@@ -181,6 +181,7 @@ If this is not a Pokémon card or the image is too unclear to read, return: {"er
     cardNumber,
     rarity,
     type,
+    supertype: tcgCard?.supertype,
     imageUrl,
     prices,
     tcgCardId: tcgCard?.id
@@ -290,7 +291,7 @@ Include every card that is clearly visible and identifiable. If no Pokémon card
         } : undefined,
       } : undefined
 
-      return { name, set, cardNumber, rarity, type, imageUrl, prices, tcgCardId: tcgCard?.id } as Omit<PokemonCard, 'id' | 'quantity' | 'dateAdded'>
+      return { name, set, cardNumber, rarity, type, supertype: tcgCard?.supertype, imageUrl, prices, tcgCardId: tcgCard?.id } as Omit<PokemonCard, 'id' | 'quantity' | 'dateAdded'>
     })
   )
 
