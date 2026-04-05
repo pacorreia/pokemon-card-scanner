@@ -1,4 +1,5 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -14,6 +15,22 @@ interface DatabaseBrowserProps {
   onOpenChange: (open: boolean) => void
 }
 
+const HEADER_HEIGHT = 52
+const SEARCH_COUNT_HEIGHT = 32
+const CARD_ROW_HEIGHT_3_COLS = 340
+const CARD_ROW_HEIGHT_2_COLS = 480
+const SET_ITEM_HEIGHT = 88
+const VIRTUAL_PADDING_START = 16
+const VIRTUAL_PADDING_END = 80
+const MOBILE_BREAKPOINT = 640
+
+type VirtualRow =
+  | { type: 'group-header'; label: string; count: number }
+  | { type: 'card-row'; cards: TCGCard[] }
+  | { type: 'search-count'; count: number }
+  | { type: 'series-header'; label: string; count: number }
+  | { type: 'set-item'; set: TCGSet }
+
 export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
   const { getAllCards, sets, isLoaded, metadata } = useTCGDatabase()
   const [cards, setCards] = useState<TCGCard[]>([])
@@ -21,6 +38,31 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
   const [selectedTab, setSelectedTab] = useState<'cards' | 'sets'>('cards')
   const [selectedCard, setSelectedCard] = useState<TCGCard | null>(null)
   const [isLoadingCards, setIsLoadingCards] = useState(false)
+  const [cols, setCols] = useState(3)
+  const parentRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    const mediaQuery = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`)
+    const updateCols = (matches: boolean) => {
+      setCols(matches ? 2 : 3)
+    }
+
+    updateCols(mediaQuery.matches)
+
+    const handleChange = (event: MediaQueryListEvent) => {
+      updateCols(event.matches)
+    }
+
+    mediaQuery.addEventListener('change', handleChange)
+
+    return () => {
+      mediaQuery.removeEventListener('change', handleChange)
+    }
+  }, [])
 
   useEffect(() => {
     const loadCards = async () => {
@@ -50,6 +92,13 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
       metadata 
     })
   }, [open, isLoaded, cards.length, sets.length, metadata])
+
+  // Reset scroll when tab or search changes
+  useEffect(() => {
+    if (parentRef.current) {
+      parentRef.current.scrollTop = 0
+    }
+  }, [selectedTab, searchQuery])
 
   const filteredCards = useMemo(() => {
     if (!cards || cards.length === 0) return []
@@ -107,6 +156,84 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
     })
     return groups
   }, [filteredSets])
+
+  const cardVirtualRows = useMemo((): VirtualRow[] => {
+    if (filteredCards.length === 0) return []
+    const rows: VirtualRow[] = []
+    if (searchQuery) {
+      rows.push({ type: 'search-count', count: filteredCards.length })
+      for (let i = 0; i < filteredCards.length; i += cols) {
+        rows.push({ type: 'card-row', cards: filteredCards.slice(i, i + cols) })
+      }
+    } else {
+      Object.entries(groupedByType).forEach(([type, typeCards]) => {
+        rows.push({ type: 'group-header', label: type, count: typeCards.length })
+        for (let i = 0; i < typeCards.length; i += cols) {
+          rows.push({ type: 'card-row', cards: typeCards.slice(i, i + cols) })
+        }
+      })
+    }
+    return rows
+  }, [filteredCards, groupedByType, searchQuery, cols])
+
+  const setVirtualRows = useMemo((): VirtualRow[] => {
+    if (filteredSets.length === 0) return []
+    const rows: VirtualRow[] = []
+    Object.entries(groupedBySeries).forEach(([series, seriesSets]) => {
+      rows.push({ type: 'series-header', label: series, count: seriesSets.length })
+      seriesSets.forEach(set => rows.push({ type: 'set-item', set }))
+    })
+    return rows
+  }, [filteredSets, groupedBySeries])
+
+  const activeRows = selectedTab === 'cards' ? cardVirtualRows : setVirtualRows
+
+  const getVirtualRowKey = useMemo(() => {
+    return (index: number) => {
+      const row = activeRows[index]
+      if (!row) return `${selectedTab}-row-${index}`
+
+      switch (row.type) {
+        case 'group-header':
+          return `group-header:${row.label}`
+        case 'series-header':
+          return `series-header:${row.label}`
+        case 'search-count':
+          return 'search-count'
+        case 'set-item':
+          return `set-item:${row.set.id}`
+        case 'card-row':
+          return `card-row:${row.cards
+            .map(card => card.id ?? `${card.name}-${card.number ?? ''}-${card.supertype ?? ''}`)
+            .join('|')}`
+      }
+    }
+  }, [activeRows, selectedTab])
+
+  const rowVirtualizer = useVirtualizer({
+    count: activeRows.length,
+    getItemKey: getVirtualRowKey,
+    getScrollElement: () => parentRef.current,
+    estimateSize: (index) => {
+      const row = activeRows[index]
+      if (!row) return 50
+      switch (row.type) {
+        case 'group-header':
+        case 'series-header':
+          return HEADER_HEIGHT
+        case 'search-count':
+          return SEARCH_COUNT_HEIGHT
+        case 'card-row':
+          return cols === 3 ? CARD_ROW_HEIGHT_3_COLS : CARD_ROW_HEIGHT_2_COLS
+        case 'set-item':
+          return SET_ITEM_HEIGHT
+      }
+    },
+    paddingStart: VIRTUAL_PADDING_START,
+    paddingEnd: VIRTUAL_PADDING_END,
+    measureElement: el => el.getBoundingClientRect().height,
+    overscan: 3,
+  })
 
   return (
     <>
@@ -177,23 +304,59 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
                 </Tabs>
               </div>
 
-              <div className="flex-1 overflow-y-auto">
-                <div className="px-6 py-4 pb-20">
-                  {selectedTab === 'cards' && (
-                    <div className="space-y-6">
-                      {filteredCards.length === 0 ? (
-                        <div className="text-center py-12">
-                          <p className="text-muted-foreground">No cards found</p>
-                        </div>
-                      ) : (
-                        <>
-                          {searchQuery ? (
-                            <>
-                              <p className="text-sm text-muted-foreground">
-                                {filteredCards.length.toLocaleString()} {filteredCards.length === 1 ? 'card' : 'cards'} found
-                              </p>
-                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                                {filteredCards.map((card) => (
+              <div ref={parentRef} className="flex-1 overflow-y-auto">
+                {/* Empty / loading states */}
+                {isLoadingCards && selectedTab === 'cards' && (
+                  <div className="text-center py-12">
+                    <p className="text-muted-foreground">Loading cards...</p>
+                  </div>
+                )}
+                {!isLoadingCards && activeRows.length === 0 && (
+                  <div className="text-center py-12">
+                    <p className="text-muted-foreground">
+                      {selectedTab === 'cards' ? 'No cards found' : 'No sets found'}
+                    </p>
+                  </div>
+                )}
+
+                {/* Virtual scroll container */}
+                {activeRows.length > 0 && (
+                  <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, position: 'relative' }}>
+                    {rowVirtualizer.getVirtualItems().map(virtualItem => {
+                      const row = activeRows[virtualItem.index]
+                      const isFirst = virtualItem.index === 0
+                      return (
+                        <div
+                          key={virtualItem.key}
+                          data-index={virtualItem.index}
+                          ref={rowVirtualizer.measureElement}
+                          style={{
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            width: '100%',
+                            transform: `translateY(${virtualItem.start}px)`,
+                          }}
+                          className="px-6"
+                        >
+                          {row.type === 'search-count' && (
+                            <p className="text-sm text-muted-foreground pb-3">
+                              {row.count.toLocaleString()} {row.count === 1 ? 'card' : 'cards'} found
+                            </p>
+                          )}
+
+                          {(row.type === 'group-header' || row.type === 'series-header') && (
+                            <div className={isFirst ? 'pb-0' : 'pt-6 pb-0'}>
+                              <h3 className="font-display font-semibold text-lg mb-3 flex items-center gap-2">
+                                {row.label}
+                                <Badge variant="outline">{row.count}</Badge>
+                              </h3>
+                            </div>
+                          )}
+
+                          {row.type === 'card-row' && (
+                            <div className={`grid gap-3 pb-3 ${cols === 3 ? 'grid-cols-3' : 'grid-cols-2'}`}>
+                              {row.cards.map(card => (
                                 <button
                                   key={card.id}
                                   onClick={() => setSelectedCard(card)}
@@ -207,7 +370,7 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
                                         className="w-full h-full object-cover"
                                       />
                                     ) : (
-                                      <div className="w-full h-full flex items-center justify-center text-muted-foreground">
+                                      <div className="w-full h-full flex items-center justify-center text-muted-foreground text-xs">
                                         No Image
                                       </div>
                                     )}
@@ -218,102 +381,47 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
                                   </div>
                                 </button>
                               ))}
-                              </div>
-                            </>
-                          ) : (
-                            Object.entries(groupedByType).map(([type, typeCards]) => (
-                              <div key={type}>
-                                <h3 className="font-display font-semibold text-lg mb-3 flex items-center gap-2">
-                                  {type}
-                                  <Badge variant="outline">{typeCards.length}</Badge>
-                                </h3>
-                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                                  {typeCards.map((card) => (
-                                    <button
-                                      key={card.id}
-                                      onClick={() => setSelectedCard(card)}
-                                      className="group relative bg-card rounded-lg overflow-hidden border hover:border-primary transition-all hover:shadow-lg"
-                                    >
-                                      <div className="aspect-[2/3] bg-muted">
-                                        {card.images?.small ? (
-                                          <img
-                                            src={card.images.small}
-                                            alt={card.name}
-                                            className="w-full h-full object-cover"
-                                          />
-                                        ) : (
-                                          <div className="w-full h-full flex items-center justify-center text-muted-foreground text-xs">
-                                            No Image
-                                          </div>
+                            </div>
+                          )}
+
+                          {row.type === 'set-item' && (
+                            <div className="pb-2">
+                              <Card className="hover:border-primary transition-colors">
+                                <CardContent className="p-4">
+                                  <div className="flex items-start gap-4">
+                                    <div className="w-12 h-12 bg-muted rounded-lg flex items-center justify-center shrink-0">
+                                      <img
+                                        src={row.set.images.symbol}
+                                        alt={row.set.name}
+                                        className="w-8 h-8 object-contain"
+                                      />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <h4 className="font-semibold truncate">{row.set.name}</h4>
+                                      <div className="flex flex-wrap items-center gap-2 mt-1">
+                                        <Badge variant="secondary" className="text-xs">
+                                          {row.set.total} cards
+                                        </Badge>
+                                        <span className="text-xs text-muted-foreground">
+                                          {new Date(row.set.releaseDate).toLocaleDateString()}
+                                        </span>
+                                        {row.set.ptcgoCode && (
+                                          <Badge variant="outline" className="text-xs">
+                                            {row.set.ptcgoCode}
+                                          </Badge>
                                         )}
                                       </div>
-                                      <div className="p-2">
-                                        <p className="text-xs font-semibold truncate">{card.name}</p>
-                                        <p className="text-xs text-muted-foreground truncate">{card.set?.name || 'Unknown Set'}</p>
-                                      </div>
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
-                            ))
-                          )}
-                        </>
-                      )}
-                    </div>
-                  )}
-
-                  {selectedTab === 'sets' && (
-                    <div className="space-y-6">
-                      {filteredSets.length === 0 ? (
-                        <div className="text-center py-12">
-                          <p className="text-muted-foreground">No sets found</p>
-                        </div>
-                      ) : (
-                        Object.entries(groupedBySeries).map(([series, seriesSets]) => (
-                          <div key={series}>
-                            <h3 className="font-display font-semibold text-lg mb-3 flex items-center gap-2">
-                              {series}
-                              <Badge variant="outline">{seriesSets.length}</Badge>
-                            </h3>
-                            <div className="space-y-2">
-                              {seriesSets.map((set) => (
-                                <Card key={set.id} className="hover:border-primary transition-colors">
-                                  <CardContent className="p-4">
-                                    <div className="flex items-start gap-4">
-                                      <div className="w-12 h-12 bg-muted rounded-lg flex items-center justify-center shrink-0">
-                                        <img
-                                          src={set.images.symbol}
-                                          alt={set.name}
-                                          className="w-8 h-8 object-contain"
-                                        />
-                                      </div>
-                                      <div className="flex-1 min-w-0">
-                                        <h4 className="font-semibold truncate">{set.name}</h4>
-                                        <div className="flex flex-wrap items-center gap-2 mt-1">
-                                          <Badge variant="secondary" className="text-xs">
-                                            {set.total} cards
-                                          </Badge>
-                                          <span className="text-xs text-muted-foreground">
-                                            {new Date(set.releaseDate).toLocaleDateString()}
-                                          </span>
-                                          {set.ptcgoCode && (
-                                            <Badge variant="outline" className="text-xs">
-                                              {set.ptcgoCode}
-                                            </Badge>
-                                          )}
-                                        </div>
-                                      </div>
                                     </div>
-                                  </CardContent>
-                                </Card>
-                              ))}
+                                  </div>
+                                </CardContent>
+                              </Card>
                             </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  )}
-                </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
             </>
           )}
