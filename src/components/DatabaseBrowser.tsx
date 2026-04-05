@@ -40,7 +40,6 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
   const [isLoadingCards, setIsLoadingCards] = useState(false)
   const [cols, setCols] = useState(3)
   const parentRef = useRef<HTMLDivElement>(null)
-  const resizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -62,7 +61,6 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
 
     return () => {
       mediaQuery.removeEventListener('change', handleChange)
-      if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current)
     }
   }, [])
 
