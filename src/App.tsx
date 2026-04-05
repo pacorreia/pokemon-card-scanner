@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
-import { Camera, MagnifyingGlass, Copy, Database, BookOpen, Funnel, X, CheckSquare, ArrowsDownUp, Folders, Gear } from '@phosphor-icons/react'
+import { Camera, MagnifyingGlass, Copy, Funnel, X, CheckSquare, ArrowsDownUp, ArrowLeft } from '@phosphor-icons/react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ScanDialog } from '@/components/ScanDialog'
 import { CardItem } from '@/components/CardItem'
@@ -21,7 +21,7 @@ import { SettingsDialog } from '@/components/SettingsDialog'
 import { useTCGDatabase } from '@/lib/tcg-database'
 import type { PokemonCard, ViewMode, CardCollection } from '@/lib/types'
 import { toast } from 'sonner'
-import { cn } from '@/lib/utils'
+import { HomeView } from '@/components/HomeView'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -59,6 +59,7 @@ function MainApp() {
   const [selectedTypes, setSelectedTypes] = useState<string[]>([])
   const [selectedRarities, setSelectedRarities] = useState<string[]>([])
   const [selectedSupertypes, setSelectedSupertypes] = useState<string[]>([])
+  const [appView, setAppView] = useState<'home' | 'catalog'>('home')
   const [isSelectionMode, setIsSelectionMode] = useState(false)
   const [selectedCardIds, setSelectedCardIds] = useState<Set<string>>(new Set())
   const [hasCheckedDatabase, setHasCheckedDatabase] = useState(false)
@@ -525,6 +526,7 @@ function MainApp() {
     setSelectedCollection(collection)
     setViewMode('collection')
     setCollectionsManagerOpen(false)
+    setAppView('catalog')
   }
 
   const handleAddCardToCollection = (card: PokemonCard) => {
@@ -591,252 +593,270 @@ function MainApp() {
         )}
       </AnimatePresence>
 
-      <div className={`container mx-auto px-4 py-6 max-w-7xl ${isSelectionMode && selectedCardIds.size > 0 ? 'pt-24' : ''}`}>
-        <header className="mb-8">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex-1">
-              <h1 className="text-4xl font-bold font-display tracking-tight mb-2">
-                PokéDex Scanner
-              </h1>
-              <p className="text-muted-foreground">
-                {(cards || []).length === 0 ? (
-                  'Build your collection'
-                ) : (
-                  <>
-                    {(cards || []).length} unique {(cards || []).length === 1 ? 'card' : 'cards'} • {totalCards} total
-                    {collectionValue > 0 && (
-                      <> • Est. value: ${collectionValue.toFixed(2)}</>
-                    )}
-                  </>
-                )}
-              </p>
-            </div>
-            <div className="flex gap-2 shrink-0">
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => setSettingsOpen(true)}
-                className="shrink-0"
-                title="Settings"
-              >
-                <Gear className="w-5 h-5" />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => setExportImportOpen(true)}
-                className="shrink-0"
-                title="Backup & Restore"
-              >
-                <ArrowsDownUp className="w-5 h-5" />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => setDbBrowserOpen(true)}
-                className="shrink-0"
-                title="Browse Database"
-              >
-                <BookOpen className="w-5 h-5" />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => setDbManagerOpen(true)}
-                className="shrink-0"
-                title="Manage Database"
-              >
-                <Database className="w-5 h-5" />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => setCollectionsManagerOpen(true)}
-                className="shrink-0"
-                title="Manage Collections"
-              >
-                <Folders className="w-5 h-5" />
-              </Button>
-              {(cards || []).length > 0 && !isSelectionMode && (
+      <div className={`container mx-auto px-4 py-6 max-w-7xl ${isSelectionMode && selectedCardIds.size > 0 && appView === 'catalog' ? 'pt-24' : ''}`}>
+        {appView === 'home' ? (
+          <HomeView
+            cardCount={(cards || []).length}
+            isDatabaseLoaded={isDatabaseLoaded}
+            onScan={() => setScanDialogOpen(true)}
+            onCatalog={() => setAppView('catalog')}
+            onBrowseDB={() => setDbBrowserOpen(true)}
+            onManageDB={() => setDbManagerOpen(true)}
+            onSettings={() => setSettingsOpen(true)}
+            onCustomDecks={() => toast.info('Custom Decks coming soon!')}
+          />
+        ) : (
+          <>
+            <header className="mb-8">
+              <div className="flex items-center gap-3 mb-6">
                 <Button
-                  variant="outline"
+                  variant="ghost"
                   size="icon"
-                  onClick={handleToggleSelectionMode}
+                  onClick={() => setAppView('home')}
                   className="shrink-0"
-                  title="Select Multiple Cards"
+                  title="Back to Home"
                 >
-                  <CheckSquare className="w-5 h-5" />
+                  <ArrowLeft className="w-5 h-5" />
                 </Button>
-              )}
-            </div>
-          </div>
-
-          {(cards || []).length > 0 && (
-            <div className="space-y-4">
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <MagnifyingGlass className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-                  <Input
-                    placeholder="Search by name, set, type, or rarity..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-10 h-12 text-base"
-                  />
-                </div>
-                
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="lg" className="h-12 px-4 relative">
-                      <Funnel className="w-5 h-5 mr-2" />
-                      Filters
-                      {activeFiltersCount > 0 && (
-                        <Badge 
-                          variant="default" 
-                          className="ml-2 h-5 min-w-5 px-1.5 flex items-center justify-center"
-                        >
-                          {activeFiltersCount}
-                        </Badge>
-                      )}
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-56">
-                    {activeFiltersCount > 0 && (
+                <div className="flex-1">
+                  <h1 className="text-4xl font-bold font-display tracking-tight mb-1">
+                    My Catalog
+                  </h1>
+                  <p className="text-muted-foreground">
+                    {(cards || []).length === 0 ? (
+                      'No cards yet'
+                    ) : (
                       <>
-                        <div className="px-2 py-1.5">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="w-full justify-start text-xs h-7"
-                            onClick={handleClearFilters}
-                          >
-                            <X className="w-3 h-3 mr-1.5" />
-                            Clear all filters
-                          </Button>
-                        </div>
-                        <DropdownMenuSeparator />
+                        {(cards || []).length} unique {(cards || []).length === 1 ? 'card' : 'cards'} • {totalCards} total
+                        {collectionValue > 0 && (
+                          <> • Est. value: ${collectionValue.toFixed(2)}</>
+                        )}
                       </>
                     )}
-                    
-                    <DropdownMenuLabel>Card Types</DropdownMenuLabel>
-                    {availableTypes.length > 0 ? (
-                      availableTypes.map(type => (
-                        <DropdownMenuCheckboxItem
-                          key={type}
-                          checked={selectedTypes.includes(type)}
-                          onCheckedChange={() => handleToggleType(type)}
-                        >
-                          {type}
-                        </DropdownMenuCheckboxItem>
-                      ))
-                    ) : (
-                      <div className="px-2 py-1.5 text-sm text-muted-foreground">
-                        No types available
-                      </div>
-                    )}
-                    
-                    <DropdownMenuSeparator />
-                    
-                    <DropdownMenuLabel>Rarities</DropdownMenuLabel>
-                    {availableRarities.length > 0 ? (
-                      availableRarities.map(rarity => (
-                        <DropdownMenuCheckboxItem
-                          key={rarity}
-                          checked={selectedRarities.includes(rarity)}
-                          onCheckedChange={() => handleToggleRarity(rarity)}
-                        >
-                          {rarity}
-                        </DropdownMenuCheckboxItem>
-                      ))
-                    ) : (
-                      <div className="px-2 py-1.5 text-sm text-muted-foreground">
-                        No rarities available
-                      </div>
-                    )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                  </p>
+                </div>
+                <div className="flex gap-2 shrink-0">
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => setExportImportOpen(true)}
+                    className="shrink-0"
+                    title="Backup & Restore"
+                  >
+                    <ArrowsDownUp className="w-5 h-5" />
+                  </Button>
+                  {(cards || []).length > 0 && !isSelectionMode && (
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={handleToggleSelectionMode}
+                      className="shrink-0"
+                      title="Select Multiple Cards"
+                    >
+                      <CheckSquare className="w-5 h-5" />
+                    </Button>
+                  )}
+                </div>
               </div>
 
-              {activeFiltersCount > 0 && (
-                <div className="flex flex-wrap gap-2">
-                  {selectedTypes.map(type => (
-                    <Badge key={type} variant="secondary" className="pl-2.5 pr-1.5 py-1.5 gap-1.5">
-                      <span className="text-xs font-medium">Type: {type}</span>
-                      <button
-                        onClick={() => handleToggleType(type)}
-                        className="hover:bg-secondary-foreground/20 rounded-full p-0.5 transition-colors"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </Badge>
-                  ))}
-                  {selectedRarities.map(rarity => (
-                    <Badge key={rarity} variant="secondary" className="pl-2.5 pr-1.5 py-1.5 gap-1.5">
-                      <span className="text-xs font-medium">Rarity: {rarity}</span>
-                      <button
-                        onClick={() => handleToggleRarity(rarity)}
-                        className="hover:bg-secondary-foreground/20 rounded-full p-0.5 transition-colors"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </Badge>
-                  ))}
+              {(cards || []).length > 0 && (
+                <div className="space-y-4">
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <MagnifyingGlass className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                      <Input
+                        placeholder="Search by name, set, type, or rarity..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="pl-10 h-12 text-base"
+                      />
+                    </div>
+
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" size="lg" className="h-12 px-4 relative">
+                          <Funnel className="w-5 h-5 mr-2" />
+                          Filters
+                          {activeFiltersCount > 0 && (
+                            <Badge
+                              variant="default"
+                              className="ml-2 h-5 min-w-5 px-1.5 flex items-center justify-center"
+                            >
+                              {activeFiltersCount}
+                            </Badge>
+                          )}
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-56">
+                        {activeFiltersCount > 0 && (
+                          <>
+                            <div className="px-2 py-1.5">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="w-full justify-start text-xs h-7"
+                                onClick={handleClearFilters}
+                              >
+                                <X className="w-3 h-3 mr-1.5" />
+                                Clear all filters
+                              </Button>
+                            </div>
+                            <DropdownMenuSeparator />
+                          </>
+                        )}
+
+                        <DropdownMenuLabel>Card Category</DropdownMenuLabel>
+                        {availableSupertypes.length > 0 ? (
+                          availableSupertypes.map(supertype => (
+                            <DropdownMenuCheckboxItem
+                              key={supertype}
+                              checked={selectedSupertypes.includes(supertype)}
+                              onCheckedChange={() => handleToggleSupertype(supertype)}
+                            >
+                              {supertype}
+                            </DropdownMenuCheckboxItem>
+                          ))
+                        ) : (
+                          <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                            No categories available
+                          </div>
+                        )}
+
+                        <DropdownMenuSeparator />
+
+                        <DropdownMenuLabel>Card Types</DropdownMenuLabel>
+                        {availableTypes.length > 0 ? (
+                          availableTypes.map(type => (
+                            <DropdownMenuCheckboxItem
+                              key={type}
+                              checked={selectedTypes.includes(type)}
+                              onCheckedChange={() => handleToggleType(type)}
+                            >
+                              {type}
+                            </DropdownMenuCheckboxItem>
+                          ))
+                        ) : (
+                          <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                            No types available
+                          </div>
+                        )}
+
+                        <DropdownMenuSeparator />
+
+                        <DropdownMenuLabel>Rarities</DropdownMenuLabel>
+                        {availableRarities.length > 0 ? (
+                          availableRarities.map(rarity => (
+                            <DropdownMenuCheckboxItem
+                              key={rarity}
+                              checked={selectedRarities.includes(rarity)}
+                              onCheckedChange={() => handleToggleRarity(rarity)}
+                            >
+                              {rarity}
+                            </DropdownMenuCheckboxItem>
+                          ))
+                        ) : (
+                          <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                            No rarities available
+                          </div>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+
+                  {activeFiltersCount > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {selectedSupertypes.map(supertype => (
+                        <Badge key={supertype} variant="secondary" className="pl-2.5 pr-1.5 py-1.5 gap-1.5">
+                          <span className="text-xs font-medium">Category: {supertype}</span>
+                          <button
+                            onClick={() => handleToggleSupertype(supertype)}
+                            className="hover:bg-secondary-foreground/20 rounded-full p-0.5 transition-colors"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </Badge>
+                      ))}
+                      {selectedTypes.map(type => (
+                        <Badge key={type} variant="secondary" className="pl-2.5 pr-1.5 py-1.5 gap-1.5">
+                          <span className="text-xs font-medium">Type: {type}</span>
+                          <button
+                            onClick={() => handleToggleType(type)}
+                            className="hover:bg-secondary-foreground/20 rounded-full p-0.5 transition-colors"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </Badge>
+                      ))}
+                      {selectedRarities.map(rarity => (
+                        <Badge key={rarity} variant="secondary" className="pl-2.5 pr-1.5 py-1.5 gap-1.5">
+                          <span className="text-xs font-medium">Rarity: {rarity}</span>
+                          <button
+                            onClick={() => handleToggleRarity(rarity)}
+                            className="hover:bg-secondary-foreground/20 rounded-full p-0.5 transition-colors"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+
+                  <Tabs value={viewMode} onValueChange={(value) => setViewMode(value as ViewMode)}>
+                    <TabsList className="grid w-full grid-cols-2">
+                      <TabsTrigger value="all" className="font-display font-semibold">
+                        All Cards
+                        <Badge variant="secondary" className="ml-2">
+                          {(cards || []).length}
+                        </Badge>
+                      </TabsTrigger>
+                      <TabsTrigger value="duplicates" className="font-display font-semibold">
+                        <Copy className="w-4 h-4 mr-1.5" />
+                        Duplicates
+                        <Badge variant="secondary" className="ml-2">
+                          {duplicateCount}
+                        </Badge>
+                      </TabsTrigger>
+                    </TabsList>
+                  </Tabs>
                 </div>
               )}
+            </header>
 
-              <Tabs value={viewMode} onValueChange={(value) => setViewMode(value as ViewMode)}>
-                <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="all" className="font-display font-semibold">
-                    All Cards
-                    <Badge variant="secondary" className="ml-2">
-                      {(cards || []).length}
-                    </Badge>
-                  </TabsTrigger>
-                  <TabsTrigger value="duplicates" className="font-display font-semibold">
-                    <Copy className="w-4 h-4 mr-1.5" />
-                    Duplicates
-                    <Badge variant="secondary" className="ml-2">
-                      {duplicateCount}
-                    </Badge>
-                  </TabsTrigger>
-                </TabsList>
-              </Tabs>
-            </div>
-          )}
-        </header>
-
-        <main>
-          {(cards || []).length === 0 ? (
-            <EmptyState onScanClick={() => setScanDialogOpen(true)} />
-          ) : filteredCards.length === 0 ? (
-            <div className="text-center py-20">
-              <p className="text-xl text-muted-foreground mb-4">No cards found</p>
-              <p className="text-sm text-muted-foreground mb-6">
-                Try adjusting your search or filters
-              </p>
-              <Button variant="outline" onClick={handleClearFilters}>
-                Clear All Filters
-              </Button>
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-              <AnimatePresence mode="popLayout">
-                {filteredCards.map((card) => card ? (
-                  <CardItem
-                    key={card.id}
-                    card={card}
-                    onClick={() => handleCardClick(card)}
-                    onUpdateQuantity={(delta) => handleUpdateQuantity(card.id, delta)}
-                    onDelete={() => handleDeleteCard(card.id)}
-                    onAddToCollection={() => handleAddCardToCollection(card)}
-                    isSelectionMode={isSelectionMode}
-                    isSelected={selectedCardIds.has(card.id)}
-                    onToggleSelect={() => handleToggleCardSelection(card.id)}
-                  />
-                ) : null)}
-              </AnimatePresence>
-            </div>
-          )}
-        </main>
+            <main>
+              {(cards || []).length === 0 ? (
+                <EmptyState onScanClick={() => setScanDialogOpen(true)} />
+              ) : filteredCards.length === 0 ? (
+                <div className="text-center py-20">
+                  <p className="text-xl text-muted-foreground mb-4">No cards found</p>
+                  <p className="text-sm text-muted-foreground mb-6">
+                    Try adjusting your search or filters
+                  </p>
+                  <Button variant="outline" onClick={handleClearFilters}>
+                    Clear All Filters
+                  </Button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                  <AnimatePresence mode="popLayout">
+                    {filteredCards.map((card) => card ? (
+                      <CardItem
+                        key={card.id}
+                        card={card}
+                        onClick={() => handleCardClick(card)}
+                        onUpdateQuantity={(delta) => handleUpdateQuantity(card.id, delta)}
+                        onDelete={() => handleDeleteCard(card.id)}
+                        onAddToCollection={() => handleAddCardToCollection(card)}
+                        isSelectionMode={isSelectionMode}
+                        isSelected={selectedCardIds.has(card.id)}
+                        onToggleSelect={() => handleToggleCardSelection(card.id)}
+                      />
+                    ) : null)}
+                  </AnimatePresence>
+                </div>
+              )}
+            </main>
+          </>
+        )}
 
         <motion.div
           className="fixed bottom-6 right-6"
