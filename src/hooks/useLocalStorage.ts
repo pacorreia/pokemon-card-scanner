@@ -6,9 +6,21 @@ export function useLocalStorage<T>(key: string, initialValue: T): [T, (value: Up
   const [storedValue, setStoredValue] = useState<T>(() => {
     try {
       const item = window.localStorage.getItem(key)
-      return item !== null ? (JSON.parse(item) as T) : initialValue
+      if (item === null) return initialValue
+      try {
+        return JSON.parse(item) as T
+      } catch {
+        // Legacy plain-string values (stored before useLocalStorage adopted JSON) are
+        // handled here: if the expected type is a string, treat the raw value as the
+        // stored string, then rewrite it as JSON so future reads succeed.
+        if (typeof initialValue === 'string') {
+          try { window.localStorage.setItem(key, JSON.stringify(item)) } catch { /* ignore */ }
+          return item as unknown as T
+        }
+        return initialValue
+      }
     } catch {
-      // Ignore parse errors (e.g. corrupted data) and fall back to the initial value
+      // Ignore storage access errors (e.g. private browsing) and fall back to the initial value
       return initialValue
     }
   })

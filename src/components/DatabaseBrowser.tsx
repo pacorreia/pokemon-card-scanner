@@ -63,7 +63,7 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
       return (
         card.name.toLowerCase().includes(query) ||
         (card.set?.name && card.set.name.toLowerCase().includes(query)) ||
-        (card.number && card.number.includes(searchQuery)) ||
+        (card.number && card.number.toLowerCase().includes(query)) ||
         (card.types && card.types.some(type => type.toLowerCase().includes(query)))
       )
     })
