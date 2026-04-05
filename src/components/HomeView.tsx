@@ -1,4 +1,4 @@
-import { Camera, CardsThree, BookOpen, Database, Stack, Gear } from '@phosphor-icons/react'
+import { Camera, CardsThree, BookOpen, Database, Folders, Gear, ArrowsLeftRight } from '@phosphor-icons/react'
 import { Badge } from '@/components/ui/badge'
 
 interface HomeViewProps {
@@ -9,7 +9,8 @@ interface HomeViewProps {
   onBrowseDB: () => void
   onManageDB: () => void
   onSettings: () => void
-  onCustomDecks: () => void
+  onCollections: () => void
+  onImportExport: () => void
 }
 
 interface Shortcut {
@@ -32,7 +33,8 @@ export function HomeView({
   onBrowseDB,
   onManageDB,
   onSettings,
-  onCustomDecks,
+  onCollections,
+  onImportExport,
 }: HomeViewProps) {
   const shortcuts: Shortcut[] = [
     {
@@ -75,14 +77,22 @@ export function HomeView({
       badge: isDatabaseLoaded ? undefined : 'Setup needed',
     },
     {
-      label: 'Custom Decks',
-      description: 'Coming soon',
-      Icon: Stack,
+      label: 'Collections',
+      description: 'Manage card groups',
+      Icon: Folders,
       iconBg: 'bg-pink-500/10 group-hover:bg-pink-500/20',
       iconColor: 'text-pink-500',
       borderHover: 'hover:border-pink-500/40',
-      onClick: onCustomDecks,
-      dim: true,
+      onClick: onCollections,
+    },
+    {
+      label: 'Import / Export',
+      description: 'Backup or restore data',
+      Icon: ArrowsLeftRight,
+      iconBg: 'bg-teal-500/10 group-hover:bg-teal-500/20',
+      iconColor: 'text-teal-500',
+      borderHover: 'hover:border-teal-500/40',
+      onClick: onImportExport,
     },
     {
       label: 'Settings',

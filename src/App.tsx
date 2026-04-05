@@ -603,7 +603,8 @@ function MainApp() {
             onBrowseDB={() => setDbBrowserOpen(true)}
             onManageDB={() => setDbManagerOpen(true)}
             onSettings={() => setSettingsOpen(true)}
-            onCustomDecks={() => toast.info('Custom Decks coming soon!')}
+            onCollections={() => setCollectionsManagerOpen(true)}
+            onImportExport={() => setExportImportOpen(true)}
           />
         ) : (
           <>
