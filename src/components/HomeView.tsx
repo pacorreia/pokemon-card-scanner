@@ -1,3 +1,4 @@
+import type { ElementType } from 'react'
 import { Camera, CardsThree, BookOpen, Database, Folders, Gear, ArrowsLeftRight } from '@phosphor-icons/react'
 import { Badge } from '@/components/ui/badge'
 
@@ -16,7 +17,7 @@ interface HomeViewProps {
 interface Shortcut {
   label: string
   description: string
-  Icon: React.ElementType
+  Icon: ElementType
   iconBg: string
   iconColor: string
   borderHover: string

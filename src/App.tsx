@@ -129,6 +129,7 @@ function MainApp() {
                       ...c,
                       imageUrl: imageUrl,
                       tcgCardId: dbCard.id,
+                      supertype: c.supertype || dbCard.supertype || undefined,
                       prices: dbCard.tcgplayer || dbCard.cardmarket ? {
                         tcgplayer: dbCard.tcgplayer ? {
                           url: dbCard.tcgplayer.url,
@@ -203,7 +204,8 @@ function MainApp() {
                 quantity: c.quantity + 1,
                 imageUrl: card.imageUrl && !card.imageUrl.includes('placehold.co') ? card.imageUrl : c.imageUrl,
                 prices: card.prices || c.prices,
-                tcgCardId: card.tcgCardId || c.tcgCardId
+                tcgCardId: card.tcgCardId || c.tcgCardId,
+                supertype: c.supertype || card.supertype,
               }
             : c
         )
@@ -238,6 +240,7 @@ function MainApp() {
                   imageUrl: card.imageUrl && !card.imageUrl.includes('placehold.co') ? card.imageUrl : c.imageUrl,
                   prices: card.prices || c.prices,
                   tcgCardId: card.tcgCardId || c.tcgCardId,
+                  supertype: c.supertype || card.supertype,
                 }
               : c
           )
@@ -301,11 +304,11 @@ function MainApp() {
   }, [cards])
 
   const availableSupertypes = useMemo(() => {
-    const types = new Set<string>()
+    const supertypes = new Set<string>()
     ;(cards || []).forEach(card => {
-      if (card.supertype) types.add(card.supertype)
+      if (card.supertype) supertypes.add(card.supertype)
     })
-    return Array.from(types).sort()
+    return Array.from(supertypes).sort()
   }, [cards])
 
   const availableRarities = useMemo(() => {
@@ -580,7 +583,7 @@ function MainApp() {
   return (
     <div className="min-h-screen bg-background">
       <AnimatePresence>
-        {isSelectionMode && selectedCardIds.size > 0 && (
+        {isSelectionMode && selectedCardIds.size > 0 && appView === 'catalog' && (
           <BulkActionsToolbar
             selectedCount={selectedCardIds.size}
             totalCount={filteredCards.length}
@@ -613,7 +616,7 @@ function MainApp() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={() => setAppView('home')}
+                  onClick={() => { setAppView('home'); setIsSelectionMode(false); setSelectedCardIds(new Set()) }}
                   className="shrink-0"
                   title="Back to Home"
                 >
