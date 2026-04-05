@@ -190,8 +190,31 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
 
   const activeRows = selectedTab === 'cards' ? cardVirtualRows : setVirtualRows
 
+  const getVirtualRowKey = useMemo(() => {
+    return (index: number) => {
+      const row = activeRows[index]
+      if (!row) return `${selectedTab}-row-${index}`
+
+      switch (row.type) {
+        case 'group-header':
+          return `group-header:${row.label}`
+        case 'series-header':
+          return `series-header:${row.label}`
+        case 'search-count':
+          return 'search-count'
+        case 'set-item':
+          return `set-item:${row.set.id}`
+        case 'card-row':
+          return `card-row:${row.cards
+            .map(card => card.id ?? `${card.name}-${card.number ?? ''}-${card.supertype ?? ''}`)
+            .join('|')}`
+      }
+    }
+  }, [activeRows, selectedTab])
+
   const rowVirtualizer = useVirtualizer({
     count: activeRows.length,
+    getItemKey: getVirtualRowKey,
     getScrollElement: () => parentRef.current,
     estimateSize: (index) => {
       const row = activeRows[index]
