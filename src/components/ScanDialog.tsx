@@ -10,7 +10,7 @@ import { motion } from 'framer-motion'
 import { toast } from 'sonner'
 import type { PokemonCard } from '@/lib/types'
 import { useTCGDatabase } from '@/lib/tcg-database'
-import { useAuth } from '@/contexts/AuthContext'
+import { useLocalStorage } from '@/hooks/useLocalStorage'
 
 const GITHUB_MODELS_URL = 'https://models.github.ai/inference/chat/completions'
 
@@ -319,7 +319,7 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onCardsScanned, 
   })
 
   const { findCard } = useTCGDatabase()
-  const { token: authToken } = useAuth()
+  const [authToken] = useLocalStorage<string>('github-pat', '')
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
