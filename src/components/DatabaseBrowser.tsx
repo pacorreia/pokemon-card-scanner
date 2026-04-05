@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react'
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
-import { MagnifyingGlass, X, Package, SquaresFour, Warning } from '@phosphor-icons/react'
+import { MagnifyingGlass, X, Package, SquaresFour, Warning, ArrowLeft } from '@phosphor-icons/react'
 import { useTCGDatabase } from '@/lib/tcg-database'
 import type { TCGCard, TCGSet } from '@/lib/tcg-database'
 
@@ -40,6 +40,11 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
   const [isLoadingCards, setIsLoadingCards] = useState(false)
   const [cols, setCols] = useState(3)
   const parentRef = useRef<HTMLDivElement>(null)
+
+  const handleOpenChange = useCallback((isOpen: boolean) => {
+    if (!isOpen) setSelectedCard(null)
+    onOpenChange(isOpen)
+  }, [onOpenChange])
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -236,32 +241,148 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
   })
 
   return (
-    <>
-      <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent side="right" className="w-full sm:max-w-2xl p-0 flex flex-col h-full">
-          <SheetHeader className="px-6 pt-6 pb-4 border-b shrink-0">
-            <SheetTitle className="font-display text-2xl flex items-center gap-2">
-              <Package className="w-6 h-6" weight="duotone" />
-              Browse Database
-            </SheetTitle>
-            <SheetDescription>
-              Explore all cards and sets from the local TCG database
-            </SheetDescription>
-          </SheetHeader>
+    <Sheet open={open} onOpenChange={handleOpenChange}>
+      <SheetContent side="right" className="w-full sm:max-w-2xl p-0 flex flex-col h-full">
+        {selectedCard ? (
+          <>
+            <SheetHeader className="px-6 pt-6 pb-4 border-b shrink-0">
+              <div className="flex items-center gap-3">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="shrink-0"
+                  onClick={() => setSelectedCard(null)}
+                  aria-label="Back to browser"
+                >
+                  <ArrowLeft className="w-5 h-5" />
+                </Button>
+                <div className="min-w-0">
+                  <SheetTitle className="font-display">{selectedCard.name}</SheetTitle>
+                  <SheetDescription>{selectedCard.set?.name || 'Unknown Set'}</SheetDescription>
+                </div>
+              </div>
+            </SheetHeader>
 
-          {!isLoaded ? (
-            <div className="flex-1 flex items-center justify-center p-6">
-              <div className="text-center space-y-4">
-                <Warning className="w-16 h-16 mx-auto text-yellow-600" weight="duotone" />
-                <div>
-                  <p className="font-semibold text-lg mb-2">Database not loaded</p>
-                  <p className="text-sm text-muted-foreground">
-                    Please download the database first to browse cards and sets
-                  </p>
+            <div className="flex-1 overflow-y-auto">
+              <div className="px-6 py-4 pb-20 space-y-6">
+                <div className="bg-muted rounded-lg overflow-hidden">
+                  {selectedCard.images?.large ? (
+                    <img
+                      src={selectedCard.images.large}
+                      alt={selectedCard.name}
+                      className="w-full"
+                    />
+                  ) : (
+                    <div className="w-full aspect-[2/3] flex items-center justify-center text-muted-foreground">
+                      No Image Available
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="text-sm font-semibold text-muted-foreground mb-2">Details</h4>
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Type</span>
+                        <span className="font-medium">{selectedCard.supertype}</span>
+                      </div>
+                      {selectedCard.types && selectedCard.types.length > 0 && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Types</span>
+                          <div className="flex gap-1">
+                            {selectedCard.types.map(type => (
+                              <Badge key={type} variant="secondary">{type}</Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {selectedCard.hp && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">HP</span>
+                          <span className="font-medium">{selectedCard.hp}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Number</span>
+                        <span className="font-medium">{selectedCard.number}/{selectedCard.set?.total || '?'}</span>
+                      </div>
+                      {selectedCard.rarity && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Rarity</span>
+                          <span className="font-medium">{selectedCard.rarity}</span>
+                        </div>
+                      )}
+                      {selectedCard.artist && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Artist</span>
+                          <span className="font-medium">{selectedCard.artist}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {selectedCard.attacks && selectedCard.attacks.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-semibold text-muted-foreground mb-2">Attacks</h4>
+                      <div className="space-y-3">
+                        {selectedCard.attacks.map((attack, idx) => (
+                          <div key={idx} className="p-3 bg-muted rounded-lg">
+                            <div className="flex justify-between items-start mb-1">
+                              <span className="font-semibold">{attack.name}</span>
+                              <span className="font-bold">{attack.damage}</span>
+                            </div>
+                            {attack.text && (
+                              <p className="text-xs text-muted-foreground">{attack.text}</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedCard.abilities && selectedCard.abilities.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-semibold text-muted-foreground mb-2">Abilities</h4>
+                      <div className="space-y-3">
+                        {selectedCard.abilities.map((ability, idx) => (
+                          <div key={idx} className="p-3 bg-muted rounded-lg">
+                            <div className="font-semibold mb-1">{ability.name}</div>
+                            <p className="text-xs text-muted-foreground">{ability.text}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
-          ) : (
+          </>
+        ) : (
+          <>
+            <SheetHeader className="px-6 pt-6 pb-4 border-b shrink-0">
+              <SheetTitle className="font-display text-2xl flex items-center gap-2">
+                <Package className="w-6 h-6" weight="duotone" />
+                Browse Database
+              </SheetTitle>
+              <SheetDescription>
+                Explore all cards and sets from the local TCG database
+              </SheetDescription>
+            </SheetHeader>
+
+            {!isLoaded ? (
+              <div className="flex-1 flex items-center justify-center p-6">
+                <div className="text-center space-y-4">
+                  <Warning className="w-16 h-16 mx-auto text-yellow-600" weight="duotone" />
+                  <div>
+                    <p className="font-semibold text-lg mb-2">Database not loaded</p>
+                    <p className="text-sm text-muted-foreground">
+                      Please download the database first to browse cards and sets
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : (
             <>
               <div className="px-6 py-4 space-y-4 border-b shrink-0">
                 <div className="relative">
@@ -425,114 +546,9 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
               </div>
             </>
           )}
-        </SheetContent>
-      </Sheet>
-
-      {selectedCard && (
-        <Sheet open={!!selectedCard} onOpenChange={(open) => !open && setSelectedCard(null)}>
-          <SheetContent side="right" className="w-full sm:max-w-md p-0 flex flex-col h-full">
-            <SheetHeader className="px-6 pt-6 pb-4 border-b shrink-0">
-              <SheetTitle className="font-display">{selectedCard.name}</SheetTitle>
-              <SheetDescription>{selectedCard.set?.name || 'Unknown Set'}</SheetDescription>
-            </SheetHeader>
-
-            <div className="flex-1 overflow-y-auto">
-              <div className="px-6 py-4 pb-20 space-y-6">
-                <div className="bg-muted rounded-lg overflow-hidden">
-                  {selectedCard.images?.large ? (
-                    <img
-                      src={selectedCard.images.large}
-                      alt={selectedCard.name}
-                      className="w-full"
-                    />
-                  ) : (
-                    <div className="w-full aspect-[2/3] flex items-center justify-center text-muted-foreground">
-                      No Image Available
-                    </div>
-                  )}
-                </div>
-
-                <div className="space-y-4">
-                  <div>
-                    <h4 className="text-sm font-semibold text-muted-foreground mb-2">Details</h4>
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Type</span>
-                        <span className="font-medium">{selectedCard.supertype}</span>
-                      </div>
-                      {selectedCard.types && selectedCard.types.length > 0 && (
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Types</span>
-                          <div className="flex gap-1">
-                            {selectedCard.types.map(type => (
-                              <Badge key={type} variant="secondary">{type}</Badge>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      {selectedCard.hp && (
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">HP</span>
-                          <span className="font-medium">{selectedCard.hp}</span>
-                        </div>
-                      )}
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Number</span>
-                        <span className="font-medium">{selectedCard.number}/{selectedCard.set?.total || '?'}</span>
-                      </div>
-                      {selectedCard.rarity && (
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Rarity</span>
-                          <span className="font-medium">{selectedCard.rarity}</span>
-                        </div>
-                      )}
-                      {selectedCard.artist && (
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Artist</span>
-                          <span className="font-medium">{selectedCard.artist}</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {selectedCard.attacks && selectedCard.attacks.length > 0 && (
-                    <div>
-                      <h4 className="text-sm font-semibold text-muted-foreground mb-2">Attacks</h4>
-                      <div className="space-y-3">
-                        {selectedCard.attacks.map((attack, idx) => (
-                          <div key={idx} className="p-3 bg-muted rounded-lg">
-                            <div className="flex justify-between items-start mb-1">
-                              <span className="font-semibold">{attack.name}</span>
-                              <span className="font-bold">{attack.damage}</span>
-                            </div>
-                            {attack.text && (
-                              <p className="text-xs text-muted-foreground">{attack.text}</p>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {selectedCard.abilities && selectedCard.abilities.length > 0 && (
-                    <div>
-                      <h4 className="text-sm font-semibold text-muted-foreground mb-2">Abilities</h4>
-                      <div className="space-y-3">
-                        {selectedCard.abilities.map((ability, idx) => (
-                          <div key={idx} className="p-3 bg-muted rounded-lg">
-                            <div className="font-semibold mb-1">{ability.name}</div>
-                            <p className="text-xs text-muted-foreground">{ability.text}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </SheetContent>
-        </Sheet>
-      )}
-    </>
+          </>
+        )}
+      </SheetContent>
+    </Sheet>
   )
 }
