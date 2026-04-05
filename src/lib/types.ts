@@ -40,6 +40,7 @@ export interface PokemonCard {
   cardNumber: string
   rarity: string
   type: string
+  supertype?: string
   imageUrl: string
   quantity: number
   dateAdded: number

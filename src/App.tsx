@@ -21,6 +21,7 @@ import { SettingsDialog } from '@/components/SettingsDialog'
 import { useTCGDatabase } from '@/lib/tcg-database'
 import type { PokemonCard, ViewMode, CardCollection } from '@/lib/types'
 import { toast } from 'sonner'
+import { cn } from '@/lib/utils'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -57,6 +58,7 @@ function MainApp() {
   const [selectedCollection, setSelectedCollection] = useState<CardCollection | null>(null)
   const [selectedTypes, setSelectedTypes] = useState<string[]>([])
   const [selectedRarities, setSelectedRarities] = useState<string[]>([])
+  const [selectedSupertypes, setSelectedSupertypes] = useState<string[]>([])
   const [isSelectionMode, setIsSelectionMode] = useState(false)
   const [selectedCardIds, setSelectedCardIds] = useState<Set<string>>(new Set())
   const [hasCheckedDatabase, setHasCheckedDatabase] = useState(false)
@@ -297,6 +299,14 @@ function MainApp() {
     return Array.from(types).sort()
   }, [cards])
 
+  const availableSupertypes = useMemo(() => {
+    const types = new Set<string>()
+    ;(cards || []).forEach(card => {
+      if (card.supertype) types.add(card.supertype)
+    })
+    return Array.from(types).sort()
+  }, [cards])
+
   const availableRarities = useMemo(() => {
     const rarities = new Set<string>()
     ;(cards || []).forEach(card => {
@@ -322,6 +332,10 @@ function MainApp() {
       )
     }
 
+    if (selectedSupertypes.length > 0) {
+      filtered = filtered.filter(card => card.supertype && selectedSupertypes.includes(card.supertype))
+    }
+
     if (selectedTypes.length > 0) {
       filtered = filtered.filter(card => selectedTypes.includes(card.type))
     }
@@ -335,7 +349,7 @@ function MainApp() {
     }
 
     return filtered.sort((a, b) => b.dateAdded - a.dateAdded)
-  }, [cards, searchQuery, viewMode, selectedTypes, selectedRarities, selectedCollection])
+  }, [cards, searchQuery, viewMode, selectedTypes, selectedRarities, selectedSupertypes, selectedCollection])
 
   const duplicateCount = useMemo(() => {
     return (cards || []).filter(card => card.quantity > 1).length
@@ -353,7 +367,13 @@ function MainApp() {
     return value
   }, [cards])
 
-  const activeFiltersCount = selectedTypes.length + selectedRarities.length
+  const activeFiltersCount = selectedTypes.length + selectedRarities.length + selectedSupertypes.length
+
+  const handleToggleSupertype = (supertype: string) => {
+    setSelectedSupertypes(prev =>
+      prev.includes(supertype) ? prev.filter(t => t !== supertype) : [...prev, supertype]
+    )
+  }
 
   const handleToggleType = (type: string) => {
     setSelectedTypes(prev =>
@@ -370,6 +390,7 @@ function MainApp() {
   const handleClearFilters = () => {
     setSelectedTypes([])
     setSelectedRarities([])
+    setSelectedSupertypes([])
     setSearchQuery('')
   }
 
