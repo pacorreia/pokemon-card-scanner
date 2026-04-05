@@ -11,10 +11,12 @@ export function useLocalStorage<T>(key: string, initialValue: T): [T, (value: Up
         return JSON.parse(item) as T
       } catch {
         // Legacy plain-string values (stored before useLocalStorage adopted JSON) are
-        // handled here: if the expected type is a string, treat the raw value as the
-        // stored string, then rewrite it as JSON so future reads succeed.
-        if (typeof initialValue === 'string') {
-          try { window.localStorage.setItem(key, JSON.stringify(item)) } catch { /* ignore */ }
+        // handled here: if the raw item is a string (localStorage always returns strings),
+        // treat it as the stored value and rewrite it as JSON so future reads succeed.
+        // The migration write is best-effort: failure is acceptable because the value is
+        // already in memory and will be rewritten to JSON on the next setValue call.
+        if (typeof item === 'string' && typeof initialValue === 'string') {
+          try { window.localStorage.setItem(key, JSON.stringify(item)) } catch { /* best-effort migration */ }
           return item as unknown as T
         }
         return initialValue
