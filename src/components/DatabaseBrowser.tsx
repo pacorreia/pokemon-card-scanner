@@ -23,6 +23,8 @@ const SET_ITEM_HEIGHT = 88
 const VIRTUAL_PADDING_START = 16
 const VIRTUAL_PADDING_END = 80
 const MOBILE_BREAKPOINT = 640
+const QUICK_FILTER_SUPERTYPES = ['Pokémon', 'Trainer', 'Energy'] as const
+type QuickFilterSupertype = typeof QUICK_FILTER_SUPERTYPES[number]
 
 type VirtualRow =
   | { type: 'group-header'; label: string; count: number }
@@ -39,7 +41,7 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
   const [selectedCard, setSelectedCard] = useState<TCGCard | null>(null)
   const [isLoadingCards, setIsLoadingCards] = useState(false)
   const [cols, setCols] = useState(3)
-  const [selectedSupertypes, setSelectedSupertypes] = useState<string[]>([])
+  const [selectedSupertypes, setSelectedSupertypes] = useState<QuickFilterSupertype[]>([])
   const parentRef = useRef<HTMLDivElement>(null)
 
   const handleOpenChange = useCallback((isOpen: boolean) => {
@@ -445,7 +447,7 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
 
                 {selectedTab === 'cards' && (
                   <div className="flex gap-2 flex-wrap">
-                    {(['Pokémon', 'Trainer', 'Energy'] as const).map(supertype => (
+                    {QUICK_FILTER_SUPERTYPES.map(supertype => (
                       <Button
                         key={supertype}
                         variant={selectedSupertypes.includes(supertype) ? 'default' : 'outline'}
