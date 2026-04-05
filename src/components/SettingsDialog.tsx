@@ -17,6 +17,29 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [editToken, setEditToken] = useState('')
   const [showToken, setShowToken] = useState(false)
 
+  // Migrate legacy raw-string PATs that were stored before useLocalStorage
+  useEffect(() => {
+    if (token) {
+      return
+    }
+
+    const rawStoredToken = localStorage.getItem('github-pat')
+    if (!rawStoredToken) {
+      return
+    }
+
+    try {
+      JSON.parse(rawStoredToken)
+    } catch {
+      const legacyToken = rawStoredToken.trim()
+      if (!legacyToken) {
+        return
+      }
+
+      setToken(legacyToken)
+      setEditToken(legacyToken)
+    }
+  }, [token, setToken])
   // Sync edit field whenever dialog opens
   useEffect(() => {
     if (open) {
