@@ -38,20 +38,30 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
   const [selectedTab, setSelectedTab] = useState<'cards' | 'sets'>('cards')
   const [selectedCard, setSelectedCard] = useState<TCGCard | null>(null)
   const [isLoadingCards, setIsLoadingCards] = useState(false)
-  const [cols, setCols] = useState(() => window.innerWidth < MOBILE_BREAKPOINT ? 2 : 3)
+  const [cols, setCols] = useState(3)
   const parentRef = useRef<HTMLDivElement>(null)
   const resizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
-    const handleResize = () => {
-      if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current)
-      resizeTimerRef.current = setTimeout(() => {
-        setCols(window.innerWidth < MOBILE_BREAKPOINT ? 2 : 3)
-      }, 100)
+    if (typeof window === 'undefined') {
+      return
     }
-    window.addEventListener('resize', handleResize)
+
+    const mediaQuery = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`)
+    const updateCols = (matches: boolean) => {
+      setCols(matches ? 2 : 3)
+    }
+
+    updateCols(mediaQuery.matches)
+
+    const handleChange = (event: MediaQueryListEvent) => {
+      updateCols(event.matches)
+    }
+
+    mediaQuery.addEventListener('change', handleChange)
+
     return () => {
-      window.removeEventListener('resize', handleResize)
+      mediaQuery.removeEventListener('change', handleChange)
       if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current)
     }
   }, [])
