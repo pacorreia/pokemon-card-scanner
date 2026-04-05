@@ -3,9 +3,9 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/compone
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Eye, EyeSlash, GithubLogo, SignOut } from '@phosphor-icons/react'
+import { Eye, EyeSlash } from '@phosphor-icons/react'
 import { toast } from 'sonner'
-import { useAuth } from '@/contexts/AuthContext'
+import { useLocalStorage } from '@/hooks/useLocalStorage'
 
 interface SettingsDialogProps {
   open: boolean
@@ -13,7 +13,7 @@ interface SettingsDialogProps {
 }
 
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
-  const { user, token, isOAuthEnabled, signIn, signOut, setManualToken } = useAuth()
+  const [token, setToken] = useLocalStorage<string>('github-pat', '')
   const [editToken, setEditToken] = useState('')
   const [showToken, setShowToken] = useState(false)
 
@@ -25,32 +25,21 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     }
   }, [open, token])
 
-  const handleSave = async () => {
+  const handleSave = () => {
     const trimmed = editToken.trim()
     if (!trimmed) {
       toast.error('Please enter a token before saving.')
       return
     }
-    await setManualToken(trimmed)
+    setToken(trimmed)
     toast.success('API key saved.')
     onOpenChange(false)
   }
 
-  const handleClear = async () => {
-    await setManualToken('')
+  const handleClear = () => {
+    setToken('')
     setEditToken('')
     toast.success('API key cleared.')
-  }
-
-  const handleSignIn = async () => {
-    onOpenChange(false)
-    await signIn()
-  }
-
-  const handleSignOut = () => {
-    signOut()
-    onOpenChange(false)
-    toast.success('Signed out.')
   }
 
   return (
@@ -58,42 +47,14 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       <DialogContent className="sm:max-w-md">
         <DialogTitle>Settings</DialogTitle>
         <DialogDescription>
-          Configure GitHub authentication to enable AI-powered card scanning.
+          Configure a GitHub personal access token to enable AI-powered card scanning.
         </DialogDescription>
 
         <div className="space-y-5 py-2">
-          {/* GitHub account info */}
-          {user && (
-            <div className="flex items-center gap-3 rounded-lg border bg-muted/40 px-4 py-3">
-              <img
-                src={user.avatar_url}
-                alt={user.login}
-                className="w-9 h-9 rounded-full shrink-0"
-                referrerPolicy="no-referrer"
-              />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold truncate">{user.name ?? user.login}</p>
-                <p className="text-xs text-muted-foreground truncate">@{user.login}</p>
-              </div>
-              <Button variant="ghost" size="sm" onClick={handleSignOut} className="shrink-0 gap-1.5 text-xs">
-                <SignOut className="w-3.5 h-3.5" />
-                Sign out
-              </Button>
-            </div>
-          )}
-
-          {/* OAuth sign-in (shown when no user and OAuth is configured) */}
-          {!user && isOAuthEnabled && (
-            <Button className="w-full gap-2" variant="outline" onClick={handleSignIn}>
-              <GithubLogo className="w-4 h-4" weight="fill" />
-              Sign in with GitHub
-            </Button>
-          )}
-
           {/* Manual PAT section */}
           <div className="space-y-2">
             <Label htmlFor="settings-pat-input">
-              {user ? 'Override Token (optional)' : 'GitHub Personal Access Token'}
+              GitHub Personal Access Token
             </Label>
             <div className="relative">
               <Input
@@ -132,20 +93,18 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
             </p>
           </div>
 
-          {!user && (
-            <p className="text-sm text-muted-foreground">
-              Don't have a token?{' '}
-              <a
-                href="https://github.com/settings/tokens/new?description=Pokemon+Card+Scanner&scopes="
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline hover:text-foreground font-medium"
-              >
-                Create one on GitHub
-              </a>{' '}
-              (no scopes needed for GitHub Models).
-            </p>
-          )}
+          <p className="text-sm text-muted-foreground">
+            Don't have a token?{' '}
+            <a
+              href="https://github.com/settings/tokens/new?description=Pokemon+Card+Scanner&scopes="
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline hover:text-foreground font-medium"
+            >
+              Create one on GitHub
+            </a>{' '}
+            (no scopes needed for GitHub Models).
+          </p>
         </div>
 
         <div className="flex gap-2 justify-end pt-2">

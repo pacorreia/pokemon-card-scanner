@@ -55,7 +55,7 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
     if (!cards || cards.length === 0) return []
     
     const query = searchQuery.toLowerCase()
-    if (!query) return cards.slice(0, 100)
+    if (!query) return cards
     
     return cards.filter(card => {
       if (!card || !card.name) return false
@@ -66,7 +66,7 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
         (card.number && card.number.includes(searchQuery)) ||
         (card.types && card.types.some(type => type.toLowerCase().includes(query)))
       )
-    }).slice(0, 100)
+    })
   }, [cards, searchQuery])
 
   const filteredSets = useMemo(() => {
@@ -188,8 +188,12 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
                       ) : (
                         <>
                           {searchQuery ? (
-                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                              {filteredCards.map((card) => (
+                            <>
+                              <p className="text-sm text-muted-foreground">
+                                {filteredCards.length.toLocaleString()} {filteredCards.length === 1 ? 'card' : 'cards'} found
+                              </p>
+                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                {filteredCards.map((card) => (
                                 <button
                                   key={card.id}
                                   onClick={() => setSelectedCard(card)}
@@ -214,7 +218,8 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
                                   </div>
                                 </button>
                               ))}
-                            </div>
+                              </div>
+                            </>
                           ) : (
                             Object.entries(groupedByType).map(([type, typeCards]) => (
                               <div key={type}>
@@ -223,7 +228,7 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
                                   <Badge variant="outline">{typeCards.length}</Badge>
                                 </h3>
                                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                                  {typeCards.slice(0, 12).map((card) => (
+                                  {typeCards.map((card) => (
                                     <button
                                       key={card.id}
                                       onClick={() => setSelectedCard(card)}
@@ -251,11 +256,6 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
                                 </div>
                               </div>
                             ))
-                          )}
-                          {!searchQuery && (
-                            <p className="text-xs text-muted-foreground text-center pt-2">
-                              Showing first 100 cards. Use search to find specific cards.
-                            </p>
                           )}
                         </>
                       )}
