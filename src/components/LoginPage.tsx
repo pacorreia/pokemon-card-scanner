@@ -122,22 +122,49 @@ export function LoginPage() {
               </motion.div>
             )}
 
-            {/* Device-flow polling — spinner */}
+            {/* Device-flow polling — show code + spinner */}
             {deviceFlow.status === 'polling' && (
               <motion.div
                 key="device-polling"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="flex flex-col items-center gap-3 py-4"
+                className="space-y-4"
               >
-                <motion.div
-                  animate={{ rotate: 360 }}
-                  transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-                  className="w-8 h-8 rounded-full border-2 border-primary border-t-transparent"
-                />
-                <p className="text-sm text-muted-foreground">Waiting for authorization…</p>
-                <Button variant="ghost" size="sm" onClick={cancelDeviceFlow}>
+                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                  <GithubLogo className="w-4 h-4" />
+                  Complete sign-in on GitHub
+                </div>
+
+                <p className="text-sm text-muted-foreground">
+                  Open{' '}
+                  <a
+                    href={deviceFlow.verificationUri}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline font-medium text-foreground hover:text-primary"
+                  >
+                    {deviceFlow.verificationUri}
+                  </a>{' '}
+                  and enter this code:
+                </p>
+
+                <div className="w-full flex items-center justify-between rounded-xl border-2 border-primary/30 bg-primary/5 px-5 py-3">
+                  <span className="text-2xl font-mono font-bold tracking-[0.25em] text-primary">
+                    {deviceFlow.userCode}
+                  </span>
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                    className="w-5 h-5 rounded-full border-2 border-primary border-t-transparent shrink-0"
+                  />
+                </div>
+
+                <p className="text-xs text-muted-foreground text-center">
+                  Waiting for you to authorize… this page will update automatically.
+                </p>
+
+                <Button variant="ghost" size="sm" className="w-full" onClick={cancelDeviceFlow}>
                   Cancel
                 </Button>
               </motion.div>

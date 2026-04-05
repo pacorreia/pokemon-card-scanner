@@ -22,7 +22,7 @@ export interface GitHubUser {
 export type DeviceFlowStatus =
   | { status: 'idle' }
   | { status: 'pending'; userCode: string; verificationUri: string; expiresAt: Date }
-  | { status: 'polling' }
+  | { status: 'polling'; userCode: string; verificationUri: string; expiresAt: Date }
   | { status: 'error'; message: string }
 
 export interface AuthContextValue {
@@ -158,7 +158,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await Promise.race([verified, authPromise])
       if (!aborted) {
         setDeviceFlow((prev) =>
-          prev.status === 'pending' ? { status: 'polling' } : prev
+          prev.status === 'pending'
+            ? { status: 'polling', userCode: prev.userCode, verificationUri: prev.verificationUri, expiresAt: prev.expiresAt }
+            : prev
         )
       }
 
