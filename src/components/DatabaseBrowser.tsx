@@ -112,10 +112,11 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
     if (!cards || cards.length === 0) return []
     
     let result = cards
+    const selectedSupertypeValues: readonly string[] = selectedSupertypes
 
     if (selectedSupertypes.length > 0) {
       result = result.filter(
-        card => !!card.supertype && selectedSupertypes.some(supertype => supertype === card.supertype)
+        card => !!card.supertype && selectedSupertypeValues.includes(card.supertype)
       )
     }
 
