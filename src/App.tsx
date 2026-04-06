@@ -66,7 +66,7 @@ function MainApp() {
   const updatedCardIdsRef = useRef<Set<string>>(new Set())
   const imageUpdateRunIdRef = useRef(0)
   
-  const { isLoaded: isDatabaseLoaded, metadata, isLoading: isDatabaseLoading, findCard } = useTCGDatabase()
+  const { isLoaded: isDatabaseLoaded, metadata, isLoading: isDatabaseLoading, findCard, getCardById } = useTCGDatabase()
 
   useEffect(() => {
     console.log('[App] Database loaded state:', { isDatabaseLoaded, metadata, isDatabaseLoading, hasCheckedDatabase })
@@ -88,7 +88,7 @@ function MainApp() {
       }
 
       const cardsNeedingImages = cards.filter(card => 
-        card && (card.imageUrl?.includes('placehold.co') || !card.imageUrl) && !updatedCardIdsRef.current.has(card.id)
+        card && (card.imageUrl?.includes('placehold.co') || !card.imageUrl || (card.tcgCardId && !card.largeImageUrl)) && !updatedCardIdsRef.current.has(card.id)
       )
 
       if (cardsNeedingImages.length === 0) {
@@ -98,7 +98,15 @@ function MainApp() {
 
       console.log(`[App] Updating ${cardsNeedingImages.length} cards with database images...`)
 
-      let updatedCount = 0
+      // Collect all updates first so we can apply them in a single setCards call
+      // (avoids one localStorage write + re-render per card)
+      const updates = new Map<string, {
+        imageUrl: string
+        largeImageUrl: string | undefined
+        tcgCardId: string
+        supertype: string | undefined
+        prices: PokemonCard['prices'] | null
+      }>()
 
       for (const card of cardsNeedingImages) {
         // Abort if a newer run has started or this card was already successfully updated
@@ -106,7 +114,9 @@ function MainApp() {
         if (updatedCardIdsRef.current.has(card.id)) continue
 
         try {
-          const dbCard = await findCard(card.name, card.set, card.cardNumber)
+          const dbCard = card.tcgCardId
+            ? await getCardById(card.tcgCardId)
+            : await findCard(card.name, card.set, card.cardNumber)
 
           // Discard result if a newer run has superseded this one
           if (imageUpdateRunIdRef.current !== runId) break
@@ -118,45 +128,56 @@ function MainApp() {
             smallImage: dbCard?.images?.small
           })
           
-          if (dbCard?.images?.large || dbCard?.images?.small) {
-            const imageUrl = dbCard.images.large || dbCard.images.small
-            
-            setCards((currentCards) => {
-              if (!currentCards) return []
-              return currentCards.map(c =>
-                c && c.id === card.id
-                  ? {
-                      ...c,
-                      imageUrl: imageUrl,
-                      tcgCardId: dbCard.id,
-                      supertype: c.supertype || dbCard.supertype || undefined,
-                      prices: dbCard.tcgplayer || dbCard.cardmarket ? {
-                        tcgplayer: dbCard.tcgplayer ? {
-                          url: dbCard.tcgplayer.url,
-                          updatedAt: dbCard.tcgplayer.updatedAt,
-                          ...(dbCard.tcgplayer.prices?.normal?.market && { market: dbCard.tcgplayer.prices.normal.market }),
-                        } : undefined,
-                        cardmarket: dbCard.cardmarket ? {
-                          url: dbCard.cardmarket.url,
-                          updatedAt: dbCard.cardmarket.updatedAt,
-                          ...(dbCard.cardmarket.prices?.trendPrice && { trendPrice: dbCard.cardmarket.prices.trendPrice }),
-                        } : undefined
-                      } : c.prices
-                    }
-                  : c
-              )
+          if (dbCard?.images?.small || dbCard?.images?.large) {
+            updates.set(card.id, {
+              imageUrl: dbCard.images.small || dbCard.images.large,
+              largeImageUrl: dbCard.images.large || undefined,
+              tcgCardId: dbCard.id,
+              supertype: dbCard.supertype || undefined,
+              prices: (dbCard.tcgplayer || dbCard.cardmarket) ? {
+                tcgplayer: dbCard.tcgplayer ? {
+                  url: dbCard.tcgplayer.url,
+                  updatedAt: dbCard.tcgplayer.updatedAt,
+                  ...(dbCard.tcgplayer.prices?.normal?.market && { market: dbCard.tcgplayer.prices.normal.market }),
+                } : undefined,
+                cardmarket: dbCard.cardmarket ? {
+                  url: dbCard.cardmarket.url,
+                  updatedAt: dbCard.cardmarket.updatedAt,
+                  ...(dbCard.cardmarket.prices?.trendPrice && { trendPrice: dbCard.cardmarket.prices.trendPrice }),
+                } : undefined
+              } : null
             })
-            
-            // Mark as successfully updated only after setCards — prevents the card from
-            // being permanently locked out if this run was aborted before reaching setCards
-            updatedCardIdsRef.current.add(card.id)
-            updatedCount++
-            console.log(`[App] ✓ Updated image for ${card.name} to: ${imageUrl}`)
+            console.log(`[App] ✓ Queued image update for ${card.name} to: ${dbCard.images.small || dbCard.images.large}`)
           } else {
             console.log(`[App] ✗ No image found for ${card.name}`)
           }
         } catch (error) {
-          console.error(`[App] Error updating card ${card.name}:`, error)
+          console.error(`[App] Error looking up card ${card.name}:`, error)
+        }
+      }
+
+      // Apply all collected updates in a single setCards call
+      const updatedCount = updates.size
+      if (updatedCount > 0 && imageUpdateRunIdRef.current === runId) {
+        setCards((currentCards) => {
+          if (!currentCards) return []
+          return currentCards.map(c => {
+            if (!c || !updates.has(c.id)) return c
+            const u = updates.get(c.id)!
+            return {
+              ...c,
+              imageUrl: u.imageUrl,
+              largeImageUrl: u.largeImageUrl,
+              tcgCardId: u.tcgCardId,
+              supertype: c.supertype || u.supertype,
+              prices: u.prices !== null ? u.prices : c.prices,
+            }
+          })
+        })
+
+        // Mark all updated cards after the single setCards call
+        for (const id of updates.keys()) {
+          updatedCardIdsRef.current.add(id)
         }
       }
 
@@ -168,7 +189,7 @@ function MainApp() {
     }
 
     updateCardImagesFromDatabase()
-  }, [isDatabaseLoaded, findCard, cards, setCards])
+  }, [isDatabaseLoaded, findCard, getCardById, cards, setCards])
 
   const handleCardScanned = (card: PokemonCard) => {
     console.log('[App] Card scanned:', {
@@ -203,6 +224,7 @@ function MainApp() {
                 ...c, 
                 quantity: c.quantity + 1,
                 imageUrl: card.imageUrl && !card.imageUrl.includes('placehold.co') ? card.imageUrl : c.imageUrl,
+                largeImageUrl: card.largeImageUrl || c.largeImageUrl,
                 prices: card.prices || c.prices,
                 tcgCardId: card.tcgCardId || c.tcgCardId,
                 supertype: c.supertype || card.supertype,
@@ -238,6 +260,7 @@ function MainApp() {
                   ...c,
                   quantity: c.quantity + 1,
                   imageUrl: card.imageUrl && !card.imageUrl.includes('placehold.co') ? card.imageUrl : c.imageUrl,
+                  largeImageUrl: card.largeImageUrl || c.largeImageUrl,
                   prices: card.prices || c.prices,
                   tcgCardId: card.tcgCardId || c.tcgCardId,
                   supertype: c.supertype || card.supertype,

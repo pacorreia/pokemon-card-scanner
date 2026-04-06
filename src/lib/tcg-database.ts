@@ -605,6 +605,7 @@ export function useTCGDatabase() {
     searchCards,
     findCard,
     getAllCards,
+    getCardById,
   }
 }
 
@@ -704,4 +705,16 @@ export async function findCard(name: string, setName?: string, cardNumber?: stri
 export async function getAllCards(): Promise<TCGCard[]> {
   await _initializeIfNeeded()
   return await db.getAll<TCGCard>('cards')
+}
+
+export async function getCardById(id: string): Promise<TCGCard | null> {
+  try {
+    await _initializeIfNeeded()
+    if (!_metadata || _metadata.cardCount === 0) return null
+    const card = await db.get<TCGCard>('cards', id)
+    return card || null
+  } catch (error) {
+    console.error('[TCG Database] Error in getCardById:', error)
+    return null
+  }
 }

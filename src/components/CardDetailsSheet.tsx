@@ -65,9 +65,9 @@ export function CardDetailsSheet({
                   onClick={() => setZoomOpen(true)}
                   className="w-64 aspect-[2.5/3.5] rounded-lg overflow-hidden shadow-2xl cursor-pointer hover:shadow-3xl transition-shadow active:scale-[0.98] transition-transform relative bg-gradient-to-br from-blue-400 via-purple-400 to-pink-400"
                 >
-                  {card.imageUrl && !card.imageUrl.includes('placehold.co') ? (
+                  {(card.largeImageUrl || card.imageUrl) && !(card.largeImageUrl || card.imageUrl).includes('placehold.co') ? (
                     <img
-                      src={card.imageUrl}
+                      src={card.largeImageUrl || card.imageUrl}
                       alt={card.name}
                       className="w-full h-full object-cover absolute inset-0"
                       loading="lazy"
@@ -304,9 +304,9 @@ export function CardDetailsSheet({
         </button>
         <div className="w-full max-w-2xl px-4">
           <div className="w-full aspect-[2.5/3.5] rounded-lg shadow-2xl relative bg-gradient-to-br from-blue-400 via-purple-400 to-pink-400 overflow-hidden">
-            {card.imageUrl && !card.imageUrl.includes('placehold.co') ? (
+            {(card.largeImageUrl || card.imageUrl) && !(card.largeImageUrl || card.imageUrl).includes('placehold.co') ? (
               <img
-                src={card.imageUrl}
+                src={card.largeImageUrl || card.imageUrl}
                 alt={card.name}
                 className="w-full h-full object-contain absolute inset-0"
                 loading="lazy"
