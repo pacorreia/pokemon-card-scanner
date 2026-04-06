@@ -427,7 +427,7 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
 
                 <Tabs value={selectedTab} onValueChange={(v) => {
                   setSelectedTab(v as 'cards' | 'sets')
-                  setSelectedSupertypes([])
+                  if (v === 'sets') setSelectedSupertypes([])
                 }}>
                   <TabsList className="grid w-full grid-cols-2">
                     <TabsTrigger value="cards" className="font-display font-semibold">
