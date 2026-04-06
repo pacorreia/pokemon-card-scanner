@@ -114,7 +114,9 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
     let result = cards
 
     if (selectedSupertypes.length > 0) {
-      result = result.filter(card => card.supertype && selectedSupertypes.includes(card.supertype))
+      result = result.filter(
+        card => !!card.supertype && selectedSupertypes.some(supertype => supertype === card.supertype)
+      )
     }
 
     const query = searchQuery.toLowerCase()
