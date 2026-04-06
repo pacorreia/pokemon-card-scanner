@@ -42,6 +42,7 @@ export interface PokemonCard {
   type: string
   supertype?: string
   imageUrl: string
+  largeImageUrl?: string
   quantity: number
   dateAdded: number
   prices?: CardPrices

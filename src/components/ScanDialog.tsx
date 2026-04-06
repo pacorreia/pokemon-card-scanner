@@ -131,14 +131,18 @@ If this is not a Pokémon card or the image is too unclear to read, return: {"er
   })
   
   let imageUrl = `https://placehold.co/400x560/88ccee/ffffff?text=${encodeURIComponent(name)}`
-  if (tcgCard?.images?.large) {
-    imageUrl = tcgCard.images.large
-    console.log('[ScanDialog] Using large image:', imageUrl)
-  } else if (tcgCard?.images?.small) {
+  let largeImageUrl: string | undefined
+  if (tcgCard?.images?.small) {
     imageUrl = tcgCard.images.small
     console.log('[ScanDialog] Using small image:', imageUrl)
+  } else if (tcgCard?.images?.large) {
+    imageUrl = tcgCard.images.large
+    console.log('[ScanDialog] Using large image (small not available):', imageUrl)
   } else {
     console.log('[ScanDialog] No image found in database, using placeholder')
+  }
+  if (tcgCard?.images?.large) {
+    largeImageUrl = tcgCard.images.large
   }
 
   const prices = tcgCard?.tcgplayer || tcgCard?.cardmarket ? {
@@ -183,6 +187,7 @@ If this is not a Pokémon card or the image is too unclear to read, return: {"er
     type,
     supertype: tcgCard?.supertype,
     imageUrl,
+    largeImageUrl,
     prices,
     tcgCardId: tcgCard?.id
   }
@@ -268,8 +273,10 @@ Include every card that is clearly visible and identifiable. If no Pokémon card
 
       const tcgCard = await findCard(name, set, cardNumber)
       let imageUrl = `https://placehold.co/400x560/88ccee/ffffff?text=${encodeURIComponent(name)}`
-      if (tcgCard?.images?.large) imageUrl = tcgCard.images.large
-      else if (tcgCard?.images?.small) imageUrl = tcgCard.images.small
+      let largeImageUrl: string | undefined
+      if (tcgCard?.images?.small) imageUrl = tcgCard.images.small
+      else if (tcgCard?.images?.large) imageUrl = tcgCard.images.large
+      if (tcgCard?.images?.large) largeImageUrl = tcgCard.images.large
 
       const prices = tcgCard?.tcgplayer || tcgCard?.cardmarket ? {
         tcgplayer: tcgCard.tcgplayer ? {
@@ -291,7 +298,7 @@ Include every card that is clearly visible and identifiable. If no Pokémon card
         } : undefined,
       } : undefined
 
-      return { name, set, cardNumber, rarity, type, supertype: tcgCard?.supertype, imageUrl, prices, tcgCardId: tcgCard?.id } as Omit<PokemonCard, 'id' | 'quantity' | 'dateAdded'>
+      return { name, set, cardNumber, rarity, type, supertype: tcgCard?.supertype, imageUrl, largeImageUrl, prices, tcgCardId: tcgCard?.id } as Omit<PokemonCard, 'id' | 'quantity' | 'dateAdded'>
     })
   )
 

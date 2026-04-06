@@ -66,7 +66,7 @@ function MainApp() {
   const updatedCardIdsRef = useRef<Set<string>>(new Set())
   const imageUpdateRunIdRef = useRef(0)
   
-  const { isLoaded: isDatabaseLoaded, metadata, isLoading: isDatabaseLoading, findCard } = useTCGDatabase()
+  const { isLoaded: isDatabaseLoaded, metadata, isLoading: isDatabaseLoading, findCard, getCardById } = useTCGDatabase()
 
   useEffect(() => {
     console.log('[App] Database loaded state:', { isDatabaseLoaded, metadata, isDatabaseLoading, hasCheckedDatabase })
@@ -88,7 +88,7 @@ function MainApp() {
       }
 
       const cardsNeedingImages = cards.filter(card => 
-        card && (card.imageUrl?.includes('placehold.co') || !card.imageUrl) && !updatedCardIdsRef.current.has(card.id)
+        card && (card.imageUrl?.includes('placehold.co') || !card.imageUrl || !!card.tcgCardId) && !updatedCardIdsRef.current.has(card.id)
       )
 
       if (cardsNeedingImages.length === 0) {
@@ -106,7 +106,9 @@ function MainApp() {
         if (updatedCardIdsRef.current.has(card.id)) continue
 
         try {
-          const dbCard = await findCard(card.name, card.set, card.cardNumber)
+          const dbCard = card.tcgCardId
+            ? await getCardById(card.tcgCardId)
+            : await findCard(card.name, card.set, card.cardNumber)
 
           // Discard result if a newer run has superseded this one
           if (imageUpdateRunIdRef.current !== runId) break
@@ -118,8 +120,9 @@ function MainApp() {
             smallImage: dbCard?.images?.small
           })
           
-          if (dbCard?.images?.large || dbCard?.images?.small) {
-            const imageUrl = dbCard.images.large || dbCard.images.small
+          if (dbCard?.images?.small || dbCard?.images?.large) {
+            const imageUrl = dbCard.images.small || dbCard.images.large
+            const largeImageUrl = dbCard.images.large || dbCard.images.small
             
             setCards((currentCards) => {
               if (!currentCards) return []
@@ -128,6 +131,7 @@ function MainApp() {
                   ? {
                       ...c,
                       imageUrl: imageUrl,
+                      largeImageUrl: largeImageUrl,
                       tcgCardId: dbCard.id,
                       supertype: c.supertype || dbCard.supertype || undefined,
                       prices: dbCard.tcgplayer || dbCard.cardmarket ? {
@@ -168,7 +172,7 @@ function MainApp() {
     }
 
     updateCardImagesFromDatabase()
-  }, [isDatabaseLoaded, findCard, cards, setCards])
+  }, [isDatabaseLoaded, findCard, getCardById, cards, setCards])
 
   const handleCardScanned = (card: PokemonCard) => {
     console.log('[App] Card scanned:', {
@@ -203,6 +207,7 @@ function MainApp() {
                 ...c, 
                 quantity: c.quantity + 1,
                 imageUrl: card.imageUrl && !card.imageUrl.includes('placehold.co') ? card.imageUrl : c.imageUrl,
+                largeImageUrl: card.largeImageUrl || c.largeImageUrl,
                 prices: card.prices || c.prices,
                 tcgCardId: card.tcgCardId || c.tcgCardId,
                 supertype: c.supertype || card.supertype,
@@ -238,6 +243,7 @@ function MainApp() {
                   ...c,
                   quantity: c.quantity + 1,
                   imageUrl: card.imageUrl && !card.imageUrl.includes('placehold.co') ? card.imageUrl : c.imageUrl,
+                  largeImageUrl: card.largeImageUrl || c.largeImageUrl,
                   prices: card.prices || c.prices,
                   tcgCardId: card.tcgCardId || c.tcgCardId,
                   supertype: c.supertype || card.supertype,
