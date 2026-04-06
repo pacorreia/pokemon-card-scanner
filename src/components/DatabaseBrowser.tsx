@@ -453,6 +453,7 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
                         variant={selectedSupertypes.includes(supertype) ? 'default' : 'outline'}
                         size="sm"
                         className="h-7 px-3 text-xs rounded-full"
+                        aria-pressed={selectedSupertypes.includes(supertype)}
                         onClick={() => setSelectedSupertypes(prev =>
                           prev.includes(supertype) ? prev.filter(t => t !== supertype) : [...prev, supertype]
                         )}
