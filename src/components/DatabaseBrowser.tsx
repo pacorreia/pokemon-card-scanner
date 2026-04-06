@@ -23,6 +23,8 @@ const SET_ITEM_HEIGHT = 88
 const VIRTUAL_PADDING_START = 16
 const VIRTUAL_PADDING_END = 80
 const MOBILE_BREAKPOINT = 640
+const QUICK_FILTER_SUPERTYPES = ['Pokémon', 'Trainer', 'Energy'] as const
+type QuickFilterSupertype = typeof QUICK_FILTER_SUPERTYPES[number]
 
 type VirtualRow =
   | { type: 'group-header'; label: string; count: number }
@@ -39,6 +41,7 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
   const [selectedCard, setSelectedCard] = useState<TCGCard | null>(null)
   const [isLoadingCards, setIsLoadingCards] = useState(false)
   const [cols, setCols] = useState(3)
+  const [selectedSupertypes, setSelectedSupertypes] = useState<QuickFilterSupertype[]>([])
   const parentRef = useRef<HTMLDivElement>(null)
 
   const handleOpenChange = useCallback((isOpen: boolean) => {
@@ -98,20 +101,29 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
     })
   }, [open, isLoaded, cards.length, sets.length, metadata])
 
-  // Reset scroll when tab or search changes
+  // Reset scroll when tab, search, or quick filters change
   useEffect(() => {
     if (parentRef.current) {
       parentRef.current.scrollTop = 0
     }
-  }, [selectedTab, searchQuery])
+  }, [selectedTab, searchQuery, selectedSupertypes])
 
   const filteredCards = useMemo(() => {
     if (!cards || cards.length === 0) return []
     
+    let result = cards
+    const selectedSupertypeValues: readonly string[] = selectedSupertypes
+
+    if (selectedSupertypes.length > 0) {
+      result = result.filter(
+        card => !!card.supertype && selectedSupertypeValues.includes(card.supertype)
+      )
+    }
+
     const query = searchQuery.toLowerCase()
-    if (!query) return cards
+    if (!query) return result
     
-    return cards.filter(card => {
+    return result.filter(card => {
       if (!card || !card.name) return false
       
       return (
@@ -121,7 +133,7 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
         (card.types && card.types.some(type => type.toLowerCase().includes(query)))
       )
     })
-  }, [cards, searchQuery])
+  }, [cards, searchQuery, selectedSupertypes])
 
   const filteredSets = useMemo(() => {
     if (!sets || sets.length === 0) return []
@@ -239,6 +251,15 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
     measureElement: el => el.getBoundingClientRect().height,
     overscan: 3,
   })
+
+  // Force virtualizer re-measurement when the sheet opens with data already loaded,
+  // or when cards finish loading. The Sheet's entry animation can cause the virtualizer
+  // to initialise with a stale container size, showing no items until a tab switch.
+  useEffect(() => {
+    if (!open || activeRows.length === 0) return
+    const id = requestAnimationFrame(() => rowVirtualizer.measure())
+    return () => cancelAnimationFrame(id)
+  }, [open, activeRows.length, rowVirtualizer])
 
   return (
     <Sheet open={open} onOpenChange={handleOpenChange}>
@@ -405,7 +426,10 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
                   )}
                 </div>
 
-                <Tabs value={selectedTab} onValueChange={(v) => setSelectedTab(v as 'cards' | 'sets')}>
+                <Tabs value={selectedTab} onValueChange={(v) => {
+                  setSelectedTab(v as 'cards' | 'sets')
+                  if (v === 'sets') setSelectedSupertypes([])
+                }}>
                   <TabsList className="grid w-full grid-cols-2">
                     <TabsTrigger value="cards" className="font-display font-semibold">
                       <SquaresFour className="w-4 h-4 mr-1.5" />
@@ -423,6 +447,25 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
                     </TabsTrigger>
                   </TabsList>
                 </Tabs>
+
+                {selectedTab === 'cards' && (
+                  <div className="flex gap-2 flex-wrap">
+                    {QUICK_FILTER_SUPERTYPES.map(supertype => (
+                      <Button
+                        key={supertype}
+                        variant={selectedSupertypes.includes(supertype) ? 'default' : 'outline'}
+                        size="sm"
+                        className="h-7 px-3 text-xs rounded-full"
+                        aria-pressed={selectedSupertypes.includes(supertype)}
+                        onClick={() => setSelectedSupertypes(prev =>
+                          prev.includes(supertype) ? prev.filter(t => t !== supertype) : [...prev, supertype]
+                        )}
+                      >
+                        {supertype}
+                      </Button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div ref={parentRef} className="flex-1 overflow-y-auto">
