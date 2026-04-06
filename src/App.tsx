@@ -88,7 +88,7 @@ function MainApp() {
       }
 
       const cardsNeedingImages = cards.filter(card => 
-        card && (card.imageUrl?.includes('placehold.co') || !card.imageUrl || !!card.tcgCardId) && !updatedCardIdsRef.current.has(card.id)
+        card && (card.imageUrl?.includes('placehold.co') || !card.imageUrl || (card.tcgCardId && !card.largeImageUrl)) && !updatedCardIdsRef.current.has(card.id)
       )
 
       if (cardsNeedingImages.length === 0) {
@@ -122,7 +122,7 @@ function MainApp() {
           
           if (dbCard?.images?.small || dbCard?.images?.large) {
             const imageUrl = dbCard.images.small || dbCard.images.large
-            const largeImageUrl = dbCard.images.large || dbCard.images.small
+            const largeImageUrl = dbCard.images.large || undefined
             
             setCards((currentCards) => {
               if (!currentCards) return []
