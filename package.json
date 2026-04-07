@@ -7,7 +7,7 @@
     "dev": "vite",
     "dev:server": "node --experimental-sqlite --disable-warning=ExperimentalWarning server/index.mjs",
     "dev:full": "node --experimental-sqlite --disable-warning=ExperimentalWarning server/index.mjs & vite",
-    "kill": "fuser -k 5000/tcp",
+    "kill": "fuser -k 5173/tcp 8787/tcp",
     "build": "tsc -b --noCheck && vite build",
     "lint": "eslint .",
     "optimize": "vite optimize",
