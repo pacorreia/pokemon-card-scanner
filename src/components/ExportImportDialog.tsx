@@ -12,6 +12,7 @@ import { Separator } from '@/components/ui/separator'
 import { Download, Upload, FileArrowDown, FileArrowUp, CheckCircle, Warning } from '@phosphor-icons/react'
 import type { PokemonCard } from '@/lib/types'
 import { toast } from 'sonner'
+import { authHeaders } from '@/lib/api-fetch'
 
 interface ExportImportDialogProps {
   open: boolean
@@ -22,6 +23,7 @@ interface ExportImportDialogProps {
 
 export function ExportImportDialog({ open, onOpenChange, cards, onImport }: ExportImportDialogProps) {
   const [importing, setImporting] = useState(false)
+  const [databaseTransferBusy, setDatabaseTransferBusy] = useState(false)
 
   const handleExport = () => {
     const exportData = {
@@ -108,6 +110,76 @@ export function ExportImportDialog({ open, onOpenChange, cards, onImport }: Expo
     input.click()
   }
 
+  const handleExportSqlite = async () => {
+    setDatabaseTransferBusy(true)
+    try {
+      const res = await fetch('/api/db/export', { headers: authHeaders() })
+      if (!res.ok) {
+        throw new Error(await res.text())
+      }
+
+      const blob = await res.blob()
+      const dataUrl = URL.createObjectURL(blob)
+      const headerName = res.headers.get('content-disposition')
+      const fileNameMatch = headerName?.match(/filename="?([^";]+)"?/)
+      const fileName = fileNameMatch?.[1] || `pokedex-${new Date().toISOString().slice(0, 10)}.db`
+
+      const link = document.createElement('a')
+      link.href = dataUrl
+      link.download = fileName
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(dataUrl)
+
+      toast.success('SQLite database exported')
+    } catch (error) {
+      toast.error('SQLite export failed', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      })
+    } finally {
+      setDatabaseTransferBusy(false)
+    }
+  }
+
+  const handleImportSqliteClick = () => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '.db,.sqlite,.sqlite3,application/x-sqlite3'
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0]
+      if (!file) return
+
+      setDatabaseTransferBusy(true)
+      try {
+        const res = await fetch('/api/db/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/octet-stream', ...authHeaders() },
+          body: file,
+        })
+        const payload = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          throw new Error(payload?.error || 'Import failed')
+        }
+
+        toast.success('SQLite database imported', {
+          description: 'The app will reload to use the restored database.',
+        })
+
+        setTimeout(() => {
+          window.location.reload()
+        }, 900)
+      } catch (error) {
+        toast.error('SQLite import failed', {
+          description: error instanceof Error ? error.message : 'Unknown error',
+        })
+      } finally {
+        setDatabaseTransferBusy(false)
+      }
+    }
+    input.click()
+  }
+
   const totalQuantity = cards.reduce((sum, card) => sum + card.quantity, 0)
 
   return (
@@ -183,6 +255,47 @@ export function ExportImportDialog({ open, onOpenChange, cards, onImport }: Expo
                 <Upload className="w-5 h-5 mr-2" />
                 {importing ? 'Importing...' : 'Import from File'}
               </Button>
+            </div>
+
+            <Separator />
+
+            <div className="space-y-3">
+              <Label className="text-base font-semibold flex items-center gap-2">
+                <Download className="w-5 h-5" />
+                SQLite Database Backup
+              </Label>
+              <p className="text-sm text-muted-foreground">
+                Export or import the full server database file, including TCG catalog and your collection data.
+              </p>
+
+              <div className="flex items-start gap-3 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
+                <Warning className="w-5 h-5 text-yellow-600 shrink-0 mt-0.5" weight="fill" />
+                <p className="text-xs text-yellow-900/80">
+                  Importing a SQLite file replaces the current server database and reloads the app.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <Button
+                  onClick={handleExportSqlite}
+                  disabled={databaseTransferBusy}
+                  variant="outline"
+                  size="lg"
+                >
+                  <Download className="w-5 h-5 mr-2" />
+                  Export DB
+                </Button>
+
+                <Button
+                  onClick={handleImportSqliteClick}
+                  disabled={databaseTransferBusy}
+                  variant="outline"
+                  size="lg"
+                >
+                  <Upload className="w-5 h-5 mr-2" />
+                  {databaseTransferBusy ? 'Working...' : 'Import DB'}
+                </Button>
+              </div>
             </div>
           </div>
         </div>

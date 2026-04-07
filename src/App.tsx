@@ -1,5 +1,4 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { useLocalStorage } from '@/hooks/useLocalStorage'
 import { Toaster } from '@/components/ui/sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -19,6 +18,7 @@ import { CollectionsManager } from '@/components/CollectionsManager'
 import { AddToCollectionDialog } from '@/components/AddToCollectionDialog'
 import { SettingsDialog } from '@/components/SettingsDialog'
 import { useTCGDatabase } from '@/lib/tcg-database'
+import { apiFetch } from '@/lib/api-fetch'
 import type { PokemonCard, ViewMode, CardCollection } from '@/lib/types'
 import { toast } from 'sonner'
 import { HomeView } from '@/components/HomeView'
@@ -31,6 +31,50 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 
+// ── API helpers ──────────────────────────────────────────────────────────────
+
+const api = {
+  // -- Collection (user's scanned cards) ------------------------------------
+  getCollection: ()                        => apiFetch<PokemonCard[]>('/api/collection'),
+  addCard:       (card: PokemonCard)       => apiFetch<PokemonCard>('/api/collection', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(card),
+  }),
+  updateCard: (id: string, patch: Partial<PokemonCard>) => apiFetch<PokemonCard>(`/api/collection/${encodeURIComponent(id)}`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch),
+  }),
+  deleteCard: (id: string) => apiFetch<{ ok: boolean }>(`/api/collection/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+
+  // -- Named collections (folders) ------------------------------------------
+  getCollections:    ()                     => apiFetch<CardCollection[]>('/api/collections'),
+  createCollection:  (c: CardCollection)    => apiFetch<CardCollection>('/api/collections', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(c),
+  }),
+  updateCollection:  (id: string, patch: Partial<CardCollection>) => apiFetch<CardCollection>(`/api/collections/${encodeURIComponent(id)}`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch),
+  }),
+  deleteCollection:  (id: string)            => apiFetch<{ ok: boolean }>(`/api/collections/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  setMembership:     (collectionId: string, cardId: string, add: boolean) =>
+    apiFetch<{ ok: boolean }>(`/api/collections/${encodeURIComponent(collectionId)}/cards`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cardId, add }),
+    }),
+}
+
+// ── Image URL helpers ────────────────────────────────────────────────────────
+
+function isUsableImageUrl(value: unknown): value is string {
+  if (typeof value !== 'string') return false
+  const n = value.trim()
+  if (!n || n === 'undefined' || n === 'null') return false
+  return n.startsWith('https://') || n.startsWith('http://') || n.startsWith('data:image/')
+}
+
+function pickBestImageUrl(...candidates: Array<unknown>): string {
+  for (const c of candidates) { if (isUsableImageUrl(c)) return c }
+  return ''
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 function App() {
   return (
     <>
@@ -41,511 +85,269 @@ function App() {
 }
 
 function MainApp() {
-  const [cards, setCards] = useLocalStorage<PokemonCard[]>('pokemon-cards', [])
-  const [collections, setCollections] = useLocalStorage<CardCollection[]>('card-collections', [])
-  const [scanDialogOpen, setScanDialogOpen] = useState(false)
-  const [selectedCard, setSelectedCard] = useState<PokemonCard | null>(null)
-  const [detailsOpen, setDetailsOpen] = useState(false)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [viewMode, setViewMode] = useState<ViewMode>('all')
-  const [dbManagerOpen, setDbManagerOpen] = useState(false)
-  const [dbBrowserOpen, setDbBrowserOpen] = useState(false)
-  const [exportImportOpen, setExportImportOpen] = useState(false)
-  const [collectionsManagerOpen, setCollectionsManagerOpen] = useState(false)
-  const [addToCollectionOpen, setAddToCollectionOpen] = useState(false)
+  const [cards, setCards]             = useState<PokemonCard[]>([])
+  const [collections, setCollections] = useState<CardCollection[]>([])
+  const [dataLoading, setDataLoading] = useState(true)
+
+  const [scanDialogOpen,        setScanDialogOpen]        = useState(false)
+  const [selectedCard,          setSelectedCard]          = useState<PokemonCard | null>(null)
+  const [detailsOpen,           setDetailsOpen]           = useState(false)
+  const [searchQuery,           setSearchQuery]           = useState('')
+  const [viewMode,              setViewMode]              = useState<ViewMode>('all')
+  const [dbManagerOpen,         setDbManagerOpen]         = useState(false)
+  const [dbBrowserOpen,         setDbBrowserOpen]         = useState(false)
+  const [exportImportOpen,      setExportImportOpen]      = useState(false)
+  const [collectionsManagerOpen,setCollectionsManagerOpen]= useState(false)
+  const [addToCollectionOpen,   setAddToCollectionOpen]   = useState(false)
   const [selectedCardForCollection, setSelectedCardForCollection] = useState<PokemonCard | null>(null)
-  const [settingsOpen, setSettingsOpen] = useState(false)
-  const [selectedCollection, setSelectedCollection] = useState<CardCollection | null>(null)
-  const [selectedTypes, setSelectedTypes] = useState<string[]>([])
-  const [selectedRarities, setSelectedRarities] = useState<string[]>([])
-  const [selectedSupertypes, setSelectedSupertypes] = useState<string[]>([])
-  const [appView, setAppView] = useState<'home' | 'catalog'>('home')
-  const [isSelectionMode, setIsSelectionMode] = useState(false)
-  const [selectedCardIds, setSelectedCardIds] = useState<Set<string>>(new Set())
-  const [hasCheckedDatabase, setHasCheckedDatabase] = useState(false)
-  const updatedCardIdsRef = useRef<Set<string>>(new Set())
+  const [settingsOpen,          setSettingsOpen]          = useState(false)
+  const [selectedCollection,    setSelectedCollection]    = useState<CardCollection | null>(null)
+  const [selectedTypes,         setSelectedTypes]         = useState<string[]>([])
+  const [selectedRarities,      setSelectedRarities]      = useState<string[]>([])
+  const [selectedSupertypes,    setSelectedSupertypes]    = useState<string[]>([])
+  const [appView,               setAppView]               = useState<'home' | 'catalog'>('home')
+  const [isSelectionMode,       setIsSelectionMode]       = useState(false)
+  const [selectedCardIds,       setSelectedCardIds]       = useState<Set<string>>(new Set())
+  const [hasCheckedDatabase,    setHasCheckedDatabase]    = useState(false)
+
+  const updatedCardIdsRef   = useRef<Set<string>>(new Set())
   const imageUpdateRunIdRef = useRef(0)
-  
+
   const { isLoaded: isDatabaseLoaded, metadata, isLoading: isDatabaseLoading, findCard, getCardById } = useTCGDatabase()
 
+  // ── Load collection & named collections from server on mount ───────────────
   useEffect(() => {
-    console.log('[App] Database loaded state:', { isDatabaseLoaded, metadata, isDatabaseLoading, hasCheckedDatabase })
+    Promise.all([
+      api.getCollection().catch(() => [] as PokemonCard[]),
+      api.getCollections().catch(() => [] as CardCollection[]),
+    ]).then(([serverCards, serverCollections]) => {
+      setCards(serverCards)
+      setCollections(serverCollections)
+    }).finally(() => setDataLoading(false))
+  }, [])
+
+  // ── Auto-open DB manager when no TCG database is loaded ───────────────────
+  useEffect(() => {
     if (!isDatabaseLoading && !hasCheckedDatabase) {
       setHasCheckedDatabase(true)
-      if (!isDatabaseLoaded && metadata === null) {
-        console.log('[App] Opening database manager - no database found')
+      if (!isDatabaseLoaded && (metadata === null || metadata?.cardCount === 0)) {
         setDbManagerOpen(true)
       }
     }
   }, [isDatabaseLoaded, metadata, isDatabaseLoading, hasCheckedDatabase])
 
+  // ── Back-fill images from TCG DB for cards that have placeholder images ────
   useEffect(() => {
     const runId = ++imageUpdateRunIdRef.current
 
-    const updateCardImagesFromDatabase = async () => {
-      if (!isDatabaseLoaded || !cards || cards.length === 0) {
-        return
-      }
+    const run = async () => {
+      if (!isDatabaseLoaded || cards.length === 0) return
 
-      const cardsNeedingImages = cards.filter(card => 
-        card && (card.imageUrl?.includes('placehold.co') || !card.imageUrl || (card.tcgCardId && !card.largeImageUrl)) && !updatedCardIdsRef.current.has(card.id)
+      const needsImage = cards.filter(card =>
+        card &&
+        (card.imageUrl?.includes('placehold.co') || !isUsableImageUrl(card.imageUrl) ||
+          (card.tcgCardId && !isUsableImageUrl(card.largeImageUrl))) &&
+        !updatedCardIdsRef.current.has(card.id)
       )
+      if (needsImage.length === 0) return
 
-      if (cardsNeedingImages.length === 0) {
-        console.log('[App] All cards already have images')
-        return
-      }
+      const updates = new Map<string, Partial<PokemonCard>>()
 
-      console.log(`[App] Updating ${cardsNeedingImages.length} cards with database images...`)
-
-      // Collect all updates first so we can apply them in a single setCards call
-      // (avoids one localStorage write + re-render per card)
-      const updates = new Map<string, {
-        imageUrl: string
-        largeImageUrl: string | undefined
-        tcgCardId: string
-        supertype: string | undefined
-        prices: PokemonCard['prices'] | null
-      }>()
-
-      for (const card of cardsNeedingImages) {
-        // Abort if a newer run has started or this card was already successfully updated
+      for (const card of needsImage) {
         if (imageUpdateRunIdRef.current !== runId) break
         if (updatedCardIdsRef.current.has(card.id)) continue
-
         try {
           const dbCard = card.tcgCardId
             ? await getCardById(card.tcgCardId)
             : await findCard(card.name, card.set, card.cardNumber)
-
-          // Discard result if a newer run has superseded this one
           if (imageUpdateRunIdRef.current !== runId) break
-
-          console.log(`[App] Looking up image for "${card.name}" (Set: ${card.set}, #${card.cardNumber}):`, {
-            found: !!dbCard,
-            hasImages: !!dbCard?.images,
-            largeImage: dbCard?.images?.large,
-            smallImage: dbCard?.images?.small
-          })
-          
           if (dbCard?.images?.small || dbCard?.images?.large) {
             updates.set(card.id, {
-              imageUrl: dbCard.images.small || dbCard.images.large,
-              largeImageUrl: dbCard.images.large || undefined,
-              tcgCardId: dbCard.id,
-              supertype: dbCard.supertype || undefined,
-              prices: (dbCard.tcgplayer || dbCard.cardmarket) ? {
-                tcgplayer: dbCard.tcgplayer ? {
-                  url: dbCard.tcgplayer.url,
-                  updatedAt: dbCard.tcgplayer.updatedAt,
-                  ...(dbCard.tcgplayer.prices?.normal?.market && { market: dbCard.tcgplayer.prices.normal.market }),
-                } : undefined,
-                cardmarket: dbCard.cardmarket ? {
-                  url: dbCard.cardmarket.url,
-                  updatedAt: dbCard.cardmarket.updatedAt,
-                  ...(dbCard.cardmarket.prices?.trendPrice && { trendPrice: dbCard.cardmarket.prices.trendPrice }),
-                } : undefined
-              } : null
+              imageUrl:     pickBestImageUrl(dbCard.images.small, dbCard.images.large),
+              largeImageUrl:dbCard.images.large || undefined,
+              tcgCardId:    dbCard.id,
+              supertype:    dbCard.supertype || undefined,
             })
-            console.log(`[App] ✓ Queued image update for ${card.name} to: ${dbCard.images.small || dbCard.images.large}`)
-          } else {
-            console.log(`[App] ✗ No image found for ${card.name}`)
           }
-        } catch (error) {
-          console.error(`[App] Error looking up card ${card.name}:`, error)
-        }
+        } catch { /* ignore */ }
       }
 
-      // Apply all collected updates in a single setCards call
-      const updatedCount = updates.size
-      if (updatedCount > 0 && imageUpdateRunIdRef.current === runId) {
-        setCards((currentCards) => {
-          if (!currentCards) return []
-          return currentCards.map(c => {
-            if (!c || !updates.has(c.id)) return c
-            const u = updates.get(c.id)!
-            return {
-              ...c,
-              imageUrl: u.imageUrl,
-              largeImageUrl: u.largeImageUrl,
-              tcgCardId: u.tcgCardId,
-              supertype: c.supertype || u.supertype,
-              prices: u.prices !== null ? u.prices : c.prices,
-            }
-          })
-        })
-
-        // Mark all updated cards after the single setCards call
-        for (const id of updates.keys()) {
-          updatedCardIdsRef.current.add(id)
+      if (updates.size > 0 && imageUpdateRunIdRef.current === runId) {
+        // Persist each update to server; only mark as updated on success so
+        // failed updates can be retried on the next image-backfill run.
+        for (const [id, patch] of updates) {
+          try {
+            await api.updateCard(id, patch)
+            updatedCardIdsRef.current.add(id)
+          } catch { /* ignore image update failure; will retry next run */ }
         }
-      }
-
-      if (imageUpdateRunIdRef.current === runId && updatedCount > 0) {
-        toast.success('Card images updated from database', {
-          description: `Updated images for ${updatedCount} ${updatedCount === 1 ? 'card' : 'cards'}`
-        })
+        setCards(prev => prev.map(c => updates.has(c.id) ? { ...c, ...updates.get(c.id) } : c))
+        toast.success('Card images updated', { description: `Updated ${updates.size} card${updates.size !== 1 ? 's' : ''}` })
       }
     }
 
-    updateCardImagesFromDatabase()
-  }, [isDatabaseLoaded, findCard, getCardById, cards, setCards])
+    run()
+  }, [isDatabaseLoaded, findCard, getCardById, cards])
 
-  const handleCardScanned = (card: PokemonCard) => {
-    console.log('[App] Card scanned:', {
-      name: card.name,
-      set: card.set,
-      cardNumber: card.cardNumber,
-      imageUrl: card.imageUrl,
-      hasPlaceholder: card.imageUrl?.includes('placehold.co'),
-      tcgCardId: card.tcgCardId
-    })
-    
-    setCards((currentCards) => {
-      const current = currentCards || []
-      const existingCard = current.find(
-        c => c.name === card.name && c.set === card.set && c.cardNumber === card.cardNumber
-      )
-      
-      if (existingCard) {
-        toast.info(`${card.name} already in collection!`, {
-          description: 'Quantity increased by 1',
-          action: {
-            label: 'View',
-            onClick: () => {
-              setSelectedCard({ ...existingCard, quantity: existingCard.quantity + 1 })
-              setDetailsOpen(true)
-            }
-          }
-        })
-        return current.map(c =>
-          c.id === existingCard.id
-            ? { 
-                ...c, 
-                quantity: c.quantity + 1,
-                imageUrl: card.imageUrl && !card.imageUrl.includes('placehold.co') ? card.imageUrl : c.imageUrl,
-                largeImageUrl: card.largeImageUrl || c.largeImageUrl,
-                prices: card.prices || c.prices,
-                tcgCardId: card.tcgCardId || c.tcgCardId,
-                supertype: c.supertype || card.supertype,
-              }
-            : c
-        )
+  // ── Collection mutations ──────────────────────────────────────────────────
+
+  const getCardIdentityKey = (card: Pick<PokemonCard, 'name' | 'set' | 'cardNumber'>) =>
+    `${card.name}::${card.set}::${card.cardNumber}`
+
+  const handleCardScanned = async (card: PokemonCard) => {
+    const existing = cards.find(c => c.name === card.name && c.set === card.set && c.cardNumber === card.cardNumber)
+    try {
+      if (existing) {
+        const patch = {
+          quantity:     existing.quantity + 1,
+          imageUrl:     card.imageUrl && !card.imageUrl.includes('placehold.co') ? card.imageUrl : existing.imageUrl,
+          largeImageUrl:card.largeImageUrl || existing.largeImageUrl,
+          prices:       card.prices || existing.prices,
+          tcgCardId:    card.tcgCardId || existing.tcgCardId,
+          supertype:    existing.supertype || card.supertype,
+        }
+        const updated = await api.updateCard(existing.id, patch)
+        setCards(prev => prev.map(c => c.id === existing.id ? updated : c))
+        toast.info(`${card.name} already in collection!`, { description: 'Quantity increased by 1' })
+      } else {
+        const created = await api.addCard(card)
+        setCards(prev => [...prev, created])
       }
-      
-      return [...current, card]
-    })
+    } catch (err) {
+      toast.error('Failed to save card', { description: err instanceof Error ? err.message : 'Unknown error' })
+    }
   }
 
-  const handleCardsScanned = (newCards: PokemonCard[]) => {
-    let addedCount = 0
-    let updatedCount = 0
-
-    setCards((currentCards) => {
-      let updated = currentCards || []
-      // Compute counts inside a local scope so the updater stays pure;
-      // we'll read the resulting counts from the captured variables after
-      // the updater runs (they are only used outside setCards).
-      let localAdded = 0
-      let localUpdated = 0
-      newCards.forEach(card => {
-        const existing = updated.find(
-          c => c.name === card.name && c.set === card.set && c.cardNumber === card.cardNumber
-        )
+  const handleCardsScanned = async (newCards: PokemonCard[]) => {
+    let added = 0, updated = 0
+    // Build a local working map so intra-batch duplicates are de-duped correctly
+    // even before React has had a chance to re-render with the new state.
+    const localMap = new Map(cards.map(c => [getCardIdentityKey(c), c]))
+    for (const card of newCards) {
+      const key = getCardIdentityKey(card)
+      const existing = localMap.get(key)
+      try {
         if (existing) {
-          localUpdated++
-          updated = updated.map(c =>
-            c.id === existing.id
-              ? {
-                  ...c,
-                  quantity: c.quantity + 1,
-                  imageUrl: card.imageUrl && !card.imageUrl.includes('placehold.co') ? card.imageUrl : c.imageUrl,
-                  largeImageUrl: card.largeImageUrl || c.largeImageUrl,
-                  prices: card.prices || c.prices,
-                  tcgCardId: card.tcgCardId || c.tcgCardId,
-                  supertype: c.supertype || card.supertype,
-                }
-              : c
-          )
+          const patch = {
+            quantity:     existing.quantity + 1,
+            imageUrl:     card.imageUrl && !card.imageUrl.includes('placehold.co') ? card.imageUrl : existing.imageUrl,
+            largeImageUrl:card.largeImageUrl || existing.largeImageUrl,
+            prices:       card.prices || existing.prices,
+            tcgCardId:    card.tcgCardId || existing.tcgCardId,
+          }
+          const result = await api.updateCard(existing.id, patch)
+          localMap.set(key, result)
+          setCards(prev => prev.map(c => c.id === existing.id ? result : c))
+          updated++
         } else {
-          localAdded++
-          updated = [...updated, card]
+          const created = await api.addCard(card)
+          localMap.set(key, created)
+          setCards(prev => [...prev, created])
+          added++
         }
-      })
-      addedCount = localAdded
-      updatedCount = localUpdated
-      return updated
-    })
-
-    // Use a microtask so the values are settled after the updater runs
-    // (React may batch but the same-tick promise ensures the toast fires once)
-    Promise.resolve().then(() => {
-      if (addedCount === 0 && updatedCount === 0) return
-      const parts: string[] = []
-      if (addedCount > 0) parts.push(`${addedCount} new card${addedCount !== 1 ? 's' : ''} added`)
-      if (updatedCount > 0) parts.push(`${updatedCount} duplicate${updatedCount !== 1 ? 's' : ''} incremented`)
-      toast.success(parts.join(', ') + '!')
-    })
+      } catch { /* continue with remaining cards */ }
+    }
+    const parts: string[] = []
+    if (added   > 0) parts.push(`${added} new card${added !== 1 ? 's' : ''} added`)
+    if (updated > 0) parts.push(`${updated} duplicate${updated !== 1 ? 's' : ''} incremented`)
+    if (parts.length) toast.success(parts.join(', ') + '!')
   }
 
-
-  const handleUpdateQuantity = (cardId: string, delta: number) => {
-    setCards((currentCards) => {
-      const current = currentCards || []
-      return current.map(card =>
-        card.id === cardId
-          ? { ...card, quantity: Math.max(1, card.quantity + delta) }
-          : card
-      )
-    })
-    
-    if (selectedCard?.id === cardId) {
-      setSelectedCard(prev => prev ? { ...prev, quantity: Math.max(1, prev.quantity + delta) } : null)
+  const handleUpdateQuantity = async (cardId: string, delta: number) => {
+    const card = cards.find(c => c.id === cardId)
+    if (!card) return
+    const newQty = Math.max(1, card.quantity + delta)
+    setCards(prev => prev.map(c => c.id === cardId ? { ...c, quantity: newQty } : c))
+    if (selectedCard?.id === cardId) setSelectedCard(prev => prev ? { ...prev, quantity: newQty } : null)
+    try {
+      await api.updateCard(cardId, { quantity: newQty })
+    } catch {
+      /* revert */
+      setCards(prev => prev.map(c => c.id === cardId ? card : c))
+      if (selectedCard?.id === cardId) setSelectedCard(card)
     }
   }
 
-  const handleDeleteCard = (cardId: string) => {
-    setCards((currentCards) => {
-      const current = currentCards || []
-      return current.filter(card => card.id !== cardId)
-    })
+  const handleDeleteCard = async (cardId: string) => {
+    setCards(prev => prev.filter(c => c.id !== cardId))
+    try { await api.deleteCard(cardId) } catch { /* non-fatal */ }
     toast.success('Card removed from collection')
   }
 
-  const handleCardClick = (card: PokemonCard) => {
-    if (!card) return
-    setSelectedCard(card)
-    setDetailsOpen(true)
-  }
+  const handleImport = async (importedCards: PokemonCard[]) => {
+    const cardMap = new Map(cards.map(card => [getCardIdentityKey(card), card]))
 
-  const availableTypes = useMemo(() => {
-    const types = new Set<string>()
-    ;(cards || []).forEach(card => {
-      if (card.type) types.add(card.type)
-    })
-    return Array.from(types).sort()
-  }, [cards])
+    for (const imported of importedCards) {
+      const key = getCardIdentityKey(imported)
+      const existing = cardMap.get(key)
 
-  const availableSupertypes = useMemo(() => {
-    const supertypes = new Set<string>()
-    ;(cards || []).forEach(card => {
-      if (card.supertype) supertypes.add(card.supertype)
-    })
-    return Array.from(supertypes).sort()
-  }, [cards])
-
-  const availableRarities = useMemo(() => {
-    const rarities = new Set<string>()
-    ;(cards || []).forEach(card => {
-      if (card.rarity) rarities.add(card.rarity)
-    })
-    return Array.from(rarities).sort()
-  }, [cards])
-
-  const filteredCards = useMemo(() => {
-    let filtered = cards || []
-
-    if (viewMode === 'collection' && selectedCollection) {
-      filtered = filtered.filter(card => selectedCollection.cardIds.includes(card.id))
-    }
-
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase()
-      filtered = filtered.filter(card =>
-        card.name.toLowerCase().includes(query) ||
-        card.set.toLowerCase().includes(query) ||
-        card.type.toLowerCase().includes(query) ||
-        card.rarity.toLowerCase().includes(query)
-      )
-    }
-
-    if (selectedSupertypes.length > 0) {
-      filtered = filtered.filter(card => card.supertype && selectedSupertypes.includes(card.supertype))
-    }
-
-    if (selectedTypes.length > 0) {
-      filtered = filtered.filter(card => selectedTypes.includes(card.type))
-    }
-
-    if (selectedRarities.length > 0) {
-      filtered = filtered.filter(card => selectedRarities.includes(card.rarity))
-    }
-
-    if (viewMode === 'duplicates') {
-      filtered = filtered.filter(card => card.quantity > 1)
-    }
-
-    return filtered.sort((a, b) => b.dateAdded - a.dateAdded)
-  }, [cards, searchQuery, viewMode, selectedTypes, selectedRarities, selectedSupertypes, selectedCollection])
-
-  const duplicateCount = useMemo(() => {
-    return (cards || []).filter(card => card.quantity > 1).length
-  }, [cards])
-
-  const totalCards = useMemo(() => {
-    return (cards || []).reduce((sum, card) => sum + card.quantity, 0)
-  }, [cards])
-
-  const collectionValue = useMemo(() => {
-    const value = (cards || []).reduce((sum, card) => {
-      const price = card.prices?.tcgplayer?.market || card.prices?.cardmarket?.trendPrice || 0
-      return sum + (price * card.quantity)
-    }, 0)
-    return value
-  }, [cards])
-
-  const activeFiltersCount = selectedTypes.length + selectedRarities.length + selectedSupertypes.length
-
-  const handleToggleSupertype = (supertype: string) => {
-    setSelectedSupertypes(prev =>
-      prev.includes(supertype) ? prev.filter(t => t !== supertype) : [...prev, supertype]
-    )
-  }
-
-  const handleToggleType = (type: string) => {
-    setSelectedTypes(prev =>
-      prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]
-    )
-  }
-
-  const handleToggleRarity = (rarity: string) => {
-    setSelectedRarities(prev =>
-      prev.includes(rarity) ? prev.filter(r => r !== rarity) : [...prev, rarity]
-    )
-  }
-
-  const handleClearFilters = () => {
-    setSelectedTypes([])
-    setSelectedRarities([])
-    setSelectedSupertypes([])
-    setSearchQuery('')
-  }
-
-  const handleToggleSelectionMode = () => {
-    if (isSelectionMode) {
-      setSelectedCardIds(new Set())
-    }
-    setIsSelectionMode(!isSelectionMode)
-  }
-
-  const handleToggleCardSelection = (cardId: string) => {
-    setSelectedCardIds(prev => {
-      const newSet = new Set(prev)
-      if (newSet.has(cardId)) {
-        newSet.delete(cardId)
-      } else {
-        newSet.add(cardId)
-      }
-      return newSet
-    })
-  }
-
-  const handleSelectAllCards = () => {
-    const allIds = new Set(filteredCards.map(card => card.id))
-    setSelectedCardIds(allIds)
-  }
-
-  const handleBulkIncreaseQuantity = () => {
-    setCards((currentCards) => {
-      const current = currentCards || []
-      return current.map(card =>
-        selectedCardIds.has(card.id)
-          ? { ...card, quantity: card.quantity + 1 }
-          : card
-      )
-    })
-    toast.success(`Increased quantity for ${selectedCardIds.size} ${selectedCardIds.size === 1 ? 'card' : 'cards'}`)
-  }
-
-  const handleBulkDecreaseQuantity = () => {
-    setCards((currentCards) => {
-      const current = currentCards || []
-      return current.map(card =>
-        selectedCardIds.has(card.id)
-          ? { ...card, quantity: Math.max(1, card.quantity - 1) }
-          : card
-      )
-    })
-    toast.success(`Decreased quantity for ${selectedCardIds.size} ${selectedCardIds.size === 1 ? 'card' : 'cards'}`)
-  }
-
-  const handleBulkDelete = () => {
-    const count = selectedCardIds.size
-    setCards((currentCards) => {
-      const current = currentCards || []
-      return current.filter(card => !selectedCardIds.has(card.id))
-    })
-    setSelectedCardIds(new Set())
-    setIsSelectionMode(false)
-    toast.success(`Removed ${count} ${count === 1 ? 'card' : 'cards'} from collection`)
-  }
-
-  const handleCancelBulkSelection = () => {
-    setSelectedCardIds(new Set())
-    setIsSelectionMode(false)
-  }
-
-  const handleImport = (importedCards: PokemonCard[]) => {
-    setCards((currentCards) => {
-      const current = currentCards || []
-      const mergedCards = [...current]
-      
-      importedCards.forEach(importedCard => {
-        const existingIndex = mergedCards.findIndex(
-          c => c.name === importedCard.name && 
-               c.set === importedCard.set && 
-               c.cardNumber === importedCard.cardNumber
-        )
-        
-        if (existingIndex >= 0) {
-          mergedCards[existingIndex] = {
-            ...mergedCards[existingIndex],
-            quantity: mergedCards[existingIndex].quantity + importedCard.quantity
-          }
+      try {
+        if (existing) {
+          const updated = await api.updateCard(existing.id, { quantity: existing.quantity + imported.quantity })
+          cardMap.set(key, updated)
+          setCards(prev => prev.map(c => c.id === existing.id ? updated : c))
         } else {
-          mergedCards.push(importedCard)
+          const created = await api.addCard(imported)
+          cardMap.set(key, created)
+          setCards(prev => [...prev, created])
         }
-      })
-      
-      return mergedCards
-    })
-  }
-
-  const handleCreateCollection = (collectionData: Omit<CardCollection, 'id' | 'dateCreated' | 'dateModified'>) => {
-    const now = Date.now()
-    const newCollection: CardCollection = {
-      ...collectionData,
-      id: `collection-${now}`,
-      dateCreated: now,
-      dateModified: now,
+      } catch { /* continue */ }
     }
-    setCollections((current) => [...(current || []), newCollection])
   }
 
-  const handleUpdateCollection = (id: string, updates: Partial<CardCollection>) => {
-    setCollections((current) => {
-      const collections = current || []
-      return collections.map(col =>
-        col.id === id
-          ? { ...col, ...updates, dateModified: Date.now() }
-          : col
-      )
-    })
+  // ── Bulk operations ───────────────────────────────────────────────────────
+
+  const handleBulkIncreaseQuantity = async () => {
+    const ids = Array.from(selectedCardIds)
+    setCards(prev => prev.map(c => selectedCardIds.has(c.id) ? { ...c, quantity: c.quantity + 1 } : c))
+    for (const id of ids) {
+      const card = cards.find(c => c.id === id)
+      if (card) api.updateCard(id, { quantity: card.quantity + 1 }).catch(() => {})
+    }
+    toast.success(`Increased quantity for ${ids.length} card${ids.length !== 1 ? 's' : ''}`)
   }
 
-  const handleDeleteCollection = (id: string) => {
-    setCollections((current) => {
-      const collections = current || []
-      return collections.filter(col => col.id !== id)
-    })
+  const handleBulkDecreaseQuantity = async () => {
+    const ids = Array.from(selectedCardIds)
+    setCards(prev => prev.map(c => selectedCardIds.has(c.id) ? { ...c, quantity: Math.max(1, c.quantity - 1) } : c))
+    for (const id of ids) {
+      const card = cards.find(c => c.id === id)
+      if (card) api.updateCard(id, { quantity: Math.max(1, card.quantity - 1) }).catch(() => {})
+    }
+    toast.success(`Decreased quantity for ${ids.length} card${ids.length !== 1 ? 's' : ''}`)
+  }
 
-    setCards((currentCards) => {
-      const cards = currentCards || []
-      return cards.map(card => ({
-        ...card,
-        collectionIds: (card.collectionIds || []).filter(cid => cid !== id)
-      }))
-    })
+  const handleBulkDelete = async () => {
+    const ids = Array.from(selectedCardIds)
+    setCards(prev => prev.filter(c => !selectedCardIds.has(c.id)))
+    setSelectedCardIds(new Set())
+    setIsSelectionMode(false)
+    for (const id of ids) api.deleteCard(id).catch(() => {})
+    toast.success(`Removed ${ids.length} card${ids.length !== 1 ? 's' : ''} from collection`)
+  }
+
+  // ── Named collections mutations ───────────────────────────────────────────
+
+  const handleCreateCollection = async (data: Omit<CardCollection, 'id' | 'dateCreated' | 'dateModified'>) => {
+    const now = Date.now()
+    const col: CardCollection = { ...data, id: `collection-${now}`, dateCreated: now, dateModified: now }
+    try {
+      const created = await api.createCollection(col)
+      setCollections(prev => [...prev, created])
+    } catch (err) {
+      toast.error('Failed to create collection')
+    }
+  }
+
+  const handleUpdateCollection = async (id: string, updates: Partial<CardCollection>) => {
+    setCollections(prev => prev.map(c => c.id === id ? { ...c, ...updates, dateModified: Date.now() } : c))
+    try { await api.updateCollection(id, { ...updates, dateModified: Date.now() }) } catch { /* ignore */ }
+  }
+
+  const handleDeleteCollection = async (id: string) => {
+    setCollections(prev => prev.filter(c => c.id !== id))
+    setCards(prev => prev.map(card => ({ ...card, collectionIds: (card.collectionIds || []).filter(cid => cid !== id) })))
+    try { await api.deleteCollection(id) } catch { /* ignore */ }
   }
 
   const handleViewCollection = (collection: CardCollection) => {
@@ -560,49 +362,73 @@ function MainApp() {
     setAddToCollectionOpen(true)
   }
 
-  const handleToggleCardInCollection = (collectionId: string, add: boolean) => {
+  const handleToggleCardInCollection = async (collectionId: string, add: boolean) => {
     const cardId = selectedCardForCollection?.id
     if (!cardId) return
 
-    if (add) {
-      setCollections((current) => {
-        const collections = current || []
-        return collections.map(col =>
-          col.id === collectionId
-            ? { ...col, cardIds: [...col.cardIds, cardId], dateModified: Date.now() }
-            : col
-        )
-      })
+    // Optimistic update
+    setCollections(prev => prev.map(col =>
+      col.id === collectionId
+        ? { ...col, cardIds: add ? [...col.cardIds, cardId] : col.cardIds.filter(id => id !== cardId), dateModified: Date.now() }
+        : col
+    ))
+    setCards(prev => prev.map(card =>
+      card.id === cardId
+        ? { ...card, collectionIds: add ? [...(card.collectionIds || []), collectionId] : (card.collectionIds || []).filter(id => id !== collectionId) }
+        : card
+    ))
 
-      setCards((currentCards) => {
-        const cards = currentCards || []
-        return cards.map(card =>
-          card.id === cardId
-            ? { ...card, collectionIds: [...(card.collectionIds || []), collectionId] }
-            : card
-        )
-      })
-    } else {
-      setCollections((current) => {
-        const collections = current || []
-        return collections.map(col =>
-          col.id === collectionId
-            ? { ...col, cardIds: col.cardIds.filter(id => id !== cardId), dateModified: Date.now() }
-            : col
-        )
-      })
-
-      setCards((currentCards) => {
-        const cards = currentCards || []
-        return cards.map(card =>
-          card.id === cardId
-            ? { ...card, collectionIds: (card.collectionIds || []).filter(id => id !== collectionId) }
-            : card
-        )
-      })
-    }
+    try { await api.setMembership(collectionId, cardId, add) } catch { /* ignore */ }
   }
 
+  // ── Selection helpers ──────────────────────────────────────────────────────
+
+  const handleCardClick   = (card: PokemonCard)    => { setSelectedCard(card); setDetailsOpen(true) }
+  const handleToggleSelectionMode  = ()            => { if (isSelectionMode) setSelectedCardIds(new Set()); setIsSelectionMode(v => !v) }
+  const handleToggleCardSelection  = (id: string)  => setSelectedCardIds(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
+  const handleSelectAllCards       = ()            => setSelectedCardIds(new Set(filteredCards.map(c => c.id)))
+  const handleCancelBulkSelection  = ()            => { setSelectedCardIds(new Set()); setIsSelectionMode(false) }
+
+  // ── Derived state ──────────────────────────────────────────────────────────
+
+  const availableTypes = useMemo(() => {
+    const s = new Set<string>(); cards.forEach(c => c.type && s.add(c.type)); return Array.from(s).sort()
+  }, [cards])
+  const availableSupertypes = useMemo(() => {
+    const s = new Set<string>(); cards.forEach(c => c.supertype && s.add(c.supertype)); return Array.from(s).sort()
+  }, [cards])
+  const availableRarities = useMemo(() => {
+    const s = new Set<string>(); cards.forEach(c => c.rarity && s.add(c.rarity)); return Array.from(s).sort()
+  }, [cards])
+
+  const filteredCards = useMemo(() => {
+    let f = cards
+    if (viewMode === 'collection' && selectedCollection) f = f.filter(c => selectedCollection.cardIds.includes(c.id))
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase()
+      f = f.filter(c => c.name.toLowerCase().includes(q) || c.set.toLowerCase().includes(q) || c.type.toLowerCase().includes(q) || c.rarity.toLowerCase().includes(q))
+    }
+    if (selectedSupertypes.length) f = f.filter(c => c.supertype && selectedSupertypes.includes(c.supertype))
+    if (selectedTypes.length)      f = f.filter(c => selectedTypes.includes(c.type))
+    if (selectedRarities.length)   f = f.filter(c => selectedRarities.includes(c.rarity))
+    if (viewMode === 'duplicates')  f = f.filter(c => c.quantity > 1)
+    return f.sort((a, b) => b.dateAdded - a.dateAdded)
+  }, [cards, searchQuery, viewMode, selectedTypes, selectedRarities, selectedSupertypes, selectedCollection])
+
+  const duplicateCount  = useMemo(() => cards.filter(c => c.quantity > 1).length, [cards])
+  const totalCards      = useMemo(() => cards.reduce((s, c) => s + c.quantity, 0), [cards])
+  const collectionValue = useMemo(() => cards.reduce((s, c) => {
+    const p = c.prices?.tcgplayer?.market || c.prices?.cardmarket?.trendPrice || 0
+    return s + p * c.quantity
+  }, 0), [cards])
+  const activeFiltersCount = selectedTypes.length + selectedRarities.length + selectedSupertypes.length
+
+  const handleToggleSupertype = (v: string) => setSelectedSupertypes(p => p.includes(v) ? p.filter(x => x !== v) : [...p, v])
+  const handleToggleType      = (v: string) => setSelectedTypes(p => p.includes(v) ? p.filter(x => x !== v) : [...p, v])
+  const handleToggleRarity    = (v: string) => setSelectedRarities(p => p.includes(v) ? p.filter(x => x !== v) : [...p, v])
+  const handleClearFilters    = ()          => { setSelectedTypes([]); setSelectedRarities([]); setSelectedSupertypes([]); setSearchQuery('') }
+
+  // ─────────────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-background">
       <AnimatePresence>
@@ -622,7 +448,7 @@ function MainApp() {
       <div className={`container mx-auto px-4 py-6 max-w-7xl ${isSelectionMode && selectedCardIds.size > 0 && appView === 'catalog' ? 'pt-24' : ''}`}>
         {appView === 'home' ? (
           <HomeView
-            cardCount={(cards || []).length}
+            cardCount={cards.length}
             isDatabaseLoaded={isDatabaseLoaded}
             onScan={() => setScanDialogOpen(true)}
             onCatalog={() => setAppView('catalog')}
@@ -637,56 +463,36 @@ function MainApp() {
             <header className="mb-8">
               <div className="flex items-center gap-3 mb-6">
                 <Button
-                  variant="ghost"
-                  size="icon"
+                  variant="ghost" size="icon"
                   onClick={() => { setAppView('home'); setIsSelectionMode(false); setSelectedCardIds(new Set()) }}
-                  className="shrink-0"
-                  title="Back to Home"
+                  className="shrink-0" title="Back to Home"
                 >
                   <ArrowLeft className="w-5 h-5" />
                 </Button>
                 <div className="flex-1">
-                  <h1 className="text-4xl font-bold font-display tracking-tight mb-1">
-                    My Catalog
-                  </h1>
+                  <h1 className="text-4xl font-bold font-display tracking-tight mb-1">My Catalog</h1>
                   <p className="text-muted-foreground">
-                    {(cards || []).length === 0 ? (
-                      'No cards yet'
-                    ) : (
+                    {cards.length === 0 ? 'No cards yet' : (
                       <>
-                        {(cards || []).length} unique {(cards || []).length === 1 ? 'card' : 'cards'} • {totalCards} total
-                        {collectionValue > 0 && (
-                          <> • Est. value: ${collectionValue.toFixed(2)}</>
-                        )}
+                        {cards.length} unique {cards.length === 1 ? 'card' : 'cards'} • {totalCards} total
+                        {collectionValue > 0 && <> • Est. value: ${collectionValue.toFixed(2)}</>}
                       </>
                     )}
                   </p>
                 </div>
                 <div className="flex gap-2 shrink-0">
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={() => setExportImportOpen(true)}
-                    className="shrink-0"
-                    title="Backup & Restore"
-                  >
+                  <Button variant="outline" size="icon" onClick={() => setExportImportOpen(true)} title="Backup & Restore">
                     <ArrowsDownUp className="w-5 h-5" />
                   </Button>
-                  {(cards || []).length > 0 && !isSelectionMode && (
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={handleToggleSelectionMode}
-                      className="shrink-0"
-                      title="Select Multiple Cards"
-                    >
+                  {cards.length > 0 && !isSelectionMode && (
+                    <Button variant="outline" size="icon" onClick={handleToggleSelectionMode} title="Select Multiple Cards">
                       <CheckSquare className="w-5 h-5" />
                     </Button>
                   )}
                 </div>
               </div>
 
-              {(cards || []).length > 0 && (
+              {cards.length > 0 && (
                 <div className="space-y-4">
                   <div className="flex gap-2">
                     <div className="relative flex-1">
@@ -694,21 +500,17 @@ function MainApp() {
                       <Input
                         placeholder="Search by name, set, type, or rarity..."
                         value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
+                        onChange={e => setSearchQuery(e.target.value)}
                         className="pl-10 h-12 text-base"
                       />
                     </div>
-
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="outline" size="lg" className="h-12 px-4 relative">
                           <Funnel className="w-5 h-5 mr-2" />
                           Filters
                           {activeFiltersCount > 0 && (
-                            <Badge
-                              variant="default"
-                              className="ml-2 h-5 min-w-5 px-1.5 flex items-center justify-center"
-                            >
+                            <Badge variant="default" className="ml-2 h-5 min-w-5 px-1.5 flex items-center justify-center">
                               {activeFiltersCount}
                             </Badge>
                           )}
@@ -718,130 +520,61 @@ function MainApp() {
                         {activeFiltersCount > 0 && (
                           <>
                             <div className="px-2 py-1.5">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="w-full justify-start text-xs h-7"
-                                onClick={handleClearFilters}
-                              >
-                                <X className="w-3 h-3 mr-1.5" />
-                                Clear all filters
+                              <Button variant="ghost" size="sm" className="w-full justify-start text-xs h-7" onClick={handleClearFilters}>
+                                <X className="w-3 h-3 mr-1.5" /> Clear all filters
                               </Button>
                             </div>
                             <DropdownMenuSeparator />
                           </>
                         )}
-
                         <DropdownMenuLabel>Card Category</DropdownMenuLabel>
-                        {availableSupertypes.length > 0 ? (
-                          availableSupertypes.map(supertype => (
-                            <DropdownMenuCheckboxItem
-                              key={supertype}
-                              checked={selectedSupertypes.includes(supertype)}
-                              onCheckedChange={() => handleToggleSupertype(supertype)}
-                            >
-                              {supertype}
-                            </DropdownMenuCheckboxItem>
-                          ))
-                        ) : (
-                          <div className="px-2 py-1.5 text-sm text-muted-foreground">
-                            No categories available
-                          </div>
-                        )}
-
+                        {availableSupertypes.length > 0 ? availableSupertypes.map(s => (
+                          <DropdownMenuCheckboxItem key={s} checked={selectedSupertypes.includes(s)} onCheckedChange={() => handleToggleSupertype(s)}>{s}</DropdownMenuCheckboxItem>
+                        )) : <div className="px-2 py-1.5 text-sm text-muted-foreground">No categories available</div>}
                         <DropdownMenuSeparator />
-
                         <DropdownMenuLabel>Card Types</DropdownMenuLabel>
-                        {availableTypes.length > 0 ? (
-                          availableTypes.map(type => (
-                            <DropdownMenuCheckboxItem
-                              key={type}
-                              checked={selectedTypes.includes(type)}
-                              onCheckedChange={() => handleToggleType(type)}
-                            >
-                              {type}
-                            </DropdownMenuCheckboxItem>
-                          ))
-                        ) : (
-                          <div className="px-2 py-1.5 text-sm text-muted-foreground">
-                            No types available
-                          </div>
-                        )}
-
+                        {availableTypes.length > 0 ? availableTypes.map(t => (
+                          <DropdownMenuCheckboxItem key={t} checked={selectedTypes.includes(t)} onCheckedChange={() => handleToggleType(t)}>{t}</DropdownMenuCheckboxItem>
+                        )) : <div className="px-2 py-1.5 text-sm text-muted-foreground">No types available</div>}
                         <DropdownMenuSeparator />
-
                         <DropdownMenuLabel>Rarities</DropdownMenuLabel>
-                        {availableRarities.length > 0 ? (
-                          availableRarities.map(rarity => (
-                            <DropdownMenuCheckboxItem
-                              key={rarity}
-                              checked={selectedRarities.includes(rarity)}
-                              onCheckedChange={() => handleToggleRarity(rarity)}
-                            >
-                              {rarity}
-                            </DropdownMenuCheckboxItem>
-                          ))
-                        ) : (
-                          <div className="px-2 py-1.5 text-sm text-muted-foreground">
-                            No rarities available
-                          </div>
-                        )}
+                        {availableRarities.length > 0 ? availableRarities.map(r => (
+                          <DropdownMenuCheckboxItem key={r} checked={selectedRarities.includes(r)} onCheckedChange={() => handleToggleRarity(r)}>{r}</DropdownMenuCheckboxItem>
+                        )) : <div className="px-2 py-1.5 text-sm text-muted-foreground">No rarities available</div>}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
 
                   {activeFiltersCount > 0 && (
                     <div className="flex flex-wrap gap-2">
-                      {selectedSupertypes.map(supertype => (
-                        <Badge key={supertype} variant="secondary" className="pl-2.5 pr-1.5 py-1.5 gap-1.5">
-                          <span className="text-xs font-medium">Category: {supertype}</span>
-                          <button
-                            onClick={() => handleToggleSupertype(supertype)}
-                            className="hover:bg-secondary-foreground/20 rounded-full p-0.5 transition-colors"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
+                      {selectedSupertypes.map(s => (
+                        <Badge key={s} variant="secondary" className="pl-2.5 pr-1.5 py-1.5 gap-1.5">
+                          <span className="text-xs font-medium">Category: {s}</span>
+                          <button onClick={() => handleToggleSupertype(s)} className="hover:bg-secondary-foreground/20 rounded-full p-0.5 transition-colors"><X className="w-3 h-3" /></button>
                         </Badge>
                       ))}
-                      {selectedTypes.map(type => (
-                        <Badge key={type} variant="secondary" className="pl-2.5 pr-1.5 py-1.5 gap-1.5">
-                          <span className="text-xs font-medium">Type: {type}</span>
-                          <button
-                            onClick={() => handleToggleType(type)}
-                            className="hover:bg-secondary-foreground/20 rounded-full p-0.5 transition-colors"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
+                      {selectedTypes.map(t => (
+                        <Badge key={t} variant="secondary" className="pl-2.5 pr-1.5 py-1.5 gap-1.5">
+                          <span className="text-xs font-medium">Type: {t}</span>
+                          <button onClick={() => handleToggleType(t)} className="hover:bg-secondary-foreground/20 rounded-full p-0.5 transition-colors"><X className="w-3 h-3" /></button>
                         </Badge>
                       ))}
-                      {selectedRarities.map(rarity => (
-                        <Badge key={rarity} variant="secondary" className="pl-2.5 pr-1.5 py-1.5 gap-1.5">
-                          <span className="text-xs font-medium">Rarity: {rarity}</span>
-                          <button
-                            onClick={() => handleToggleRarity(rarity)}
-                            className="hover:bg-secondary-foreground/20 rounded-full p-0.5 transition-colors"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
+                      {selectedRarities.map(r => (
+                        <Badge key={r} variant="secondary" className="pl-2.5 pr-1.5 py-1.5 gap-1.5">
+                          <span className="text-xs font-medium">Rarity: {r}</span>
+                          <button onClick={() => handleToggleRarity(r)} className="hover:bg-secondary-foreground/20 rounded-full p-0.5 transition-colors"><X className="w-3 h-3" /></button>
                         </Badge>
                       ))}
                     </div>
                   )}
 
-                  <Tabs value={viewMode} onValueChange={(value) => setViewMode(value as ViewMode)}>
+                  <Tabs value={viewMode} onValueChange={v => setViewMode(v as ViewMode)}>
                     <TabsList className="grid w-full grid-cols-2">
                       <TabsTrigger value="all" className="font-display font-semibold">
-                        All Cards
-                        <Badge variant="secondary" className="ml-2">
-                          {(cards || []).length}
-                        </Badge>
+                        All Cards <Badge variant="secondary" className="ml-2">{cards.length}</Badge>
                       </TabsTrigger>
                       <TabsTrigger value="duplicates" className="font-display font-semibold">
-                        <Copy className="w-4 h-4 mr-1.5" />
-                        Duplicates
-                        <Badge variant="secondary" className="ml-2">
-                          {duplicateCount}
-                        </Badge>
+                        <Copy className="w-4 h-4 mr-1.5" /> Duplicates <Badge variant="secondary" className="ml-2">{duplicateCount}</Badge>
                       </TabsTrigger>
                     </TabsList>
                   </Tabs>
@@ -850,27 +583,24 @@ function MainApp() {
             </header>
 
             <main>
-              {(cards || []).length === 0 ? (
+              {dataLoading ? (
+                <div className="text-center py-20 text-muted-foreground">Loading collection...</div>
+              ) : cards.length === 0 ? (
                 <EmptyState onScanClick={() => setScanDialogOpen(true)} />
               ) : filteredCards.length === 0 ? (
                 <div className="text-center py-20">
                   <p className="text-xl text-muted-foreground mb-4">No cards found</p>
-                  <p className="text-sm text-muted-foreground mb-6">
-                    Try adjusting your search or filters
-                  </p>
-                  <Button variant="outline" onClick={handleClearFilters}>
-                    Clear All Filters
-                  </Button>
+                  <Button variant="outline" onClick={handleClearFilters}>Clear All Filters</Button>
                 </div>
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
                   <AnimatePresence mode="popLayout">
-                    {filteredCards.map((card) => card ? (
+                    {filteredCards.map(card => card ? (
                       <CardItem
                         key={card.id}
                         card={card}
                         onClick={() => handleCardClick(card)}
-                        onUpdateQuantity={(delta) => handleUpdateQuantity(card.id, delta)}
+                        onUpdateQuantity={delta => handleUpdateQuantity(card.id, delta)}
                         onDelete={() => handleDeleteCard(card.id)}
                         onAddToCollection={() => handleAddCardToCollection(card)}
                         isSelectionMode={isSelectionMode}
@@ -906,9 +636,7 @@ function MainApp() {
         onOpenChange={setScanDialogOpen}
         onCardScanned={handleCardScanned}
         onCardsScanned={handleCardsScanned}
-        onOpenSettings={() => setSettingsOpen(true)}
       />
-
       <CardDetailsSheet
         card={selectedCard}
         open={detailsOpen}
@@ -916,52 +644,30 @@ function MainApp() {
         onUpdateQuantity={handleUpdateQuantity}
         onDelete={handleDeleteCard}
       />
-
-      <DatabaseManager
-        open={dbManagerOpen}
-        onOpenChange={setDbManagerOpen}
-      />
-
-      <DatabaseBrowser
-        open={dbBrowserOpen}
-        onOpenChange={setDbBrowserOpen}
-      />
-
+      <DatabaseManager  open={dbManagerOpen}          onOpenChange={setDbManagerOpen} />
+      <DatabaseBrowser  open={dbBrowserOpen}          onOpenChange={setDbBrowserOpen} />
       <ExportImportDialog
-        open={exportImportOpen}
-        onOpenChange={setExportImportOpen}
-        cards={cards || []}
-        onImport={handleImport}
+        open={exportImportOpen} onOpenChange={setExportImportOpen}
+        cards={cards} onImport={handleImport}
       />
-
       <CollectionsManager
-        open={collectionsManagerOpen}
-        onOpenChange={setCollectionsManagerOpen}
-        collections={collections || []}
+        open={collectionsManagerOpen} onOpenChange={setCollectionsManagerOpen}
+        collections={collections}
         onCreateCollection={handleCreateCollection}
         onUpdateCollection={handleUpdateCollection}
         onDeleteCollection={handleDeleteCollection}
         onViewCollection={handleViewCollection}
       />
-
       <AddToCollectionDialog
-        open={addToCollectionOpen}
-        onOpenChange={setAddToCollectionOpen}
+        open={addToCollectionOpen} onOpenChange={setAddToCollectionOpen}
         cardId={selectedCardForCollection?.id || ''}
         cardName={selectedCardForCollection?.name || ''}
-        collections={collections || []}
+        collections={collections}
         currentCollectionIds={selectedCardForCollection?.collectionIds || []}
         onToggleCollection={handleToggleCardInCollection}
-        onCreateNewCollection={() => {
-          setAddToCollectionOpen(false)
-          setCollectionsManagerOpen(true)
-        }}
+        onCreateNewCollection={() => { setAddToCollectionOpen(false); setCollectionsManagerOpen(true) }}
       />
-
-      <SettingsDialog
-        open={settingsOpen}
-        onOpenChange={setSettingsOpen}
-      />
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
     </div>
   )
 }
