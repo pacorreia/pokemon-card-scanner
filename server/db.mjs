@@ -326,11 +326,27 @@ export function countCards({ q = '', supertype = '', setId = '' } = {}) {
 // ── User collection ─────────────────────────────────────────────────────────
 
 export function getCollection() {
-  return db.prepare('SELECT data FROM collection_cards ORDER BY date_added DESC').all().map(r => {
-    const card = JSON.parse(r.data)
-    card.collectionIds = db.prepare(
-      'SELECT collection_id FROM collection_memberships WHERE card_id = ?'
-    ).all(card.id).map(m => m.collection_id)
+  const cards = db.prepare('SELECT data FROM collection_cards ORDER BY date_added DESC').all().map(r => JSON.parse(r.data))
+  if (cards.length === 0) return cards
+
+  const cardIds = cards.map(card => card.id)
+  const placeholders = cardIds.map(() => '?').join(', ')
+  const memberships = db.prepare(
+    `SELECT card_id, collection_id FROM collection_memberships WHERE card_id IN (${placeholders})`
+  ).all(...cardIds)
+
+  const membershipsByCardId = new Map()
+  for (const membership of memberships) {
+    const collectionIds = membershipsByCardId.get(membership.card_id)
+    if (collectionIds) {
+      collectionIds.push(membership.collection_id)
+    } else {
+      membershipsByCardId.set(membership.card_id, [membership.collection_id])
+    }
+  }
+
+  return cards.map(card => {
+    card.collectionIds = membershipsByCardId.get(card.id) ?? []
     return card
   })
 }
