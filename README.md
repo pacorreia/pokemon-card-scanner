@@ -48,7 +48,7 @@ Open <http://localhost:5173> in your browser.
 ### 5. Download the card database
 
 On first launch the app will prompt you to download the Pokémon TCG database (card artwork, set info, and pricing).  
-Click **Download** and wait for it to complete — this is stored in your browser's IndexedDB and only needs to be done once.
+Click **Download** and wait for it to complete — this is stored by the backend in a SQLite database at `DATA_DIR/pokedex.db`, so the backend must be running to use it. The download persists on the server filesystem and typically only needs to be done once per data directory; back up `DATA_DIR/pokedex.db` if you want to preserve it.
 
 ### Optional: run both frontend + backend in one command
 
