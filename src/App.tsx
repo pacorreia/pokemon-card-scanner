@@ -18,6 +18,7 @@ import { CollectionsManager } from '@/components/CollectionsManager'
 import { AddToCollectionDialog } from '@/components/AddToCollectionDialog'
 import { SettingsDialog } from '@/components/SettingsDialog'
 import { useTCGDatabase } from '@/lib/tcg-database'
+import { apiFetch } from '@/lib/api-fetch'
 import type { PokemonCard, ViewMode, CardCollection } from '@/lib/types'
 import { toast } from 'sonner'
 import { HomeView } from '@/components/HomeView'
@@ -31,12 +32,6 @@ import {
 } from '@/components/ui/dropdown-menu'
 
 // ── API helpers ──────────────────────────────────────────────────────────────
-
-async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(path, options)
-  if (!res.ok) throw new Error(await res.text().catch(() => `HTTP ${res.status}`))
-  return res.json() as Promise<T>
-}
 
 const api = {
   // -- Collection (user's scanned cards) ------------------------------------

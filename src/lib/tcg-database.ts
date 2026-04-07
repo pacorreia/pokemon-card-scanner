@@ -10,6 +10,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react'
+import { apiFetch, authHeaders } from './api-fetch'
 
 // ── Re-exported types (used by DatabaseBrowser and other components) ────────
 
@@ -69,17 +70,6 @@ export interface DatabaseMetadata {
   cardCount: number
   setCount: number
   lastUpdated: number | null
-}
-
-// ── Low-level fetch helper ───────────────────────────────────────────────────
-
-async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(path, options)
-  if (!res.ok) {
-    const text = await res.text().catch(() => '')
-    throw new Error(text || `HTTP ${res.status}`)
-  }
-  return res.json() as Promise<T>
 }
 
 // ── Module-level exports used directly by ScanDialog ────────────────────────
@@ -168,7 +158,7 @@ export function useTCGDatabase() {
       onProgress?: (current: number, total: number, message: string) => void,
     ): Promise<{ success: boolean; error?: unknown }> => {
       try {
-        const startRes = await fetch('/api/db/download', { method: 'POST' })
+        const startRes = await fetch('/api/db/download', { method: 'POST', headers: authHeaders() })
         if (!startRes.ok) throw new Error(await startRes.text())
 
         return await new Promise((resolve) => {

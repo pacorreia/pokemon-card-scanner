@@ -10,6 +10,7 @@ import { motion } from 'framer-motion'
 import { toast } from 'sonner'
 import type { PokemonCard } from '@/lib/types'
 import { useTCGDatabase } from '@/lib/tcg-database'
+import { authHeaders } from '@/lib/api-fetch'
 
 const SCAN_PROXY_URL = '/api/github-models'
 
@@ -94,6 +95,7 @@ If this is not a Pokémon card or the image is too unclear to read, return: {"er
     body: JSON.stringify(body),
     headers: {
       'Content-Type': 'application/json',
+      ...authHeaders(),
     },
   })
 
@@ -239,6 +241,7 @@ Include every card that is clearly visible and identifiable. If no Pokémon card
     body: JSON.stringify(body),
     headers: {
       'Content-Type': 'application/json',
+      ...authHeaders(),
     },
   })
 

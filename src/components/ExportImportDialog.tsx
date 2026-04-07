@@ -12,6 +12,7 @@ import { Separator } from '@/components/ui/separator'
 import { Download, Upload, FileArrowDown, FileArrowUp, CheckCircle, Warning } from '@phosphor-icons/react'
 import type { PokemonCard } from '@/lib/types'
 import { toast } from 'sonner'
+import { authHeaders } from '@/lib/api-fetch'
 
 interface ExportImportDialogProps {
   open: boolean
@@ -112,7 +113,7 @@ export function ExportImportDialog({ open, onOpenChange, cards, onImport }: Expo
   const handleExportSqlite = async () => {
     setDatabaseTransferBusy(true)
     try {
-      const res = await fetch('/api/db/export')
+      const res = await fetch('/api/db/export', { headers: authHeaders() })
       if (!res.ok) {
         throw new Error(await res.text())
       }
@@ -153,7 +154,7 @@ export function ExportImportDialog({ open, onOpenChange, cards, onImport }: Expo
       try {
         const res = await fetch('/api/db/import', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/octet-stream' },
+          headers: { 'Content-Type': 'application/octet-stream', ...authHeaders() },
           body: file,
         })
         const payload = await res.json().catch(() => ({}))
