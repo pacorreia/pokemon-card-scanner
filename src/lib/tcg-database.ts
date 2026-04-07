@@ -102,15 +102,20 @@ export async function getCardById(id: string): Promise<TCGCard | null> {
 export async function getAllCards(): Promise<TCGCard[]> {
   // Paginated: load up to 10 000 cards (enough for the browser)
   const PAGE = 500
+  const MAX_CARDS = 10_000
   const all: TCGCard[] = []
   let offset = 0
   for (;;) {
+    const remaining = MAX_CARDS - all.length
+    if (remaining <= 0) break
+
+    const limit = Math.min(PAGE, remaining)
     const { cards, total } = await apiFetch<{ cards: TCGCard[]; total: number }>(
-      `/api/cards?limit=${PAGE}&offset=${offset}`
+      `/api/cards?limit=${limit}&offset=${offset}`
     )
     all.push(...cards)
     offset += cards.length
-    if (offset >= total || cards.length === 0) break
+    if (all.length >= MAX_CARDS || offset >= total || cards.length === 0) break
   }
   return all
 }
