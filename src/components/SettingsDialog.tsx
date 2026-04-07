@@ -16,7 +16,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       return
     }
 
-    setProxyStatus('checking')
     fetch('/api/health')
       .then(res => {
         setProxyStatus(res.ok ? 'online' : 'offline')

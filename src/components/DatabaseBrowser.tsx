@@ -97,7 +97,7 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
       }
     }
     loadCards()
-  }, [open, isLoaded])
+  }, [open, isLoaded, cards.length, isLoadingCards, getAllCards])
   
   useEffect(() => {
     console.log('[DatabaseBrowser] State:', { 

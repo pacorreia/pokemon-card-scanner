@@ -96,7 +96,9 @@ function Carousel({
 
   useEffect(() => {
     if (!api) return
-    onSelect(api)
+    // Call onSelect immediately when API is available or changes
+    // Schedule as microtask to avoid calling setState directly in effect
+    Promise.resolve().then(() => onSelect(api))
     api.on("reInit", onSelect)
     api.on("select", onSelect)
 

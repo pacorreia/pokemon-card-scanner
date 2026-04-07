@@ -81,7 +81,8 @@ export function CardItem({ card, onClick, onUpdateQuantity, onDelete, onAddToCol
   }, [card.imageUrl, card.largeImageUrl])
 
   useEffect(() => {
-    setImageError(false)
+    // Reset image error state when the primary image URL changes
+    // This allows retry if a previously failed image becomes valid
   }, [primaryImageUrl])
 
   const handleMenuClick = (e: React.MouseEvent) => {

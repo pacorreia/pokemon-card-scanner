@@ -69,16 +69,8 @@ export function ExportImportDialog({ open, onOpenChange, cards, onImport }: Expo
           throw new Error('Invalid backup file format')
         }
 
-        const validCards = data.cards.filter((card: any) => 
-          card.id && 
-          card.name && 
-          card.set && 
-          card.cardNumber !== undefined &&
-          card.rarity &&
-          card.type &&
-          card.imageUrl &&
-          card.quantity !== undefined &&
-          card.dateAdded !== undefined
+        const validCards = data.cards.filter((card: unknown) => 
+          typeof card === 'object' && card !== null && 'id' in card && 'name' in card && 'set' in card && 'cardNumber' in card && 'rarity' in card && 'type' in card && 'imageUrl' in card && 'quantity' in card && 'dateAdded' in card
         )
 
         if (validCards.length === 0) {

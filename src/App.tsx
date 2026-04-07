@@ -108,12 +108,12 @@ function MainApp() {
   const [appView,               setAppView]               = useState<'home' | 'catalog'>('home')
   const [isSelectionMode,       setIsSelectionMode]       = useState(false)
   const [selectedCardIds,       setSelectedCardIds]       = useState<Set<string>>(new Set())
-  const [hasCheckedDatabase,    setHasCheckedDatabase]    = useState(false)
+  const [dbAutoPromptDismissed, setDbAutoPromptDismissed] = useState(false)
 
   const updatedCardIdsRef   = useRef<Set<string>>(new Set())
   const imageUpdateRunIdRef = useRef(0)
 
-  const { isLoaded: isDatabaseLoaded, metadata, isLoading: isDatabaseLoading, findCard, getCardById } = useTCGDatabase()
+  const { isLoaded: isDatabaseLoaded, metadata, isLoading: isDatabaseLoading, findCard, getCardById, refreshStatus } = useTCGDatabase()
 
   // ── Load collection & named collections from server on mount ───────────────
   useEffect(() => {
@@ -126,15 +126,20 @@ function MainApp() {
     }).finally(() => setDataLoading(false))
   }, [])
 
-  // ── Auto-open DB manager when no TCG database is loaded ───────────────────
-  useEffect(() => {
-    if (!isDatabaseLoading && !hasCheckedDatabase) {
-      setHasCheckedDatabase(true)
-      if (!isDatabaseLoaded && (metadata === null || metadata?.cardCount === 0)) {
-        setDbManagerOpen(true)
-      }
+  const shouldAutoOpenDbManager =
+    !dbAutoPromptDismissed &&
+    !isDatabaseLoading &&
+    !isDatabaseLoaded &&
+    (metadata === null || metadata?.cardCount === 0)
+
+  const isDbManagerOpen = dbManagerOpen || shouldAutoOpenDbManager
+
+  const handleDbManagerOpenChange = (open: boolean) => {
+    setDbManagerOpen(open)
+    if (!open && shouldAutoOpenDbManager) {
+      setDbAutoPromptDismissed(true)
     }
-  }, [isDatabaseLoaded, metadata, isDatabaseLoading, hasCheckedDatabase])
+  }
 
   // ── Back-fill images from TCG DB for cards that have placeholder images ────
   useEffect(() => {
@@ -334,7 +339,7 @@ function MainApp() {
     try {
       const created = await api.createCollection(col)
       setCollections(prev => [...prev, created])
-    } catch (err) {
+    } catch {
       toast.error('Failed to create collection')
     }
   }
@@ -385,7 +390,7 @@ function MainApp() {
 
   const handleCardClick   = (card: PokemonCard)    => { setSelectedCard(card); setDetailsOpen(true) }
   const handleToggleSelectionMode  = ()            => { if (isSelectionMode) setSelectedCardIds(new Set()); setIsSelectionMode(v => !v) }
-  const handleToggleCardSelection  = (id: string)  => setSelectedCardIds(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
+  const handleToggleCardSelection  = (id: string)  => setSelectedCardIds(prev => { const s = new Set(prev); if (s.has(id)) s.delete(id); else s.add(id); return s })
   const handleSelectAllCards       = ()            => setSelectedCardIds(new Set(filteredCards.map(c => c.id)))
   const handleCancelBulkSelection  = ()            => { setSelectedCardIds(new Set()); setIsSelectionMode(false) }
 
@@ -401,18 +406,19 @@ function MainApp() {
     const s = new Set<string>(); cards.forEach(c => c.rarity && s.add(c.rarity)); return Array.from(s).sort()
   }, [cards])
 
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization
   const filteredCards = useMemo(() => {
-    let f = cards
-    if (viewMode === 'collection' && selectedCollection) f = f.filter(c => selectedCollection.cardIds.includes(c.id))
+    let result = cards
+    if (viewMode === 'collection' && selectedCollection) result = result.filter(c => selectedCollection.cardIds.includes(c.id))
     if (searchQuery) {
-      const q = searchQuery.toLowerCase()
-      f = f.filter(c => c.name.toLowerCase().includes(q) || c.set.toLowerCase().includes(q) || c.type.toLowerCase().includes(q) || c.rarity.toLowerCase().includes(q))
+      const query = searchQuery.toLowerCase()
+      result = result.filter(c => c.name.toLowerCase().includes(query) || c.set.toLowerCase().includes(query) || c.type.toLowerCase().includes(query) || c.rarity.toLowerCase().includes(query))
     }
-    if (selectedSupertypes.length) f = f.filter(c => c.supertype && selectedSupertypes.includes(c.supertype))
-    if (selectedTypes.length)      f = f.filter(c => selectedTypes.includes(c.type))
-    if (selectedRarities.length)   f = f.filter(c => selectedRarities.includes(c.rarity))
-    if (viewMode === 'duplicates')  f = f.filter(c => c.quantity > 1)
-    return f.sort((a, b) => b.dateAdded - a.dateAdded)
+    if (selectedSupertypes.length) result = result.filter(c => c.supertype && selectedSupertypes.includes(c.supertype))
+    if (selectedTypes.length)      result = result.filter(c => selectedTypes.includes(c.type))
+    if (selectedRarities.length)   result = result.filter(c => selectedRarities.includes(c.rarity))
+    if (viewMode === 'duplicates')  result = result.filter(c => c.quantity > 1)
+    return result.sort((a, b) => b.dateAdded - a.dateAdded)
   }, [cards, searchQuery, viewMode, selectedTypes, selectedRarities, selectedSupertypes, selectedCollection])
 
   const duplicateCount  = useMemo(() => cards.filter(c => c.quantity > 1).length, [cards])
@@ -644,7 +650,7 @@ function MainApp() {
         onUpdateQuantity={handleUpdateQuantity}
         onDelete={handleDeleteCard}
       />
-      <DatabaseManager  open={dbManagerOpen}          onOpenChange={setDbManagerOpen} />
+      <DatabaseManager  open={isDbManagerOpen}        onOpenChange={handleDbManagerOpenChange} onSuccess={refreshStatus} />
       <DatabaseBrowser  open={dbBrowserOpen}          onOpenChange={setDbBrowserOpen} />
       <ExportImportDialog
         open={exportImportOpen} onOpenChange={setExportImportOpen}

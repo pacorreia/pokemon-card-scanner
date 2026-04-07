@@ -49,8 +49,8 @@ export interface TCGCard {
   nationalPokedexNumbers?: number[]
   legalities: { unlimited?: string; standard?: string; expanded?: string }
   images: { small: string; large: string }
-  tcgplayer?: { url: string; updatedAt: string; prices?: any }
-  cardmarket?: { url: string; updatedAt: string; prices?: any }
+  tcgplayer?: { url: string; updatedAt: string; prices?: Record<string, unknown> }
+  cardmarket?: { url: string; updatedAt: string; prices?: Record<string, unknown> }
 }
 
 export interface TCGSet {
@@ -160,6 +160,16 @@ export function useTCGDatabase() {
 
   const isLoaded = !isLoading && metadata !== null && (metadata?.cardCount ?? 0) > 0
 
+  // Refresh the database status from the server
+  const refreshStatus = useCallback(async () => {
+    try {
+      const status = await apiFetch<DatabaseMetadata | null>('/api/db/status')
+      setMetadata(status)
+    } catch (err) {
+      console.error('[TCG] Failed to refresh status:', err)
+    }
+  }, [])
+
   // Triggers a server-side TCG data download and streams SSE progress events.
   const updateDatabase = useCallback(
     async (
@@ -211,6 +221,7 @@ export function useTCGDatabase() {
     isLoaded,
     isLoading,
     updateDatabase,
+    refreshStatus,
     searchCards,
     findCard,
     getAllCards,

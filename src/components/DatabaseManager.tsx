@@ -9,9 +9,10 @@ import { toast } from 'sonner'
 interface DatabaseManagerProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  onSuccess?: () => void | Promise<void>
 }
 
-export function DatabaseManager({ open, onOpenChange }: DatabaseManagerProps) {
+export function DatabaseManager({ open, onOpenChange, onSuccess }: DatabaseManagerProps) {
   const { metadata, isLoaded, updateDatabase } = useTCGDatabase()
   const [isUpdating, setIsUpdating] = useState(false)
   const [progress, setProgress] = useState(0)
@@ -35,6 +36,7 @@ export function DatabaseManager({ open, onOpenChange }: DatabaseManagerProps) {
       toast.success('Card database updated successfully!', {
         description: 'All card data has been downloaded and cached locally.'
       })
+      await onSuccess?.()
       onOpenChange(false)
     } else {
       const errorMsg = result.error instanceof Error ? result.error.message : 'Unknown error occurred'
