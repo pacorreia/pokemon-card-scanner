@@ -6,9 +6,6 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --legacy-peer-deps
 
-ARG VITE_GITHUB_CLIENT_ID
-ENV VITE_GITHUB_CLIENT_ID=$VITE_GITHUB_CLIENT_ID
-
 COPY . .
 RUN npm run build
 

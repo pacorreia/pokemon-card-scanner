@@ -22,12 +22,6 @@ export default defineConfig({
         target: 'http://localhost:8787',
         changeOrigin: true,
       },
-      // Mirror the nginx proxy so device-flow OAuth works in development too.
-      '/github-oauth': {
-        target: 'https://github.com',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/github-oauth(?=\/|$)/, ''),
-      },
     },
   },
 });

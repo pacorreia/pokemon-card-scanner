@@ -20,7 +20,6 @@ import { fileURLToPath } from 'node:url'
 import * as db from './db.mjs'
 import { runDownload } from './download.mjs'
 
-const HOST              = process.env.HOST || '127.0.0.1'
 const PORT              = Number(process.env.PORT || 8787)
 const GITHUB_MODELS_URL = 'https://models.github.ai/inference/chat/completions'
 const GITHUB_PROXY_BASE = 'https://github.com'
@@ -35,6 +34,10 @@ const API_SECRET = process.env.API_SECRET || ''
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname  = path.dirname(__filename)
+
+// In containerized environments, bind to 0.0.0.0 to accept connections from external devices
+// (Docker port mapping won't work if the service only listens on 127.0.0.1)
+const HOST = process.env.HOST || '0.0.0.0'
 const STATIC_DIR = path.resolve(__dirname, '..', 'dist')
 
 const MIME_TYPES = {
