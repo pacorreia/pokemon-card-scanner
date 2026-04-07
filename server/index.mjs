@@ -371,12 +371,21 @@ const server = createServer(async (req, res) => {
 
     // ── TCG card search (used by DatabaseBrowser) ───────────────────────────
     if (pathname === '/api/cards' && method === 'GET') {
+      const rawLimit = Number(url.searchParams.get('limit'))
+      const rawOffset = Number(url.searchParams.get('offset'))
+      const limit = Number.isFinite(rawLimit)
+        ? Math.min(Math.max(0, Math.trunc(rawLimit)), 500)
+        : 200
+      const offset = Number.isFinite(rawOffset)
+        ? Math.max(0, Math.trunc(rawOffset))
+        : 0
+
       const cards = db.searchCards({
         q:         url.searchParams.get('q')         ?? '',
         supertype: url.searchParams.get('supertype') ?? '',
         setId:     url.searchParams.get('setId')     ?? '',
-        limit:     Number(url.searchParams.get('limit')  || 200),
-        offset:    Number(url.searchParams.get('offset') || 0),
+        limit,
+        offset,
       })
       const total = db.countCards({
         q:         url.searchParams.get('q')         ?? '',
