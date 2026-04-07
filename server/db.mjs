@@ -120,6 +120,9 @@ export function importDatabaseFile(fileBytes) {
   try {
     probe = new DatabaseSync(tempPath)
     probe.prepare('SELECT name FROM sqlite_master LIMIT 1').all()
+  } catch (error) {
+    safeUnlink(tempPath)
+    throw error
   } finally {
     try { probe?.close() } catch {}
   }
