@@ -30,4 +30,4 @@ EXPOSE 8787
 
 # Required at runtime:
 #   - GITHUB_MODELS_TOKEN: token used by server-side GitHub Models proxy
-CMD ["node", "--experimental-sqlite", "--no-warnings=ExperimentalWarning", "server/index.mjs"]
+CMD ["node", "--experimental-sqlite", "--disable-warning=ExperimentalWarning", "server/index.mjs"]
