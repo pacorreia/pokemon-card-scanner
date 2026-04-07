@@ -252,7 +252,13 @@ function MainApp() {
     const newQty = Math.max(1, card.quantity + delta)
     setCards(prev => prev.map(c => c.id === cardId ? { ...c, quantity: newQty } : c))
     if (selectedCard?.id === cardId) setSelectedCard(prev => prev ? { ...prev, quantity: newQty } : null)
-    try { await api.updateCard(cardId, { quantity: newQty }) } catch { /* revert */ setCards(prev => prev.map(c => c.id === cardId ? card : c)) }
+    try {
+      await api.updateCard(cardId, { quantity: newQty })
+    } catch {
+      /* revert */
+      setCards(prev => prev.map(c => c.id === cardId ? card : c))
+      if (selectedCard?.id === cardId) setSelectedCard(card)
+    }
   }
 
   const handleDeleteCard = async (cardId: string) => {
