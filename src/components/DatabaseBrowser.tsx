@@ -33,6 +33,13 @@ type VirtualRow =
   | { type: 'series-header'; label: string; count: number }
   | { type: 'set-item'; set: TCGSet }
 
+function getSetDisplayName(set: Pick<TCGSet, 'name' | 'series'>): string {
+  if (set.name === '151' && set.series === 'Scarlet & Violet') {
+    return 'Scarlet & Violet'
+  }
+  return set.name
+}
+
 export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
   const { getAllCards, sets, isLoaded, metadata } = useTCGDatabase()
   const [cards, setCards] = useState<TCGCard[]>([])
@@ -42,6 +49,7 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
   const [isLoadingCards, setIsLoadingCards] = useState(false)
   const [cols, setCols] = useState(3)
   const [selectedSupertypes, setSelectedSupertypes] = useState<QuickFilterSupertype[]>([])
+  const [selectedSetFilter, setSelectedSetFilter] = useState<{ id: string; name: string } | null>(null)
   const parentRef = useRef<HTMLDivElement>(null)
 
   const handleOpenChange = useCallback((isOpen: boolean) => {
@@ -106,7 +114,7 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
     if (parentRef.current) {
       parentRef.current.scrollTop = 0
     }
-  }, [selectedTab, searchQuery, selectedSupertypes])
+  }, [selectedTab, searchQuery, selectedSupertypes, selectedSetFilter])
 
   const filteredCards = useMemo(() => {
     if (!cards || cards.length === 0) return []
@@ -118,6 +126,10 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
       result = result.filter(
         card => !!card.supertype && selectedSupertypeValues.includes(card.supertype)
       )
+    }
+
+    if (selectedSetFilter?.id) {
+      result = result.filter(card => card.set?.id === selectedSetFilter.id)
     }
 
     const query = searchQuery.toLowerCase()
@@ -133,7 +145,7 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
         (card.types && card.types.some(type => type.toLowerCase().includes(query)))
       )
     })
-  }, [cards, searchQuery, selectedSupertypes])
+  }, [cards, searchQuery, selectedSupertypes, selectedSetFilter])
 
   const filteredSets = useMemo(() => {
     if (!sets || sets.length === 0) return []
@@ -449,21 +461,50 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
                 </Tabs>
 
                 {selectedTab === 'cards' && (
-                  <div className="flex gap-2 flex-wrap">
-                    {QUICK_FILTER_SUPERTYPES.map(supertype => (
-                      <Button
-                        key={supertype}
-                        variant={selectedSupertypes.includes(supertype) ? 'default' : 'outline'}
-                        size="sm"
-                        className="h-7 px-3 text-xs rounded-full"
-                        aria-pressed={selectedSupertypes.includes(supertype)}
-                        onClick={() => setSelectedSupertypes(prev =>
-                          prev.includes(supertype) ? prev.filter(t => t !== supertype) : [...prev, supertype]
-                        )}
-                      >
-                        {supertype}
-                      </Button>
-                    ))}
+                  <div className="space-y-2">
+                    {selectedSetFilter && (
+                      <div className="flex items-center justify-between rounded-md bg-muted/60 px-3 py-2 text-xs">
+                        <span className="text-muted-foreground">
+                          Showing cards from <span className="font-semibold text-foreground">{selectedSetFilter.name}</span>
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-2 text-xs"
+                          onClick={() => setSelectedSetFilter(null)}
+                        >
+                          Clear
+                        </Button>
+                      </div>
+                    )}
+
+                    <div className="flex gap-2 flex-wrap">
+                      {selectedSetFilter && (
+                        <Button
+                          variant="default"
+                          size="sm"
+                          className="h-7 px-3 text-xs rounded-full"
+                          onClick={() => setSelectedSetFilter(null)}
+                        >
+                          Set: {selectedSetFilter.name}
+                          <X className="w-3 h-3 ml-1" />
+                        </Button>
+                      )}
+                      {QUICK_FILTER_SUPERTYPES.map(supertype => (
+                        <Button
+                          key={supertype}
+                          variant={selectedSupertypes.includes(supertype) ? 'default' : 'outline'}
+                          size="sm"
+                          className="h-7 px-3 text-xs rounded-full"
+                          aria-pressed={selectedSupertypes.includes(supertype)}
+                          onClick={() => setSelectedSupertypes(prev =>
+                            prev.includes(supertype) ? prev.filter(t => t !== supertype) : [...prev, supertype]
+                          )}
+                        >
+                          {supertype}
+                        </Button>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
@@ -550,7 +591,15 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
 
                           {row.type === 'set-item' && (
                             <div className="pb-2">
-                              <Card className="hover:border-primary transition-colors">
+                              <Card
+                                className="hover:border-primary transition-colors cursor-pointer"
+                                onClick={() => {
+                                  setSelectedSetFilter({ id: row.set.id, name: getSetDisplayName(row.set) })
+                                  setSelectedTab('cards')
+                                  setSearchQuery('')
+                                  setSelectedSupertypes([])
+                                }}
+                              >
                                 <CardContent className="p-4">
                                   <div className="flex items-start gap-4">
                                     <div className="w-12 h-12 bg-muted rounded-lg flex items-center justify-center shrink-0">
@@ -561,7 +610,7 @@ export function DatabaseBrowser({ open, onOpenChange }: DatabaseBrowserProps) {
                                       />
                                     </div>
                                     <div className="flex-1 min-w-0">
-                                      <h4 className="font-semibold truncate">{row.set.name}</h4>
+                                      <h4 className="font-semibold truncate">{getSetDisplayName(row.set)}</h4>
                                       <div className="flex flex-wrap items-center gap-2 mt-1">
                                         <Badge variant="secondary" className="text-xs">
                                           {row.set.total} cards

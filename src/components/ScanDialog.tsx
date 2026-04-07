@@ -10,16 +10,14 @@ import { motion } from 'framer-motion'
 import { toast } from 'sonner'
 import type { PokemonCard } from '@/lib/types'
 import { useTCGDatabase } from '@/lib/tcg-database'
-import { useLocalStorage } from '@/hooks/useLocalStorage'
 
-const GITHUB_MODELS_URL = 'https://models.github.ai/inference/chat/completions'
+const SCAN_PROXY_URL = '/api/github-models'
 
 interface ScanDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onCardScanned: (card: PokemonCard) => void
   onCardsScanned?: (cards: PokemonCard[]) => void
-  onOpenSettings: () => void
 }
 
 type Mode = 'idle' | 'camera' | 'analyzing' | 'manual' | 'bulk' | 'bulk-review'
@@ -55,7 +53,7 @@ function resolveListValue(value: string | undefined, allowed: readonly string[],
   return allowed.find(v => v.toLowerCase() === normalized)
 }
 
-async function analyzeCardImage(imageDataUrl: string, apiKey: string, findCard: (name: string, setName?: string, cardNumber?: string) => Promise<any>): Promise<Omit<PokemonCard, 'id' | 'quantity' | 'dateAdded'>> {
+async function analyzeCardImage(imageDataUrl: string, findCard: (name: string, setName?: string, cardNumber?: string) => Promise<any>): Promise<Omit<PokemonCard, 'id' | 'quantity' | 'dateAdded'>> {
   const body = {
     messages: [
       {
@@ -69,7 +67,7 @@ async function analyzeCardImage(imageDataUrl: string, apiKey: string, findCard: 
             type: 'text',
             text: `Analyze this Pokémon card image and return a JSON object with these fields:
 {
-  "name": "Exact Pokémon name on the card (just the Pokemon name, not form variations)",
+  "name": "Exact full card name exactly as printed (include form/variant words like ex, VMAX, Radiant, Alolan, etc.)",
   "set": "Set name (e.g., Base Set, Jungle, Fossil, Team Rocket, Sword & Shield, Scarlet & Violet, etc.)",
   "cardNumber": "Card number as shown (e.g., 25/102)",
   "rarity": "One of: Common, Uncommon, Rare, Holo Rare, Ultra Rare, Secret Rare",
@@ -91,12 +89,11 @@ If this is not a Pokémon card or the image is too unclear to read, return: {"er
     top_p: 1.0,
   }
 
-  const response = await fetch(GITHUB_MODELS_URL, {
+  const response = await fetch(SCAN_PROXY_URL, {
     method: 'POST',
     body: JSON.stringify(body),
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
     },
   })
 
@@ -139,7 +136,7 @@ If this is not a Pokémon card or the image is too unclear to read, return: {"er
     imageUrl = tcgCard.images.large
     console.log('[ScanDialog] Using large image (small not available):', imageUrl)
   } else {
-    console.log('[ScanDialog] No image found in database, using placeholder')
+    console.log('[ScanDialog] No image found in database, using placeholder image')
   }
   if (tcgCard?.images?.large) {
     largeImageUrl = tcgCard.images.large
@@ -195,7 +192,6 @@ If this is not a Pokémon card or the image is too unclear to read, return: {"er
 
 async function analyzeMultipleCardsImage(
   imageDataUrl: string,
-  apiKey: string,
   findCard: (name: string, setName?: string, cardNumber?: string) => Promise<any>,
 ): Promise<Array<Omit<PokemonCard, 'id' | 'quantity' | 'dateAdded'>>> {
   const body = {
@@ -214,7 +210,7 @@ Return a JSON object with a "cards" array — one entry per card you can clearly
 {
   "cards": [
     {
-      "name": "Exact Pokémon name on the card (just the Pokémon name, not form variations)",
+      "name": "Exact full card name exactly as printed (include form/variant words like ex, VMAX, Radiant, Alolan, etc.)",
       "set": "Set name (e.g., Base Set, Jungle, Fossil, Team Rocket, Sword & Shield, Scarlet & Violet, etc.)",
       "cardNumber": "Card number as shown (e.g., 25/102)",
       "rarity": "One of: Common, Uncommon, Rare, Holo Rare, Ultra Rare, Secret Rare",
@@ -238,12 +234,11 @@ Include every card that is clearly visible and identifiable. If no Pokémon card
     top_p: 1.0,
   }
 
-  const response = await fetch(GITHUB_MODELS_URL, {
+  const response = await fetch(SCAN_PROXY_URL, {
     method: 'POST',
     body: JSON.stringify(body),
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
     },
   })
 
@@ -314,7 +309,7 @@ function fileToDataUrl(file: File): Promise<string> {
   })
 }
 
-export function ScanDialog({ open, onOpenChange, onCardScanned, onCardsScanned, onOpenSettings }: ScanDialogProps) {
+export function ScanDialog({ open, onOpenChange, onCardScanned, onCardsScanned }: ScanDialogProps) {
   const [mode, setMode] = useState<Mode>('idle')
   const [videoReady, setVideoReady] = useState(false)
   const [manualForm, setManualForm] = useState({
@@ -327,7 +322,6 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onCardsScanned, 
   })
 
   const { findCard } = useTCGDatabase()
-  const [authToken] = useLocalStorage<string>('github-pat', '')
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -381,28 +375,28 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onCardsScanned, 
     onOpenChange(false)
   }, [onCardScanned, onOpenChange])
 
+  const confirmUnmatchedCard = useCallback((cardData: Omit<PokemonCard, 'id' | 'quantity' | 'dateAdded'>) => {
+    if (cardData.tcgCardId) return true
+    return window.confirm(
+      `Could not confidently match "${cardData.name}" to the local database. Add it anyway without official image/pricing data?`
+    )
+  }, [])
+
   const handleUpload = async (file: File) => {
-    const apiKey = authToken ?? ''
-    if (!apiKey) {
-      toast.error('API key required to scan cards.', {
-        description: 'Add your GitHub personal access token in Settings.',
-        action: {
-          label: 'Open Settings',
-          onClick: () => {
-            onOpenChange(false)
-            onOpenSettings()
-          },
-        },
-      })
-      return
-    }
     setMode('analyzing')
     try {
       const dataUrl = await fileToDataUrl(file)
-      const cardData = await analyzeCardImage(dataUrl, apiKey, findCard)
+      const cardData = await analyzeCardImage(dataUrl, findCard)
+      if (!confirmUnmatchedCard(cardData)) {
+        toast.info('Card not added. You can scan again or use manual entry.')
+        setMode('idle')
+        return
+      }
       processCard(cardData)
-    } catch {
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error'
       toast.error('Could not identify the card. Try manual entry instead.', {
+        description: message,
         action: {
           label: 'Enter manually',
           onClick: () => setMode('manual'),
@@ -459,28 +453,19 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onCardsScanned, 
     stopCamera()
     setVideoReady(false)
 
-    const apiKey = authToken ?? ''
-    if (!apiKey) {
-      toast.error('API key required to scan cards.', {
-        description: 'Add your GitHub personal access token in Settings.',
-        action: {
-          label: 'Open Settings',
-          onClick: () => {
-            onOpenChange(false)
-            onOpenSettings()
-          },
-        },
-      })
-      setMode('idle')
-      return
-    }
-
     setMode('analyzing')
     try {
-      const cardData = await analyzeCardImage(dataUrl, apiKey, findCard)
+      const cardData = await analyzeCardImage(dataUrl, findCard)
+      if (!confirmUnmatchedCard(cardData)) {
+        toast.info('Card not added. You can scan again or use manual entry.')
+        setMode('idle')
+        return
+      }
       processCard(cardData)
-    } catch {
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error'
       toast.error('Could not identify the card. Try manual entry instead.', {
+        description: message,
         action: {
           label: 'Enter manually',
           onClick: () => setMode('manual'),
@@ -504,35 +489,40 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onCardsScanned, 
     stopCamera()
     setVideoReady(false)
 
-    const apiKey = authToken ?? ''
-    if (!apiKey) {
-      toast.error('API key required to scan cards.', {
-        description: 'Add your GitHub personal access token in Settings.',
-        action: {
-          label: 'Open Settings',
-          onClick: () => {
-            onOpenChange(false)
-            onOpenSettings()
-          },
-        },
-      })
-      setMode('idle')
-      return
-    }
-
     setIsMultiAnalyzing(true)
     try {
-      const cards = await analyzeMultipleCardsImage(dataUrl, apiKey, findCard)
+      const cards = await analyzeMultipleCardsImage(dataUrl, findCard)
       if (cards.length === 0) {
         toast.error('No Pokémon cards detected. Try again with better lighting or angle.')
         setMode('bulk')
         await startCamera('bulk')
+        return
+      }
+
+      const unmatchedCount = cards.filter(card => !card.tcgCardId).length
+      let cardsToReview = cards
+      if (unmatchedCount > 0) {
+        const keepUnmatched = window.confirm(
+          `${unmatchedCount} scanned card(s) could not be confidently matched to the local database. Keep them for manual review?`
+        )
+        if (!keepUnmatched) {
+          cardsToReview = cards.filter(card => !!card.tcgCardId)
+        }
+      }
+
+      if (cardsToReview.length === 0) {
+        toast.error('No confidently matched cards found. Try again with better lighting or use manual entry.')
+        setMode('bulk')
+        await startCamera('bulk')
       } else {
-        setBulkQueue(cards)
+        setBulkQueue(cardsToReview)
         setMode('bulk-review')
       }
-    } catch {
-      toast.error('Could not analyze the image. Please try again.')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error'
+      toast.error('Could not analyze the image. Please try again.', {
+        description: message,
+      })
       setMode('bulk')
       await startCamera('bulk')
     } finally {

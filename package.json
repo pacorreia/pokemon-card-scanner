@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:server": "node server/index.mjs",
+    "dev:full": "node server/index.mjs & vite",
     "kill": "fuser -k 5000/tcp",
     "build": "tsc -b --noCheck && vite build",
     "lint": "eslint .",

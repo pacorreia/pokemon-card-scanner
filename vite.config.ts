@@ -18,6 +18,10 @@ export default defineConfig({
   },
   server: {
     proxy: {
+      '/api': {
+        target: 'http://localhost:8787',
+        changeOrigin: true,
+      },
       // Mirror the nginx proxy so device-flow OAuth works in development too.
       '/github-oauth': {
         target: 'https://github.com',

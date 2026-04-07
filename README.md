@@ -30,7 +30,14 @@ You need a GitHub PAT — **no extra scopes are required**.
 1. Go to <https://github.com/settings/tokens/new?description=Pokemon+Card+Scanner&scopes=>
 2. Click **Generate token** and copy it.
 
-### 3. Start the dev server
+### 3. Start the API proxy (server-side token)
+
+```bash
+export GITHUB_MODELS_TOKEN="<your_github_pat>"
+npm run dev:server
+```
+
+### 4. Start the frontend
 
 ```bash
 npm run dev
@@ -38,14 +45,16 @@ npm run dev
 
 Open <http://localhost:5173> in your browser.
 
-### 4. Enter your token
-
-Click the **⚙️ gear icon** in the top-right corner of the app, paste your token, and click **Save**.
-
 ### 5. Download the card database
 
 On first launch the app will prompt you to download the Pokémon TCG database (card artwork, set info, and pricing).  
 Click **Download** and wait for it to complete — this is stored in your browser's IndexedDB and only needs to be done once.
+
+### Optional: run both frontend + backend in one command
+
+```bash
+GITHUB_MODELS_TOKEN="<your_github_pat>" npm run dev:full
+```
 
 ## Building for production
 

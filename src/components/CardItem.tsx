@@ -21,7 +21,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { DotsThreeVertical, Eye, Plus, Minus, Trash, FolderPlus } from '@phosphor-icons/react'
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 interface CardItemProps {
   card: PokemonCard
@@ -57,10 +57,32 @@ const typeColors: Record<string, string> = {
   'Colorless': 'bg-gray-400'
 }
 
+function isUsableImageUrl(value: unknown): value is string {
+  if (typeof value !== 'string') return false
+  const normalized = value.trim()
+  if (!normalized || normalized === 'undefined' || normalized === 'null') return false
+  if (normalized.includes('placehold.co')) return false
+  return normalized.startsWith('https://') || normalized.startsWith('http://') || normalized.startsWith('data:image/')
+}
+
 export function CardItem({ card, onClick, onUpdateQuantity, onDelete, onAddToCollection, isSelectionMode, isSelected, onToggleSelect }: CardItemProps) {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [imageError, setImageError] = useState(false)
   const [dropdownOpen, setDropdownOpen] = useState(false)
+
+  const primaryImageUrl = useMemo(() => {
+    if (isUsableImageUrl(card.imageUrl)) {
+      return card.imageUrl
+    }
+    if (isUsableImageUrl(card.largeImageUrl)) {
+      return card.largeImageUrl
+    }
+    return ''
+  }, [card.imageUrl, card.largeImageUrl])
+
+  useEffect(() => {
+    setImageError(false)
+  }, [primaryImageUrl])
 
   const handleMenuClick = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -134,18 +156,18 @@ export function CardItem({ card, onClick, onUpdateQuantity, onDelete, onAddToCol
           onClick={handleClick}
         >
           <div className="aspect-[2.5/3.5] relative overflow-hidden bg-gradient-to-br from-blue-400 via-purple-400 to-pink-400">
-            {card.imageUrl && !card.imageUrl.includes('placehold.co') && !imageError ? (
+            {primaryImageUrl && !imageError ? (
               <img
-                src={card.imageUrl}
+                src={primaryImageUrl}
                 alt={card.name}
                 className="w-full h-full object-cover absolute inset-0"
                 loading="lazy"
                 onError={() => {
-                  console.error(`[CardItem] Image failed to load for ${card.name}:`, card.imageUrl)
+                  console.error(`[CardItem] Image failed to load for ${card.name}:`, primaryImageUrl)
                   setImageError(true)
                 }}
                 onLoad={() => {
-                  console.log(`[CardItem] Image loaded successfully for ${card.name}:`, card.imageUrl)
+                  console.log(`[CardItem] Image loaded successfully for ${card.name}:`, primaryImageUrl)
                 }}
               />
             ) : (

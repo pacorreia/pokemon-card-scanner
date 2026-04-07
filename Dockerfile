@@ -12,12 +12,22 @@ ENV VITE_GITHUB_CLIENT_ID=$VITE_GITHUB_CLIENT_ID
 COPY . .
 RUN npm run build
 
-# Stage 2: Serve the built app with nginx
-FROM nginx:alpine
+# Stage 2: Runtime image (Node server serves both static frontend and API proxy)
+FROM node:22-alpine AS runner
 
-COPY --from=builder /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+WORKDIR /app
 
-EXPOSE 80
+ENV NODE_ENV=production
+ENV PORT=8787
+ENV DATA_DIR=/data
 
-CMD ["nginx", "-g", "daemon off;"]
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/server ./server
+
+RUN mkdir -p /data
+
+EXPOSE 8787
+
+# Required at runtime:
+#   - GITHUB_MODELS_TOKEN: token used by server-side GitHub Models proxy
+CMD ["node", "--experimental-sqlite", "--no-warnings=ExperimentalWarning", "server/index.mjs"]
