@@ -211,7 +211,7 @@ const server = createServer(async (req, res) => {
 
     // ── DB status ───────────────────────────────────────────────────────────
     if (pathname === '/api/db/status' && method === 'GET') {
-      writeJson(res, 200, db.getTcgStatus() ?? { cardCount: 0, setCount: 0, lastUpdated: null })
+      writeJson(res, 200, db.getTcgStatus())
       return
     }
 
