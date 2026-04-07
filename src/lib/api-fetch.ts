@@ -12,9 +12,16 @@ function buildAuthHeaders(): HeadersInit {
 }
 
 export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
+  const headers = new Headers(options?.headers)
+  const secret = import.meta.env.VITE_API_SECRET as string | undefined
+
+  if (secret && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${secret}`)
+  }
+
   const res = await fetch(path, {
     ...options,
-    headers: { ...buildAuthHeaders(), ...options?.headers },
+    headers,
   })
   if (!res.ok) throw new Error(await res.text().catch(() => `HTTP ${res.status}`))
   return res.json() as Promise<T>
