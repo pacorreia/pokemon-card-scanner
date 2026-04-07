@@ -262,15 +262,24 @@ function MainApp() {
     toast.success('Card removed from collection')
   }
 
+  const getCardIdentityKey = (card: Pick<PokemonCard, 'name' | 'set' | 'cardNumber'>) =>
+    `${card.name}::${card.set}::${card.cardNumber}`
+
   const handleImport = async (importedCards: PokemonCard[]) => {
+    const cardMap = new Map(cards.map(card => [getCardIdentityKey(card), card]))
+
     for (const imported of importedCards) {
-      const existing = cards.find(c => c.name === imported.name && c.set === imported.set && c.cardNumber === imported.cardNumber)
+      const key = getCardIdentityKey(imported)
+      const existing = cardMap.get(key)
+
       try {
         if (existing) {
           const updated = await api.updateCard(existing.id, { quantity: existing.quantity + imported.quantity })
+          cardMap.set(key, updated)
           setCards(prev => prev.map(c => c.id === existing.id ? updated : c))
         } else {
           const created = await api.addCard(imported)
+          cardMap.set(key, created)
           setCards(prev => [...prev, created])
         }
       } catch { /* continue */ }
