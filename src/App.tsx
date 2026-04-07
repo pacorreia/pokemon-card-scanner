@@ -188,6 +188,9 @@ function MainApp() {
 
   // ── Collection mutations ──────────────────────────────────────────────────
 
+  const getCardIdentityKey = (card: Pick<PokemonCard, 'name' | 'set' | 'cardNumber'>) =>
+    `${card.name}::${card.set}::${card.cardNumber}`
+
   const handleCardScanned = async (card: PokemonCard) => {
     const existing = cards.find(c => c.name === card.name && c.set === card.set && c.cardNumber === card.cardNumber)
     try {
@@ -214,8 +217,12 @@ function MainApp() {
 
   const handleCardsScanned = async (newCards: PokemonCard[]) => {
     let added = 0, updated = 0
+    // Build a local working map so intra-batch duplicates are de-duped correctly
+    // even before React has had a chance to re-render with the new state.
+    const localMap = new Map(cards.map(c => [getCardIdentityKey(c), c]))
     for (const card of newCards) {
-      const existing = cards.find(c => c.name === card.name && c.set === card.set && c.cardNumber === card.cardNumber)
+      const key = getCardIdentityKey(card)
+      const existing = localMap.get(key)
       try {
         if (existing) {
           const patch = {
@@ -226,10 +233,12 @@ function MainApp() {
             tcgCardId:    card.tcgCardId || existing.tcgCardId,
           }
           const result = await api.updateCard(existing.id, patch)
+          localMap.set(key, result)
           setCards(prev => prev.map(c => c.id === existing.id ? result : c))
           updated++
         } else {
           const created = await api.addCard(card)
+          localMap.set(key, created)
           setCards(prev => [...prev, created])
           added++
         }
@@ -261,9 +270,6 @@ function MainApp() {
     try { await api.deleteCard(cardId) } catch { /* non-fatal */ }
     toast.success('Card removed from collection')
   }
-
-  const getCardIdentityKey = (card: Pick<PokemonCard, 'name' | 'set' | 'cardNumber'>) =>
-    `${card.name}::${card.set}::${card.cardNumber}`
 
   const handleImport = async (importedCards: PokemonCard[]) => {
     const cardMap = new Map(cards.map(card => [getCardIdentityKey(card), card]))

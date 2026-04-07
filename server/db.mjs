@@ -115,11 +115,21 @@ export function importDatabaseFile(fileBytes) {
 
   writeFileSync(tempPath, payload)
 
-  // Validate the uploaded file is a readable SQLite database before swapping.
+  // Validate the uploaded file is a readable SQLite database before swapping,
+  // and that it contains all the tables this application requires.
+  const REQUIRED_TABLES = [
+    'tcg_cards', 'tcg_sets', 'collection_cards', 'card_collections', 'collection_memberships',
+  ]
   let probe
   try {
     probe = new DatabaseSync(tempPath)
-    probe.prepare('SELECT name FROM sqlite_master LIMIT 1').all()
+    const existingTables = new Set(
+      probe.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(r => r.name)
+    )
+    const missing = REQUIRED_TABLES.filter(t => !existingTables.has(t))
+    if (missing.length > 0) {
+      throw new Error(`Imported database is missing required tables: ${missing.join(', ')}`)
+    }
   } catch (error) {
     safeUnlink(tempPath)
     throw error

@@ -187,12 +187,21 @@ async function serveStatic(req, res, pathname) {
     })
     res.end(data)
   } catch {
-    try {
-      const html = await readFile(path.join(STATIC_DIR, 'index.html'))
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' })
-      res.end(html)
-    } catch {
-      writeJson(res, 500, { error: 'Static assets not found. Did you run npm run build?' }, req)
+    // Only fall back to the SPA shell for navigation requests: extensionless
+    // paths or requests that explicitly accept HTML. Return 404 for missing
+    // static assets (JS/CSS chunks) so misconfigurations surface clearly.
+    const ext        = path.extname(pathname)
+    const acceptsHtml = (req.headers.accept ?? '').toLowerCase().includes('text/html')
+    if (!ext || acceptsHtml) {
+      try {
+        const html = await readFile(path.join(STATIC_DIR, 'index.html'))
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' })
+        res.end(html)
+      } catch {
+        writeJson(res, 500, { error: 'Static assets not found. Did you run npm run build?' }, req)
+      }
+    } else {
+      writeJson(res, 404, { error: 'Not found' }, req)
     }
   }
 }
