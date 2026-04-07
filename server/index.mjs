@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url'
 import * as db from './db.mjs'
 import { runDownload } from './download.mjs'
 
-const HOST              = process.env.HOST || '0.0.0.0'
+const HOST              = process.env.HOST || '127.0.0.1'
 const PORT              = Number(process.env.PORT || 8787)
 const GITHUB_MODELS_URL = 'https://models.github.ai/inference/chat/completions'
 const GITHUB_PROXY_BASE = 'https://github.com'
