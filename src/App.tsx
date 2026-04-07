@@ -135,7 +135,7 @@ function MainApp() {
   useEffect(() => {
     if (!isDatabaseLoading && !hasCheckedDatabase) {
       setHasCheckedDatabase(true)
-      if (!isDatabaseLoaded && metadata === null) {
+      if (!isDatabaseLoaded && (metadata === null || metadata?.cardCount === 0)) {
         setDbManagerOpen(true)
       }
     }
