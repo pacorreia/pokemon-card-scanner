@@ -69,14 +69,20 @@ function writeJson(res, statusCode, payload) {
   res.end(JSON.stringify(payload))
 }
 
-function readBody(req) {
+function readBody(req, maxBytes = Number(process.env.MAX_JSON_BODY_BYTES || 64 * 1024 * 1024)) {
   return new Promise((resolve, reject) => {
-    let data = ''
+    const chunks = []
+    let total = 0
     req.on('data', chunk => {
-      data += chunk
-      if (data.length > 20 * 1024 * 1024) { reject(new Error('Payload too large')); req.destroy() }
+      total += chunk.length
+      if (total > maxBytes) {
+        reject(new Error('Payload too large'))
+        req.destroy()
+        return
+      }
+      chunks.push(chunk)
     })
-    req.on('end',   () => resolve(data))
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')))
     req.on('error', reject)
   })
 }
