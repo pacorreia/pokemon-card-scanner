@@ -145,6 +145,22 @@ function readBinaryBody(req, maxBytes = 512 * 1024 * 1024) {
   })
 }
 
+/**
+ * Reads and JSON-parses the request body.
+ * Throws an error with `status = 400` on parse failure so the outer handler
+ * can return a meaningful 400 instead of a generic 500.
+ */
+async function readJsonBody(req) {
+  const text = await readBody(req)
+  try {
+    return JSON.parse(text)
+  } catch {
+    const err = new Error('Invalid JSON body')
+    err.status = 400
+    throw err
+  }
+}
+
 // ── GitHub OAuth proxy ──────────────────────────────────────────────────────
 
 async function proxyGithubOAuth(req, res, pathname) {
@@ -392,7 +408,7 @@ const server = createServer(async (req, res) => {
       }
       if (method === 'POST') {
         if (!isAuthorized(req)) { writeJson(res, 401, { error: 'Unauthorized' }, req); return }
-        const card = db.addToCollection(JSON.parse(await readBody(req)))
+        const card = db.addToCollection(await readJsonBody(req))
         writeJson(res, 201, card, req)
         return
       }
@@ -404,7 +420,7 @@ const server = createServer(async (req, res) => {
       const cardId = decodeURIComponent(collCardMatch[1])
       if (method === 'PUT') {
         if (!isAuthorized(req)) { writeJson(res, 401, { error: 'Unauthorized' }, req); return }
-        const updated = db.updateCollectionCard(cardId, JSON.parse(await readBody(req)))
+        const updated = db.updateCollectionCard(cardId, await readJsonBody(req))
         if (!updated) { writeJson(res, 404, { error: 'Card not found' }, req); return }
         writeJson(res, 200, updated, req)
         return
@@ -424,7 +440,7 @@ const server = createServer(async (req, res) => {
       }
       if (method === 'POST') {
         if (!isAuthorized(req)) { writeJson(res, 401, { error: 'Unauthorized' }, req); return }
-        const col = db.createCardCollection(JSON.parse(await readBody(req)))
+        const col = db.createCardCollection(await readJsonBody(req))
         writeJson(res, 201, col, req)
         return
       }
@@ -434,7 +450,7 @@ const server = createServer(async (req, res) => {
     const collMemberMatch = pathname.match(/^\/api\/collections\/([^/]+)\/cards$/)
     if (collMemberMatch && method === 'PUT') {
       if (!isAuthorized(req)) { writeJson(res, 401, { error: 'Unauthorized' }, req); return }
-      const { cardId, add } = JSON.parse(await readBody(req))
+      const { cardId, add } = await readJsonBody(req)
       writeJson(res, 200, db.setCollectionMembership(decodeURIComponent(collMemberMatch[1]), cardId, add), req)
       return
     }
@@ -445,7 +461,7 @@ const server = createServer(async (req, res) => {
       const collId = decodeURIComponent(collByIdMatch[1])
       if (method === 'PUT') {
         if (!isAuthorized(req)) { writeJson(res, 401, { error: 'Unauthorized' }, req); return }
-        const updated = db.updateCardCollection(collId, JSON.parse(await readBody(req)))
+        const updated = db.updateCardCollection(collId, await readJsonBody(req))
         if (!updated) { writeJson(res, 404, { error: 'Collection not found' }, req); return }
         writeJson(res, 200, updated, req)
         return
@@ -461,8 +477,9 @@ const server = createServer(async (req, res) => {
     await serveStatic(req, res, pathname)
 
   } catch (error) {
-    console.error('[server] Unhandled error:', error)
-    writeJson(res, 500, { error: error?.message || 'Internal server error' }, req)
+    const status = typeof error?.status === 'number' ? error.status : 500
+    if (status >= 500) console.error('[server] Unhandled error:', error)
+    writeJson(res, status, { error: error?.message || 'Internal server error' }, req)
   }
 })
 

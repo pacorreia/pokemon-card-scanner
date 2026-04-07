@@ -100,7 +100,10 @@ export async function getCardById(id: string): Promise<TCGCard | null> {
 }
 
 export async function getAllCards(): Promise<TCGCard[]> {
-  // Paginated: load up to 10 000 cards (enough for the browser)
+  // Paginates through the server API in batches of 500 and returns at most
+  // MAX_CARDS results. If the catalog exceeds this limit the result is
+  // intentionally truncated; callers should prefer server-side filtered
+  // queries (searchCards / /api/cards?setId=...) for larger datasets.
   const PAGE = 500
   const MAX_CARDS = 10_000
   const all: TCGCard[] = []

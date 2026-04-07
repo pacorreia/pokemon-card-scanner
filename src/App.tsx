@@ -173,10 +173,13 @@ function MainApp() {
       }
 
       if (updates.size > 0 && imageUpdateRunIdRef.current === runId) {
-        // Persist each update to server
+        // Persist each update to server; only mark as updated on success so
+        // failed updates can be retried on the next image-backfill run.
         for (const [id, patch] of updates) {
-          try { await api.updateCard(id, patch) } catch { /* ignore image update failure */ }
-          updatedCardIdsRef.current.add(id)
+          try {
+            await api.updateCard(id, patch)
+            updatedCardIdsRef.current.add(id)
+          } catch { /* ignore image update failure; will retry next run */ }
         }
         setCards(prev => prev.map(c => updates.has(c.id) ? { ...c, ...updates.get(c.id) } : c))
         toast.success('Card images updated', { description: `Updated ${updates.size} card${updates.size !== 1 ? 's' : ''}` })
