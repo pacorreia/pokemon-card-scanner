@@ -507,8 +507,8 @@ async function loadOrCreateTlsCredentials() {
         days: 3650,
         keySize: 2048,
         extensions: [
-          { name: 'basicConstraints', cA: true },
-          { name: 'keyUsage', keyCertSign: true, digitalSignature: true, keyEncipherment: true },
+          { name: 'basicConstraints', cA: false },
+          { name: 'keyUsage', digitalSignature: true, keyEncipherment: true },
           { name: 'extKeyUsage', serverAuth: true },
           {
             name: 'subjectAltName',
