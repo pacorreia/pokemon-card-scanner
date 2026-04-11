@@ -11,8 +11,9 @@ import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { Download, Upload, FileArrowDown, FileArrowUp, CheckCircle, Warning } from '@phosphor-icons/react'
 import type { PokemonCard } from '@/lib/types'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { authHeaders } from '@/lib/api-fetch'
+import { logger } from '@/lib/logger'
 
 interface ExportImportDialogProps {
   open: boolean
@@ -91,7 +92,7 @@ export function ExportImportDialog({ open, onOpenChange, cards, onImport }: Expo
 
         onOpenChange(false)
       } catch (error) {
-        console.error('Import error:', error)
+        logger.error('ExportImportDialog', 'Import error:', error)
         toast.error('Import failed', {
           description: error instanceof Error ? error.message : 'Invalid file format',
         })
@@ -176,15 +177,15 @@ export function ExportImportDialog({ open, onOpenChange, cards, onImport }: Expo
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
-        <DialogHeader>
+      <DialogContent className="flex flex-col max-h-[90vh] sm:max-w-[500px]">
+        <DialogHeader className="shrink-0">
           <DialogTitle className="font-display text-2xl">Backup & Restore</DialogTitle>
           <DialogDescription>
             Export your collection to a backup file or import from a previous backup
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6 py-4">
+        <div className="flex-1 overflow-y-auto space-y-6 py-4 pr-1">
           <div className="space-y-4">
             <div className="flex items-start gap-3 p-4 rounded-lg bg-muted/50">
               <CheckCircle className="w-5 h-5 text-primary shrink-0 mt-0.5" weight="fill" />

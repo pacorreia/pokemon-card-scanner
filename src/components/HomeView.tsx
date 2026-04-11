@@ -1,11 +1,14 @@
 import type { ElementType } from 'react'
-import { Camera, CardsThree, BookOpen, Database, Folders, Gear, ArrowsLeftRight } from '@phosphor-icons/react'
+import { Camera, CardsThree, BookOpen, Database, Folders, Gear, ArrowsLeftRight, ListBullets } from '@phosphor-icons/react'
 import { Badge } from '@/components/ui/badge'
 
 interface HomeViewProps {
   cardCount: number
   isDatabaseLoaded: boolean
   onScan: () => void
+  onQueue: () => void
+  queueCount: number
+  queueProcessing: boolean
   onCatalog: () => void
   onBrowseDB: () => void
   onManageDB: () => void
@@ -30,6 +33,9 @@ export function HomeView({
   cardCount,
   isDatabaseLoaded,
   onScan,
+  onQueue,
+  queueCount,
+  queueProcessing,
   onCatalog,
   onBrowseDB,
   onManageDB,
@@ -46,6 +52,16 @@ export function HomeView({
       iconColor: 'text-amber-500',
       borderHover: 'hover:border-amber-500/40',
       onClick: onScan,
+    },
+    {
+      label: 'Scan Queue',
+      description: queueProcessing ? 'Processing…' : queueCount > 0 ? `${queueCount} ${queueCount === 1 ? 'card' : 'cards'} pending` : 'No items queued',
+      Icon: ListBullets,
+      iconBg: 'bg-primary/10 group-hover:bg-primary/20',
+      iconColor: 'text-primary',
+      borderHover: 'hover:border-primary/40',
+      onClick: onQueue,
+      badge: queueProcessing ? 'Processing' : undefined,
     },
     {
       label: 'My Catalog',

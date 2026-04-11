@@ -11,26 +11,49 @@
  * Requires Node 22 with --experimental-sqlite.
  */
 
-import { createServer } from 'node:http'
-import { readFile } from 'node:fs/promises'
-import { timingSafeEqual } from 'node:crypto'
+import { createServer as createHttpServer } from 'node:http'
+import { createServer as createHttpsServer } from 'node:https'
+import { mkdir, readFile, readdir, writeFile, unlink } from 'node:fs/promises'
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
+import { networkInterfaces } from 'node:os'
+import { isIP } from 'node:net'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import selfsigned from 'selfsigned'
 
 import * as db from './db.mjs'
 import { runDownload } from './download.mjs'
+import { logger } from './logger.mjs'
 
 const PORT              = Number(process.env.PORT || 8787)
+const HTTPS_PORT        = Number(process.env.HTTPS_PORT || 8443)
+const HTTPS_ENABLED     = process.env.HTTPS_ENABLED !== 'false'
 const GITHUB_MODELS_URL = 'https://models.github.ai/inference/chat/completions'
 const GITHUB_PROXY_BASE = 'https://github.com'
+const MODELS_FETCH_TIMEOUT_MS = Number(process.env.GITHUB_MODELS_TIMEOUT_MS || 90000)
+const MODELS_FETCH_RETRIES = Number(process.env.GITHUB_MODELS_RETRIES || 3)
+const MODELS_FETCH_RETRY_BASE_MS = Number(process.env.GITHUB_MODELS_RETRY_BASE_MS || 1000)
+const CLIENT_LOG_TOKEN_TTL_MS = Number(process.env.CLIENT_LOG_TOKEN_TTL_MS || 2 * 60 * 1000)
+const CLIENT_LOG_RATE_LIMIT_WINDOW_MS = Number(process.env.CLIENT_LOG_RATE_LIMIT_WINDOW_MS || 60 * 1000)
+const CLIENT_LOG_RATE_LIMIT_MAX = Number(process.env.CLIENT_LOG_RATE_LIMIT_MAX || 300)
+const CLIENT_LOG_MAX_BATCH = Number(process.env.CLIENT_LOG_MAX_BATCH || 100)
+const CLIENT_LOG_MAX_BODY_BYTES = Number(process.env.CLIENT_LOG_MAX_BODY_BYTES || 128 * 1024)
+const CLIENT_LOG_TOKEN_COOKIE = 'client_log_token'
+const CLIENT_LOG_TOKEN_SECRET = process.env.CLIENT_LOG_TOKEN_SECRET || process.env.API_SECRET || randomBytes(32).toString('hex')
 
 // CORS: only allow a specific origin when ALLOWED_ORIGIN is configured.
 // Leave unset for same-origin (default) deployments.
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || ''
 
 // Auth: if API_SECRET is set, all mutating endpoints and DB export require
-// an "Authorization: Bearer <secret>" header.
+// either an "Authorization: Bearer <secret>" header (for backward compat) or
+// a valid HTTP-only session cookie obtained via POST /api/auth/login.
 const API_SECRET = process.env.API_SECRET || ''
+
+// Session cookie auth (replaces VITE_API_SECRET in the client bundle)
+const SESSION_SECRET  = process.env.SESSION_SECRET || randomBytes(32).toString('hex')
+const SESSION_TTL_MS  = Number(process.env.SESSION_TTL_MS  || 7 * 24 * 60 * 60 * 1000) // 7 days
+const SESSION_COOKIE  = 'pcs_session'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname  = path.dirname(__filename)
@@ -39,6 +62,32 @@ const __dirname  = path.dirname(__filename)
 // (Docker port mapping won't work if the service only listens on 127.0.0.1)
 const HOST = process.env.HOST || '0.0.0.0'
 const STATIC_DIR = path.resolve(__dirname, '..', 'dist')
+const TLS_DIR = process.env.TLS_DIR || path.join(path.dirname(db.DB_PATH), 'tls')
+const TLS_KEY_PATH = process.env.TLS_KEY_PATH || path.join(TLS_DIR, 'server.key')
+const TLS_CERT_PATH = process.env.TLS_CERT_PATH || path.join(TLS_DIR, 'server.crt')
+const QUEUE_DIR = process.env.QUEUE_DIR || path.join(path.dirname(db.DB_PATH), 'queue')
+const SCAN_QUEUE_TTL_MS = Number(process.env.SCAN_QUEUE_TTL_MS || 24 * 60 * 60 * 1000) // 24 h
+await mkdir(QUEUE_DIR, { recursive: true })
+
+async function cleanupScanQueue() {
+  try {
+    const staleIds = db.queueDeleteStale(SCAN_QUEUE_TTL_MS)
+    for (const id of staleIds) {
+      await unlink(path.join(QUEUE_DIR, `${id}.jpg`)).catch(() => {})
+    }
+    const files = await readdir(QUEUE_DIR).catch(() => [])
+    const dbIds = new Set(db.queueGetAll().map(i => i.id))
+    for (const file of files) {
+      if (!file.endsWith('.jpg')) continue
+      const id = file.slice(0, -4)
+      if (!dbIds.has(id)) await unlink(path.join(QUEUE_DIR, file)).catch(() => {})
+    }
+    if (staleIds.length > 0) logger.info('queue-cleanup', `Removed ${staleIds.length} stale queue item(s)`)
+  } catch (err) {
+    logger.warning('queue-cleanup', 'Cleanup error', { error: err?.message })
+  }
+}
+
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -87,22 +136,236 @@ function getCorsHeaders(req) {
   }
 }
 
-function writeJson(res, statusCode, payload, req = null) {
+function writeJson(res, statusCode, payload, req = null, extraHeaders = {}) {
   res.writeHead(statusCode, {
     'Content-Type': 'application/json; charset=utf-8',
     ...getCorsHeaders(req),
+    ...extraHeaders,
   })
   res.end(JSON.stringify(payload))
+}
+
+const clientLogRateWindows = new Map()
+
+function getClientAddress(req) {
+  const forwarded = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()
+  if (forwarded) return forwarded
+  return String(req.socket?.remoteAddress || 'unknown')
+}
+
+function isClientLogRateLimited(req) {
+  const key = getClientAddress(req)
+  const now = Date.now()
+  const state = clientLogRateWindows.get(key)
+
+  if (!state || now - state.start >= CLIENT_LOG_RATE_LIMIT_WINDOW_MS) {
+    clientLogRateWindows.set(key, { start: now, count: 1 })
+    return false
+  }
+
+  state.count += 1
+  if (state.count <= CLIENT_LOG_RATE_LIMIT_MAX) return false
+  return true
+}
+
+function parseCookies(req) {
+  const header = String(req.headers.cookie || '')
+  if (!header) return {}
+  const cookies = {}
+  for (const part of header.split(';')) {
+    const [rawKey, ...rawValueParts] = part.trim().split('=')
+    if (!rawKey) continue
+    const rawValue = rawValueParts.join('=')
+    cookies[rawKey] = decodeURIComponent(rawValue || '')
+  }
+  return cookies
+}
+
+function isSecureRequest(req) {
+  const forwardedProto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase()
+  if (forwardedProto) return forwardedProto === 'https'
+  return Boolean(req.socket?.encrypted)
+}
+
+function isSameOriginBrowserRequest(req) {
+  const origin = String(req.headers.origin || '').trim()
+  const host = String(req.headers.host || '').trim().toLowerCase()
+  const secFetchSite = String(req.headers['sec-fetch-site'] || '').trim().toLowerCase()
+
+  if (!origin || !host) return false
+  if (secFetchSite && secFetchSite !== 'same-origin') return false
+
+  try {
+    const originUrl = new URL(origin)
+    if (!['http:', 'https:'].includes(originUrl.protocol)) return false
+    return originUrl.host.toLowerCase() === host
+  } catch {
+    return false
+  }
+}
+
+function signClientLogToken(payload) {
+  return createHmac('sha256', CLIENT_LOG_TOKEN_SECRET).update(payload).digest('base64url')
+}
+
+function createClientLogToken() {
+  const expiresAt = Date.now() + CLIENT_LOG_TOKEN_TTL_MS
+  const nonce = randomBytes(16).toString('base64url')
+  const payload = `${expiresAt}.${nonce}`
+  const signature = signClientLogToken(payload)
+  return { token: `${payload}.${signature}`, expiresAt }
+}
+
+function verifyClientLogToken(token) {
+  if (!token || typeof token !== 'string') return false
+  const parts = token.split('.')
+  if (parts.length !== 3) return false
+  const [expiresAtStr, nonce, signature] = parts
+  const expiresAt = Number(expiresAtStr)
+  if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) return false
+
+  const payload = `${expiresAt}.${nonce}`
+  const expected = signClientLogToken(payload)
+  if (expected.length !== signature.length) return false
+
+  try {
+    return timingSafeEqual(Buffer.from(expected), Buffer.from(signature))
+  } catch {
+    return false
+  }
+}
+
+function getClientLogTokenFromRequest(req) {
+  const cookies = parseCookies(req)
+  return cookies[CLIENT_LOG_TOKEN_COOKIE] || ''
+}
+
+function buildClientLogCookie(token, req) {
+  const attrs = [
+    `${CLIENT_LOG_TOKEN_COOKIE}=${encodeURIComponent(token)}`,
+    'Path=/api/logs/client',
+    'HttpOnly',
+    'SameSite=Strict',
+    `Max-Age=${Math.max(1, Math.floor(CLIENT_LOG_TOKEN_TTL_MS / 1000))}`,
+  ]
+  if (isSecureRequest(req)) attrs.push('Secure')
+  return attrs.join('; ')
+}
+
+const CLIENT_LOG_LEVELS = new Set(['debug', 'verbose', 'info', 'warning', 'error'])
+
+function normalizeClientLogEntry(entry) {
+  if (!entry || typeof entry !== 'object') return null
+  const level = String(entry.level || '').toLowerCase()
+  if (!CLIENT_LOG_LEVELS.has(level)) return null
+
+  const scopeRaw = typeof entry.scope === 'string' ? entry.scope.trim() : ''
+  const scope = scopeRaw ? scopeRaw.slice(0, 96) : 'browser'
+
+  const messageRaw = typeof entry.message === 'string' ? entry.message : String(entry.message ?? '')
+  const message = messageRaw.trim().slice(0, 4000)
+  if (!message) return null
+
+  const timestampRaw = typeof entry.timestamp === 'string' ? entry.timestamp : ''
+  const timestamp = timestampRaw && !Number.isNaN(Date.parse(timestampRaw))
+    ? timestampRaw
+    : new Date().toISOString()
+
+  let meta = null
+  if (entry.meta !== undefined) {
+    try {
+      const serialized = JSON.stringify(entry.meta)
+      if (serialized && serialized.length <= 2048) {
+        meta = entry.meta
+      } else if (serialized) {
+        meta = { truncated: `${serialized.slice(0, 2048)}...` }
+      }
+    } catch {
+      meta = { truncated: String(entry.meta).slice(0, 2048) }
+    }
+  }
+
+  return { level, scope, message, timestamp, meta }
+}
+
+function writeClientLogToServerConsole(log, req) {
+  const ua = String(req.headers['user-agent'] || '').slice(0, 240)
+  const remote = String(req.socket?.remoteAddress || '')
+  const prefix = `[client ${log.timestamp}] [${log.scope}]`
+  const details = { ip: remote, ua }
+  if (log.meta) details.meta = log.meta
+
+  if (log.level === 'error') {
+    logger.error('client', `${prefix} ${log.message}`, details)
+    return
+  }
+  if (log.level === 'warning') {
+    logger.warning('client', `${prefix} ${log.message}`, details)
+    return
+  }
+  if (log.level === 'info') {
+    logger.info('client', `${prefix} ${log.message}`, details)
+    return
+  }
+  if (log.level === 'verbose') {
+    logger.verbose('client', `${prefix} ${log.message}`, details)
+    return
+  }
+  logger.debug('client', `${prefix} ${log.message}`, details)
+}
+
+function logRejectedClientLogAttempt(reason, req) {
+  const ua = String(req.headers['user-agent'] || '').slice(0, 240)
+  const remote = getClientAddress(req)
+  const origin = String(req.headers.origin || '')
+  const secFetchSite = String(req.headers['sec-fetch-site'] || '')
+  logger.warning('client-auth', `Rejected client log request: ${reason}`, {
+    ip: remote,
+    ua,
+    origin,
+    secFetchSite,
+  })
+}
+
+// ── Session helpers ──────────────────────────────────────────────────────────
+
+function createSessionToken() {
+  const id = randomBytes(16).toString('hex')
+  const ts = Date.now().toString()
+  const payload = `${id}.${ts}`
+  const sig = createHmac('sha256', SESSION_SECRET).update(payload).digest('hex')
+  return `${payload}.${sig}`
+}
+
+function isValidSessionToken(token) {
+  if (typeof token !== 'string' || !token) return false
+  const lastDot = token.lastIndexOf('.')
+  if (lastDot < 0) return false
+  const payload = token.slice(0, lastDot)
+  const sig = token.slice(lastDot + 1)
+  const expectedSig = createHmac('sha256', SESSION_SECRET).update(payload).digest('hex')
+  if (sig.length !== expectedSig.length) return false
+  try {
+    if (!timingSafeEqual(Buffer.from(sig), Buffer.from(expectedSig))) return false
+  } catch { return false }
+  const tsDot = payload.indexOf('.')
+  if (tsDot < 0) return false
+  const ts = Number(payload.slice(tsDot + 1))
+  return Number.isFinite(ts) && Date.now() - ts <= SESSION_TTL_MS
 }
 
 /**
  * Returns true when the request carries a valid shared-secret credential.
  * Always returns true when API_SECRET is not configured (open/local deployment).
- * Uses a constant-time comparison to prevent timing attacks.
+ * Accepts either:
+ *   1. An HTTP-only session cookie set via POST /api/auth/login (preferred)
+ *   2. A legacy "Authorization: Bearer <secret>" header (backward compat)
  */
 function isAuthorized(req) {
   if (!API_SECRET) return true
-  const auth     = req.headers['authorization'] ?? ''
+  const cookies = parseCookies(req)
+  if (isValidSessionToken(cookies[SESSION_COOKIE])) return true
+  const auth = req.headers['authorization'] ?? ''
   const expected = `Bearer ${API_SECRET}`
   if (auth.length !== expected.length) return false
   try {
@@ -130,6 +393,54 @@ function readBody(req, maxBytes = Number(process.env.MAX_JSON_BODY_BYTES || 64 *
   })
 }
 
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+function isRetriableStatus(status) {
+  return status === 408 || status === 429 || status === 500 || status === 502 || status === 503 || status === 504
+}
+
+function isRetriableNetworkError(error) {
+  if (!error) return false
+  const code = error?.cause?.code || error?.code
+  if (code && ['ETIMEDOUT', 'ECONNRESET', 'EAI_AGAIN', 'ENOTFOUND'].includes(code)) return true
+  const message = String(error?.message || '').toLowerCase()
+  return message.includes('fetch failed') || message.includes('timeout')
+}
+
+async function fetchGithubModelsWithRetry(body, token) {
+  let lastError = null
+
+  for (let attempt = 0; attempt <= MODELS_FETCH_RETRIES; attempt += 1) {
+    try {
+      const upstream = await fetch(GITHUB_MODELS_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body,
+        signal: AbortSignal.timeout(MODELS_FETCH_TIMEOUT_MS),
+      })
+
+      if (!upstream.ok && isRetriableStatus(upstream.status) && attempt < MODELS_FETCH_RETRIES) {
+        const backoffMs = MODELS_FETCH_RETRY_BASE_MS * (2 ** attempt)
+        await delay(backoffMs)
+        continue
+      }
+
+      return upstream
+    } catch (error) {
+      lastError = error
+      if (!isRetriableNetworkError(error) || attempt >= MODELS_FETCH_RETRIES) {
+        throw error
+      }
+      const backoffMs = MODELS_FETCH_RETRY_BASE_MS * (2 ** attempt)
+      await delay(backoffMs)
+    }
+  }
+
+  throw lastError || new Error('Upstream request failed')
+}
+
 function readBinaryBody(req, maxBytes = 512 * 1024 * 1024) {
   return new Promise((resolve, reject) => {
     const chunks = []
@@ -148,13 +459,86 @@ function readBinaryBody(req, maxBytes = 512 * 1024 * 1024) {
   })
 }
 
+function collectTlsAltIps() {
+  const altIps = new Set(['127.0.0.1', '0.0.0.0', '::1'])
+
+  // Add explicit host when set to an IP address.
+  if (HOST && isIP(HOST)) altIps.add(HOST)
+
+  // Add active non-internal interface addresses (helps LAN/mobile HTTPS).
+  const interfaces = networkInterfaces()
+  for (const entries of Object.values(interfaces)) {
+    if (!entries) continue
+    for (const entry of entries) {
+      if (entry.internal) continue
+      if (!entry.address || !isIP(entry.address)) continue
+      altIps.add(entry.address)
+    }
+  }
+
+  // Optional manual additions: TLS_ALT_IPS=192.168.2.77,10.0.0.5
+  const configured = String(process.env.TLS_ALT_IPS || '')
+    .split(',')
+    .map(v => v.trim())
+    .filter(Boolean)
+  for (const ip of configured) {
+    if (isIP(ip)) altIps.add(ip)
+  }
+
+  return Array.from(altIps)
+}
+
+async function loadOrCreateTlsCredentials() {
+  try {
+    const [key, cert] = await Promise.all([
+      readFile(TLS_KEY_PATH, 'utf8'),
+      readFile(TLS_CERT_PATH, 'utf8'),
+    ])
+    return { key, cert, created: false }
+  } catch {
+    await mkdir(TLS_DIR, { recursive: true })
+
+    const altIps = collectTlsAltIps()
+
+    const pems = await selfsigned.generate(
+      [{ name: 'commonName', value: 'localhost' }],
+      {
+        algorithm: 'sha256',
+        days: 3650,
+        keySize: 2048,
+        extensions: [
+          { name: 'basicConstraints', cA: true },
+          { name: 'keyUsage', keyCertSign: true, digitalSignature: true, keyEncipherment: true },
+          { name: 'extKeyUsage', serverAuth: true },
+          {
+            name: 'subjectAltName',
+            altNames: [
+              { type: 2, value: 'localhost' },
+              ...altIps.map(ip => ({ type: 7, ip })),
+            ],
+          },
+        ],
+      },
+    )
+
+    await Promise.all([
+      writeFile(TLS_KEY_PATH, pems.private, 'utf8'),
+      writeFile(TLS_CERT_PATH, pems.cert, 'utf8'),
+    ])
+
+    logger.info('tls', `Generated self-signed cert with SAN IPs: ${altIps.join(', ')}`)
+
+    return { key: pems.private, cert: pems.cert, created: true }
+  }
+}
+
 /**
  * Reads and JSON-parses the request body.
  * Throws an error with `status = 400` on parse failure so the outer handler
  * can return a meaningful 400 instead of a generic 500.
  */
-async function readJsonBody(req) {
-  const text = await readBody(req)
+async function readJsonBody(req, maxBytes = Number(process.env.MAX_JSON_BODY_BYTES || 64 * 1024 * 1024)) {
+  const text = await readBody(req, maxBytes)
   try {
     return JSON.parse(text)
   } catch {
@@ -193,7 +577,9 @@ async function proxyGithubOAuth(req, res, pathname) {
 // ── Static file serving ─────────────────────────────────────────────────────
 
 async function serveStatic(req, res, pathname) {
-  const safePath = pathname === '/' ? '/index.html' : pathname
+  const safePath = pathname === '/'
+    ? 'index.html'
+    : pathname.replace(/^\/+/, '')
   const target   = path.normalize(path.join(STATIC_DIR, safePath))
   if (!target.startsWith(STATIC_DIR)) { writeJson(res, 403, { error: 'Forbidden' }, req); return }
 
@@ -227,7 +613,7 @@ async function serveStatic(req, res, pathname) {
 
 // ── Request router ──────────────────────────────────────────────────────────
 
-const server = createServer(async (req, res) => {
+const requestHandler = async (req, res) => {
   if (!req.url) { writeJson(res, 400, { error: 'Invalid URL' }, req); return }
 
   const url      = new URL(req.url, `http://${req.headers.host || 'localhost'}`)
@@ -248,6 +634,92 @@ const server = createServer(async (req, res) => {
       return
     }
 
+    // ── Client log token issue (short-lived) ──────────────────────────────
+    if (pathname === '/api/logs/client-token' && method === 'POST') {
+      if (!isSameOriginBrowserRequest(req)) {
+        logRejectedClientLogAttempt('forbidden-origin-token-issue', req)
+        writeJson(res, 403, { error: 'Forbidden origin' }, req)
+        return
+      }
+
+      const { token, expiresAt } = createClientLogToken()
+      const cookie = buildClientLogCookie(token, req)
+      writeJson(res, 201, { ok: true, expiresAt }, req, { 'Set-Cookie': cookie })
+      return
+    }
+
+    // ── Client log ingest ───────────────────────────────────────────────────
+    if (pathname === '/api/logs/client' && method === 'POST') {
+      if (!isSameOriginBrowserRequest(req)) {
+        logRejectedClientLogAttempt('forbidden-origin', req)
+        writeJson(res, 403, { error: 'Forbidden origin' }, req)
+        return
+      }
+
+      const token = getClientLogTokenFromRequest(req)
+      if (!verifyClientLogToken(token)) {
+        logRejectedClientLogAttempt('invalid-or-missing-token', req)
+        writeJson(res, 401, { error: 'Unauthorized' }, req)
+        return
+      }
+      if (isClientLogRateLimited(req)) {
+        logRejectedClientLogAttempt('rate-limit-exceeded', req)
+        writeJson(res, 429, { error: 'Rate limit exceeded' }, req)
+        return
+      }
+
+      const body = await readJsonBody(req, CLIENT_LOG_MAX_BODY_BYTES)
+      const rawLogs = Array.isArray(body?.logs) ? body.logs : [body]
+      const parsedLogs = rawLogs
+        .map(normalizeClientLogEntry)
+        .filter(Boolean)
+        .slice(0, CLIENT_LOG_MAX_BATCH)
+
+      if (parsedLogs.length === 0) {
+        writeJson(res, 400, { error: 'No valid log entries' }, req)
+        return
+      }
+
+      for (const logEntry of parsedLogs) {
+        writeClientLogToServerConsole(logEntry, req)
+      }
+
+      writeJson(res, 202, { accepted: parsedLogs.length }, req)
+      return
+    }
+
+    // ── Auth endpoints ──────────────────────────────────────────────────────
+    if (pathname === '/api/auth/status' && method === 'GET') {
+      writeJson(res, 200, {
+        required:      Boolean(API_SECRET),
+        authenticated: isAuthorized(req),
+      }, req)
+      return
+    }
+
+    if (pathname === '/api/auth/login' && method === 'POST') {
+      if (!API_SECRET) { writeJson(res, 200, { ok: true }, req); return }
+      let body
+      try { body = await readJsonBody(req, 4096) } catch { writeJson(res, 400, { error: 'Invalid JSON' }, req); return }
+      const password = String(body?.password ?? '')
+      let valid = false
+      if (password.length === API_SECRET.length) {
+        try { valid = timingSafeEqual(Buffer.from(password), Buffer.from(API_SECRET)) } catch { /* timing safe */ }
+      }
+      if (!valid) { writeJson(res, 401, { error: 'Invalid password' }, req); return }
+      const token  = createSessionToken()
+      const secure = HTTPS_ENABLED ? ' Secure;' : ''
+      res.setHeader('Set-Cookie', `${SESSION_COOKIE}=${encodeURIComponent(token)}; HttpOnly;${secure} SameSite=Strict; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}; Path=/`)
+      writeJson(res, 200, { ok: true }, req)
+      return
+    }
+
+    if (pathname === '/api/auth/logout' && method === 'POST') {
+      res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; HttpOnly; SameSite=Strict; Max-Age=0; Path=/`)
+      writeJson(res, 200, { ok: true }, req)
+      return
+    }
+
     // ── GitHub Models proxy ─────────────────────────────────────────────────
     if (pathname === '/api/github-models' && method === 'POST') {
       if (!isAuthorized(req)) { writeJson(res, 401, { error: 'Unauthorized' }, req); return }
@@ -260,17 +732,18 @@ const server = createServer(async (req, res) => {
       try { body = await readBody(req); JSON.parse(body) }
       catch { writeJson(res, 400, { error: 'Invalid JSON body' }, req); return }
 
-      const upstream = await fetch(GITHUB_MODELS_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body,
-      })
-      const text = await upstream.text()
-      res.writeHead(upstream.status, {
-        'Content-Type': upstream.headers.get('content-type') || 'application/json; charset=utf-8',
-        ...getCorsHeaders(req),
-      })
-      res.end(text)
+      try {
+        const upstream = await fetchGithubModelsWithRetry(body, token)
+        const text = await upstream.text()
+        res.writeHead(upstream.status, {
+          'Content-Type': upstream.headers.get('content-type') || 'application/json; charset=utf-8',
+          ...getCorsHeaders(req),
+        })
+        res.end(text)
+      } catch (error) {
+        logger.error('server', 'GitHub Models upstream error:', error)
+        writeJson(res, 502, { error: 'Upstream AI service unavailable. Please retry.' }, req)
+      }
       return
     }
 
@@ -313,6 +786,86 @@ const server = createServer(async (req, res) => {
       const result = db.importDatabaseFile(fileBytes)
       writeJson(res, 200, { ok: true, ...result }, req)
       return
+    }
+
+    // ── Scan queue ─────────────────────────────────────────────────────────
+
+    if (pathname === '/api/scan-queue') {
+      if (!isAuthorized(req)) { writeJson(res, 401, { error: 'Unauthorized' }, req); return }
+
+      if (method === 'GET') {
+        writeJson(res, 200, db.queueGetAll(), req)
+        return
+      }
+
+      if (method === 'POST') {
+        const body = await readBody(req, 20 * 1024 * 1024) // 20 MB cap per image upload
+        let parsed
+        try { parsed = JSON.parse(body) } catch { writeJson(res, 400, { error: 'Invalid JSON' }, req); return }
+        const { id, dataUrl } = parsed
+        if (!id || typeof id !== 'string' || !/^[0-9a-f-]{8,64}$/i.test(id)) {
+          writeJson(res, 400, { error: 'Invalid id' }, req); return
+        }
+        const match = typeof dataUrl === 'string' && dataUrl.match(/^data:image\/(?:jpeg|jpg|png|webp);base64,(.+)$/)
+        if (!match) { writeJson(res, 400, { error: 'Invalid dataUrl' }, req); return }
+        const imageBuffer = Buffer.from(match[1], 'base64')
+        const imagePath = path.join(QUEUE_DIR, `${id}.jpg`)
+        if (!path.resolve(imagePath).startsWith(path.resolve(QUEUE_DIR))) {
+          writeJson(res, 403, { error: 'Forbidden' }, req); return
+        }
+        await writeFile(imagePath, imageBuffer)
+        db.queueAdd(id)
+        writeJson(res, 201, { id }, req)
+        return
+      }
+
+      if (method === 'DELETE') {
+        const ids = db.queueClear()
+        await Promise.all(ids.map(qid => unlink(path.join(QUEUE_DIR, `${qid}.jpg`)).catch(() => {})))
+        writeJson(res, 200, { ok: true }, req)
+        return
+      }
+    }
+
+    const queueImageMatch = pathname.match(/^\/api\/scan-queue\/([^/]+)\/image$/)
+    if (queueImageMatch && method === 'GET') {
+      if (!isAuthorized(req)) { writeJson(res, 401, { error: 'Unauthorized' }, req); return }
+      const qid = queueImageMatch[1]
+      if (!/^[0-9a-f-]{8,64}$/i.test(qid)) { writeJson(res, 400, { error: 'Invalid id' }, req); return }
+      const imagePath = path.join(QUEUE_DIR, `${qid}.jpg`)
+      if (!path.resolve(imagePath).startsWith(path.resolve(QUEUE_DIR))) {
+        writeJson(res, 403, { error: 'Forbidden' }, req); return
+      }
+      try {
+        const imageBytes = await readFile(imagePath)
+        res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'private, max-age=86400', ...getCorsHeaders(req) })
+        res.end(imageBytes)
+      } catch {
+        writeJson(res, 404, { error: 'Not found' }, req)
+      }
+      return
+    }
+
+    const queueItemMatch = pathname.match(/^\/api\/scan-queue\/([^/]+)$/)
+    if (queueItemMatch) {
+      if (!isAuthorized(req)) { writeJson(res, 401, { error: 'Unauthorized' }, req); return }
+      const qid = queueItemMatch[1]
+      if (!/^[0-9a-f-]{8,64}$/i.test(qid)) { writeJson(res, 400, { error: 'Invalid id' }, req); return }
+
+      if (method === 'PATCH') {
+        let patch
+        try { patch = JSON.parse(await readBody(req)) } catch { writeJson(res, 400, { error: 'Invalid JSON' }, req); return }
+        db.queueUpdate(qid, patch)
+        writeJson(res, 200, { ok: true }, req)
+        return
+      }
+
+      if (method === 'DELETE') {
+        db.queueDelete(qid)
+        await unlink(path.join(QUEUE_DIR, `${qid}.jpg`)).catch(() => {})
+        writeJson(res, 200, { ok: true }, req)
+        return
+      }
     }
 
     // ── DB download (start) ─────────────────────────────────────────────────
@@ -363,11 +916,11 @@ const server = createServer(async (req, res) => {
 
     // ── TCG card lookup ─────────────────────────────────────────────────────
     if (pathname === '/api/cards/find' && method === 'GET') {
-      const card = db.findCard(
-        url.searchParams.get('name')   ?? '',
-        url.searchParams.get('set')    ?? '',
-        url.searchParams.get('number') ?? '',
-      )
+      const lookupName   = url.searchParams.get('name')   ?? ''
+      const lookupSet    = url.searchParams.get('set')    ?? ''
+      const lookupNumber = url.searchParams.get('number') ?? ''
+      const card = db.findCard(lookupName, lookupSet, lookupNumber)
+      logger.info('find', `name="${lookupName}" set="${lookupSet}" number="${lookupNumber}" -> ${card ? card.id : 'null'}`)
       writeJson(res, 200, card, req)
       return
     }
@@ -490,12 +1043,33 @@ const server = createServer(async (req, res) => {
 
   } catch (error) {
     const status = typeof error?.status === 'number' ? error.status : 500
-    if (status >= 500) console.error('[server] Unhandled error:', error)
+    if (status >= 500) logger.error('server', 'Unhandled error:', error)
     writeJson(res, status, { error: error?.message || 'Internal server error' }, req)
   }
+}
+
+const httpServer = createHttpServer(requestHandler)
+
+httpServer.listen(PORT, HOST, () => {
+  logger.info('app', `HTTP server listening on http://${HOST}:${PORT}`)
+  logger.info('app', `Database: ${db.DB_PATH}`)
 })
 
-server.listen(PORT, HOST, () => {
-  console.log(`[app] Server listening on http://${HOST}:${PORT}`)
-  console.log(`[app] Database: ${db.DB_PATH}`)
-})
+// Run queue cleanup once at startup then every hour
+cleanupScanQueue()
+setInterval(cleanupScanQueue, 60 * 60 * 1000)
+
+if (HTTPS_ENABLED) {
+  try {
+    const tlsCredentials = await loadOrCreateTlsCredentials()
+    const httpsServer = createHttpsServer({ key: tlsCredentials.key, cert: tlsCredentials.cert }, requestHandler)
+    httpsServer.listen(HTTPS_PORT, HOST, () => {
+      if (tlsCredentials.created) {
+        logger.info('app', `Generated self-signed TLS certificate at ${TLS_CERT_PATH}`)
+      }
+      logger.info('app', `HTTPS server listening on https://${HOST}:${HTTPS_PORT}`)
+    })
+  } catch (error) {
+    logger.error('app', 'Failed to start HTTPS server:', error)
+  }
+}

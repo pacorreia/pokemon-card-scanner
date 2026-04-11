@@ -5,7 +5,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Plus } from '@phosphor-icons/react'
 import type { CardCollection } from '@/lib/types'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 
 interface AddToCollectionDialogProps {
   open: boolean

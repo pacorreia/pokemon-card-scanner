@@ -38,6 +38,7 @@ export interface PokemonCard {
   name: string
   set: string
   cardNumber: string
+  pokedexNumber?: number
   rarity: string
   type: string
   supertype?: string
@@ -62,3 +63,10 @@ export interface CardCollection {
 }
 
 export type ViewMode = 'all' | 'duplicates' | 'collection'
+
+export interface CameraPreferences {
+  resolution: 'auto' | 'hd' | 'fullhd' | 'qhd'
+  facingMode: 'environment' | 'user'
+  torchEnabled: boolean
+  zoom: number
+}

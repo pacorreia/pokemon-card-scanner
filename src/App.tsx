@@ -1,12 +1,12 @@
-import { useState, useMemo, useEffect, useRef } from 'react'
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { Toaster } from '@/components/ui/sonner'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
-import { Camera, MagnifyingGlass, Copy, Funnel, X, CheckSquare, ArrowsDownUp, ArrowLeft } from '@phosphor-icons/react'
+import { Camera, Copy, CheckSquare, Database, ArrowLeft, ListBullets, Lock, CaretDown, CaretRight } from '@phosphor-icons/react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ScanDialog } from '@/components/ScanDialog'
+import { ScanQueueDialog } from '@/components/ScanQueueDialog'
 import { CardItem } from '@/components/CardItem'
 import { CardDetailsSheet } from '@/components/CardDetailsSheet'
 import { EmptyState } from '@/components/EmptyState'
@@ -17,19 +17,41 @@ import { ExportImportDialog } from '@/components/ExportImportDialog'
 import { CollectionsManager } from '@/components/CollectionsManager'
 import { AddToCollectionDialog } from '@/components/AddToCollectionDialog'
 import { SettingsDialog } from '@/components/SettingsDialog'
-import { useTCGDatabase } from '@/lib/tcg-database'
+import { useTCGDatabase, type TCGCard } from '@/lib/tcg-database'
 import { apiFetch } from '@/lib/api-fetch'
-import type { PokemonCard, ViewMode, CardCollection } from '@/lib/types'
-import { toast } from 'sonner'
-import { HomeView } from '@/components/HomeView'
+import { queueApi } from '@/lib/queue-api'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuCheckboxItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog'
+import type { PokemonCard, ViewMode, CardCollection, CameraPreferences } from '@/lib/types'
+import { type ScanQueueItem, buildPricesFromTcgCard } from '@/lib/card-analysis'
+import { toast } from '@/lib/toast'
+import { HomeView } from '@/components/HomeView'
+import { CatalogSearchBar } from '@/components/shared/CatalogSearchBar'
+import { CatalogFilterControls } from '@/components/shared/CatalogFilterControls'
+import { useLocalStorage } from '@/hooks/useLocalStorage'
+import { isUsableImageUrl, pickBestImageUrl } from '@/lib/utils'
+
+type CatalogGroupBy = 'none' | 'supertype' | 'type' | 'rarity'
+type CatalogSortBy = 'national-dex' | 'recent' | 'name-asc' | 'name-desc'
+
+function parseCardNumberSortValue(cardNumber: string | undefined): number {
+  if (!cardNumber) return Number.POSITIVE_INFINITY
+  const match = cardNumber.match(/\d+/)
+  return match ? Number(match[0]) : Number.POSITIVE_INFINITY
+}
+
+function getNationalDexSortValue(card: Pick<PokemonCard, 'pokedexNumber'>): number {
+  if (typeof card.pokedexNumber !== 'number' || Number.isNaN(card.pokedexNumber) || card.pokedexNumber <= 0) {
+    return Number.POSITIVE_INFINITY
+  }
+  return card.pokedexNumber
+}
 
 // ── API helpers ──────────────────────────────────────────────────────────────
 
@@ -59,38 +81,37 @@ const api = {
     }),
 }
 
-// ── Image URL helpers ────────────────────────────────────────────────────────
-
-function isUsableImageUrl(value: unknown): value is string {
-  if (typeof value !== 'string') return false
-  const n = value.trim()
-  if (!n || n === 'undefined' || n === 'null') return false
-  return n.startsWith('https://') || n.startsWith('http://') || n.startsWith('data:image/')
-}
-
-function pickBestImageUrl(...candidates: Array<unknown>): string {
-  for (const c of candidates) { if (isUsableImageUrl(c)) return c }
-  return ''
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 
 function App() {
   return (
     <>
       <MainApp />
-      <Toaster position="top-center" />
+      <Toaster position="top-center" richColors />
     </>
   )
 }
 
 function MainApp() {
+  const defaultCameraPreferences: CameraPreferences = {
+    resolution: 'auto',
+    facingMode: 'environment',
+    torchEnabled: false,
+    zoom: 1,
+  }
+
+  const [cameraPreferences, setCameraPreferences] = useLocalStorage<CameraPreferences>('camera-preferences', defaultCameraPreferences)
+
   const [cards, setCards]             = useState<PokemonCard[]>([])
   const [collections, setCollections] = useState<CardCollection[]>([])
   const [dataLoading, setDataLoading] = useState(true)
 
   const [scanDialogOpen,        setScanDialogOpen]        = useState(false)
+  const [scanQueueDialogOpen,   setScanQueueDialogOpen]   = useState(false)
+  const [openScanToQueue,       setOpenScanToQueue]       = useState(false)
+  const [scanQueue,             setScanQueue]             = useState<ScanQueueItem[]>([])
   const [selectedCard,          setSelectedCard]          = useState<PokemonCard | null>(null)
+  const [rematchOnOpen,         setRematchOnOpen]         = useState(false)
   const [detailsOpen,           setDetailsOpen]           = useState(false)
   const [searchQuery,           setSearchQuery]           = useState('')
   const [viewMode,              setViewMode]              = useState<ViewMode>('all')
@@ -105,6 +126,9 @@ function MainApp() {
   const [selectedTypes,         setSelectedTypes]         = useState<string[]>([])
   const [selectedRarities,      setSelectedRarities]      = useState<string[]>([])
   const [selectedSupertypes,    setSelectedSupertypes]    = useState<string[]>([])
+  const [catalogSortBy,         setCatalogSortBy]         = useState<CatalogSortBy>('national-dex')
+  const [catalogGroupBy,        setCatalogGroupBy]        = useState<CatalogGroupBy>('none')
+  const [collapsedCatalogGroups, setCollapsedCatalogGroups] = useState<Set<string>>(new Set())
   const [appView,               setAppView]               = useState<'home' | 'catalog'>('home')
   const [isSelectionMode,       setIsSelectionMode]       = useState(false)
   const [selectedCardIds,       setSelectedCardIds]       = useState<Set<string>>(new Set())
@@ -112,18 +136,97 @@ function MainApp() {
 
   const updatedCardIdsRef   = useRef<Set<string>>(new Set())
   const imageUpdateRunIdRef = useRef(0)
+  const dexBackfillCardIdsRef = useRef<Set<string>>(new Set())
+  const addingCardKeys      = useRef(new Set<string>())
+
+  // ── Auth (session cookie replaces VITE_API_SECRET) ────────────────────────
+  const [authRequired,     setAuthRequired]     = useState(false)
+  const [authLoginOpen,    setAuthLoginOpen]     = useState(false)
+  const [authPassword,     setAuthPassword]      = useState('')
+  const [authLoginError,   setAuthLoginError]    = useState('')
+  const [authLoggingIn,    setAuthLoggingIn]     = useState(false)
+
+  useEffect(() => {
+    fetch('/api/auth/status').then(r => r.json()).then((data: { required: boolean; authenticated: boolean }) => {
+      if (data.required && !data.authenticated) {
+        setAuthRequired(true)
+        setAuthLoginOpen(true)
+      }
+    }).catch(() => { /* server not available yet; ignore */ })
+  }, [])
+
+  useEffect(() => {
+    const handler = () => {
+      setAuthRequired(true)
+      setAuthLoginOpen(true)
+    }
+    window.addEventListener('auth:required', handler)
+    return () => window.removeEventListener('auth:required', handler)
+  }, [])
+
+  const handleAuthLogin = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault()
+    setAuthLoginError('')
+    setAuthLoggingIn(true)
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: authPassword }),
+      })
+      if (!res.ok) {
+        setAuthLoginError('Incorrect password. Please try again.')
+        return
+      }
+      setAuthLoginOpen(false)
+      setAuthRequired(false)
+      setAuthPassword('')
+    } catch {
+      setAuthLoginError('Could not reach the server. Please try again.')
+    } finally {
+      setAuthLoggingIn(false)
+    }
+  }, [authPassword])
 
   const { isLoaded: isDatabaseLoaded, metadata, isLoading: isDatabaseLoading, findCard, getCardById, refreshStatus } = useTCGDatabase()
 
   // ── Load collection & named collections from server on mount ───────────────
   useEffect(() => {
-    Promise.all([
-      api.getCollection().catch(() => [] as PokemonCard[]),
-      api.getCollections().catch(() => [] as CardCollection[]),
-    ]).then(([serverCards, serverCollections]) => {
+    let cancelled = false
+
+    const load = async () => {
+      const [serverCards, serverCollections] = await Promise.all([
+        api.getCollection().catch(() => [] as PokemonCard[]),
+        api.getCollections().catch(() => [] as CardCollection[]),
+      ])
+
+      if (cancelled) return
+
       setCards(serverCards)
       setCollections(serverCollections)
-    }).finally(() => setDataLoading(false))
+      setDataLoading(false)
+
+      // Queue restoration is best-effort and should never block app startup.
+      queueApi.getAll().then(serverQueue => {
+        if (cancelled) return
+        setScanQueue(prev => {
+          const merged = new Map(prev.map(item => [item.id, item]))
+          for (const item of serverQueue) {
+            if (merged.has(item.id)) continue
+            merged.set(item.id, { ...item, dataUrl: '', imageUrl: `/api/scan-queue/${item.id}/image` })
+          }
+          return Array.from(merged.values())
+        })
+      }).catch(() => {})
+    }
+
+    load().catch(() => {
+      if (!cancelled) setDataLoading(false)
+    })
+
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   const shouldAutoOpenDbManager =
@@ -167,11 +270,13 @@ function MainApp() {
             : await findCard(card.name, card.set, card.cardNumber)
           if (imageUpdateRunIdRef.current !== runId) break
           if (dbCard?.images?.small || dbCard?.images?.large) {
+            const dex = dbCard.nationalPokedexNumbers?.[0]
             updates.set(card.id, {
               imageUrl:     pickBestImageUrl(dbCard.images.small, dbCard.images.large),
               largeImageUrl:dbCard.images.large || undefined,
               tcgCardId:    dbCard.id,
               supertype:    dbCard.supertype || undefined,
+              pokedexNumber: typeof dex === 'number' ? dex : card.pokedexNumber,
             })
           }
         } catch { /* ignore */ }
@@ -194,12 +299,58 @@ function MainApp() {
     run()
   }, [isDatabaseLoaded, findCard, getCardById, cards])
 
+  // ── Back-fill missing national dex numbers for persisted catalog cards ───
+  useEffect(() => {
+    let cancelled = false
+
+    const run = async () => {
+      if (!isDatabaseLoaded || cards.length === 0) return
+
+      const candidates = cards.filter(card =>
+        card &&
+        getNationalDexSortValue(card) === Number.POSITIVE_INFINITY &&
+        !dexBackfillCardIdsRef.current.has(card.id)
+      )
+
+      if (candidates.length === 0) return
+
+      for (const card of candidates) {
+        if (cancelled) return
+
+        try {
+          const dbCard = card.tcgCardId
+            ? await getCardById(card.tcgCardId)
+            : await findCard(card.name, card.set, card.cardNumber)
+
+          if (cancelled) return
+
+          const dex = dbCard?.nationalPokedexNumbers?.[0]
+          if (typeof dex === 'number' && dex > 0) {
+            const patch = { pokedexNumber: dex }
+            await api.updateCard(card.id, patch)
+            setCards(prev => prev.map(existing => existing.id === card.id ? { ...existing, ...patch } : existing))
+          }
+        } catch {
+          // Ignore and retry on next run if needed.
+        } finally {
+          dexBackfillCardIdsRef.current.add(card.id)
+        }
+      }
+    }
+
+    run()
+    return () => { cancelled = true }
+  }, [isDatabaseLoaded, cards, getCardById, findCard])
+
   // ── Collection mutations ──────────────────────────────────────────────────
 
   const getCardIdentityKey = (card: Pick<PokemonCard, 'name' | 'set' | 'cardNumber'>) =>
     `${card.name}::${card.set}::${card.cardNumber}`
 
   const handleCardScanned = async (card: PokemonCard) => {
+    const key = getCardIdentityKey(card)
+    if (addingCardKeys.current.has(key)) return
+    addingCardKeys.current.add(key)
     const existing = cards.find(c => c.name === card.name && c.set === card.set && c.cardNumber === card.cardNumber)
     try {
       if (existing) {
@@ -210,6 +361,7 @@ function MainApp() {
           prices:       card.prices || existing.prices,
           tcgCardId:    card.tcgCardId || existing.tcgCardId,
           supertype:    existing.supertype || card.supertype,
+          pokedexNumber: card.pokedexNumber || existing.pokedexNumber,
         }
         const updated = await api.updateCard(existing.id, patch)
         setCards(prev => prev.map(c => c.id === existing.id ? updated : c))
@@ -220,6 +372,8 @@ function MainApp() {
       }
     } catch (err) {
       toast.error('Failed to save card', { description: err instanceof Error ? err.message : 'Unknown error' })
+    } finally {
+      addingCardKeys.current.delete(key)
     }
   }
 
@@ -239,6 +393,7 @@ function MainApp() {
             largeImageUrl:card.largeImageUrl || existing.largeImageUrl,
             prices:       card.prices || existing.prices,
             tcgCardId:    card.tcgCardId || existing.tcgCardId,
+            pokedexNumber: card.pokedexNumber || existing.pokedexNumber,
           }
           const result = await api.updateCard(existing.id, patch)
           localMap.set(key, result)
@@ -273,8 +428,24 @@ function MainApp() {
     }
   }
 
+  const handleCardUpdate = async (cardId: string, patch: Partial<PokemonCard>) => {
+    const original = cards.find(c => c.id === cardId)
+    if (!original) return
+    setCards(prev => prev.map(c => c.id === cardId ? { ...c, ...patch } : c))
+    if (selectedCard?.id === cardId) setSelectedCard(prev => prev ? { ...prev, ...patch } : null)
+    try {
+      await api.updateCard(cardId, patch)
+      toast.success('Card updated')
+    } catch {
+      setCards(prev => prev.map(c => c.id === cardId ? original : c))
+      if (selectedCard?.id === cardId) setSelectedCard(original)
+      toast.error('Failed to update card')
+    }
+  }
+
   const handleDeleteCard = async (cardId: string) => {
     setCards(prev => prev.filter(c => c.id !== cardId))
+    if (selectedCard?.id === cardId) { setSelectedCard(null); setDetailsOpen(false) }
     try { await api.deleteCard(cardId) } catch { /* non-fatal */ }
     toast.success('Card removed from collection')
   }
@@ -367,6 +538,40 @@ function MainApp() {
     setAddToCollectionOpen(true)
   }
 
+  const handleDbBrowserAddToCollection = async (tcgCard: TCGCard) => {
+    const existing = cards.find(c =>
+      c.tcgCardId === tcgCard.id ||
+      (c.name === tcgCard.name && c.set === tcgCard.set?.name && c.cardNumber === tcgCard.number)
+    )
+    if (existing) {
+      handleAddCardToCollection(existing)
+    } else {
+      try {
+        const cardData: PokemonCard = {
+          id: '',
+          name: tcgCard.name,
+          set: tcgCard.set?.name || 'Unknown Set',
+          cardNumber: tcgCard.number || '?',
+          pokedexNumber: tcgCard.nationalPokedexNumbers?.[0],
+          rarity: tcgCard.rarity || 'Common',
+          type: tcgCard.types?.[0] || 'Colorless',
+          supertype: tcgCard.supertype,
+          imageUrl: tcgCard.images?.small || tcgCard.images?.large || `https://placehold.co/400x560/88ccee/ffffff?text=${encodeURIComponent(tcgCard.name)}`,
+          largeImageUrl: tcgCard.images?.large,
+          quantity: 1,
+          dateAdded: Date.now(),
+          prices: buildPricesFromTcgCard(tcgCard),
+          tcgCardId: tcgCard.id,
+        }
+        const created = await api.addCard(cardData)
+        setCards(prev => [...prev, created])
+        handleAddCardToCollection(created)
+      } catch (err) {
+        toast.error('Failed to add card', { description: err instanceof Error ? err.message : 'Unknown error' })
+      }
+    }
+  }
+
   const handleToggleCardInCollection = async (collectionId: string, add: boolean) => {
     const cardId = selectedCardForCollection?.id
     if (!cardId) return
@@ -389,6 +594,7 @@ function MainApp() {
   // ── Selection helpers ──────────────────────────────────────────────────────
 
   const handleCardClick   = (card: PokemonCard)    => { setSelectedCard(card); setDetailsOpen(true) }
+  const handleCardRematch = (card: PokemonCard)    => { setSelectedCard(card); setDetailsOpen(true); setRematchOnOpen(true) }
   const handleToggleSelectionMode  = ()            => { if (isSelectionMode) setSelectedCardIds(new Set()); setIsSelectionMode(v => !v) }
   const handleToggleCardSelection  = (id: string)  => setSelectedCardIds(prev => { const s = new Set(prev); if (s.has(id)) s.delete(id); else s.add(id); return s })
   const handleSelectAllCards       = ()            => setSelectedCardIds(new Set(filteredCards.map(c => c.id)))
@@ -396,17 +602,28 @@ function MainApp() {
 
   // ── Derived state ──────────────────────────────────────────────────────────
 
-  const availableTypes = useMemo(() => {
-    const s = new Set<string>(); cards.forEach(c => c.type && s.add(c.type)); return Array.from(s).sort()
-  }, [cards])
-  const availableSupertypes = useMemo(() => {
-    const s = new Set<string>(); cards.forEach(c => c.supertype && s.add(c.supertype)); return Array.from(s).sort()
-  }, [cards])
-  const availableRarities = useMemo(() => {
-    const s = new Set<string>(); cards.forEach(c => c.rarity && s.add(c.rarity)); return Array.from(s).sort()
+  const { availableTypes, availableSupertypes, availableRarities, typeCounts, supertypeCounts, rarityCounts } = useMemo(() => {
+    const typeSet = new Set<string>()
+    const supertypeSet = new Set<string>()
+    const raritySet = new Set<string>()
+    const tCounts = new Map<string, number>()
+    const stCounts = new Map<string, number>()
+    const rCounts = new Map<string, number>()
+    for (const card of cards) {
+      if (card.type)      { typeSet.add(card.type);           tCounts.set(card.type,      (tCounts.get(card.type)      || 0) + 1) }
+      if (card.supertype) { supertypeSet.add(card.supertype); stCounts.set(card.supertype, (stCounts.get(card.supertype) || 0) + 1) }
+      if (card.rarity)    { raritySet.add(card.rarity);       rCounts.set(card.rarity,    (rCounts.get(card.rarity)    || 0) + 1) }
+    }
+    return {
+      availableTypes:      Array.from(typeSet).sort(),
+      availableSupertypes: Array.from(supertypeSet).sort(),
+      availableRarities:   Array.from(raritySet).sort(),
+      typeCounts:      tCounts,
+      supertypeCounts: stCounts,
+      rarityCounts:    rCounts,
+    }
   }, [cards])
 
-  // eslint-disable-next-line react-hooks/preserve-manual-memoization
   const filteredCards = useMemo(() => {
     let result = cards
     if (viewMode === 'collection' && selectedCollection) result = result.filter(c => selectedCollection.cardIds.includes(c.id))
@@ -418,11 +635,63 @@ function MainApp() {
     if (selectedTypes.length)      result = result.filter(c => selectedTypes.includes(c.type))
     if (selectedRarities.length)   result = result.filter(c => selectedRarities.includes(c.rarity))
     if (viewMode === 'duplicates')  result = result.filter(c => c.quantity > 1)
-    return result.sort((a, b) => b.dateAdded - a.dateAdded)
-  }, [cards, searchQuery, viewMode, selectedTypes, selectedRarities, selectedSupertypes, selectedCollection])
+
+    if (catalogSortBy === 'name-asc') {
+      return [...result].sort((a, b) => a.name.localeCompare(b.name) || a.set.localeCompare(b.set) || b.dateAdded - a.dateAdded)
+    }
+    if (catalogSortBy === 'name-desc') {
+      return [...result].sort((a, b) => b.name.localeCompare(a.name) || b.set.localeCompare(a.set) || b.dateAdded - a.dateAdded)
+    }
+    if (catalogSortBy === 'recent') {
+      return [...result].sort((a, b) => b.dateAdded - a.dateAdded)
+    }
+
+    return [...result].sort((a, b) => {
+      const dexDiff = getNationalDexSortValue(a) - getNationalDexSortValue(b)
+      if (dexDiff !== 0) return dexDiff
+
+      const numberDiff = parseCardNumberSortValue(a.cardNumber) - parseCardNumberSortValue(b.cardNumber)
+      if (numberDiff !== 0) return numberDiff
+
+      const nameDiff = a.name.localeCompare(b.name)
+      if (nameDiff !== 0) return nameDiff
+
+      const setDiff = a.set.localeCompare(b.set)
+      if (setDiff !== 0) return setDiff
+
+      return b.dateAdded - a.dateAdded
+    })
+  }, [cards, searchQuery, viewMode, selectedTypes, selectedRarities, selectedSupertypes, selectedCollection, catalogSortBy])
+
+  const groupedCatalogCards = useMemo(() => {
+    if (catalogGroupBy === 'none') return [] as Array<{ label: string; cards: PokemonCard[] }>
+    const groups: Record<string, PokemonCard[]> = {}
+
+    for (const card of filteredCards) {
+      let label = 'Unknown'
+      if (catalogGroupBy === 'supertype') label = card.supertype || 'Other'
+      if (catalogGroupBy === 'type') label = card.type || 'Other'
+      if (catalogGroupBy === 'rarity') label = card.rarity || 'Other'
+
+      if (!groups[label]) groups[label] = []
+      groups[label].push(card)
+    }
+
+    return Object.entries(groups)
+      .map(([label, groupCards]) => ({ label, cards: groupCards }))
+      .sort((a, b) => a.label.localeCompare(b.label))
+  }, [filteredCards, catalogGroupBy])
+
+  // Reset collapsed groups when grouping option changes
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { setCollapsedCatalogGroups(new Set()) }, [catalogGroupBy])
 
   const duplicateCount  = useMemo(() => cards.filter(c => c.quantity > 1).length, [cards])
   const totalCards      = useMemo(() => cards.reduce((s, c) => s + c.quantity, 0), [cards])
+  const cardsWithDexCount = useMemo(
+    () => cards.filter(c => typeof c.pokedexNumber === 'number' && c.pokedexNumber > 0).length,
+    [cards],
+  )
   const collectionValue = useMemo(() => cards.reduce((s, c) => {
     const p = c.prices?.tcgplayer?.market || c.prices?.cardmarket?.trendPrice || 0
     return s + p * c.quantity
@@ -433,6 +702,82 @@ function MainApp() {
   const handleToggleType      = (v: string) => setSelectedTypes(p => p.includes(v) ? p.filter(x => x !== v) : [...p, v])
   const handleToggleRarity    = (v: string) => setSelectedRarities(p => p.includes(v) ? p.filter(x => x !== v) : [...p, v])
   const handleClearFilters    = ()          => { setSelectedTypes([]); setSelectedRarities([]); setSelectedSupertypes([]); setSearchQuery('') }
+
+  const toggleCatalogGroup = useCallback((label: string) => {
+    setCollapsedCatalogGroups(prev => {
+      const next = new Set(prev)
+      if (next.has(label)) next.delete(label)
+      else next.add(label)
+      return next
+    })
+  }, [])
+
+  const catalogFilterSections = useMemo(() => ([
+    {
+      id: 'category',
+      label: 'Card Category',
+      emptyMessage: 'No categories available',
+      options: availableSupertypes.map(s => ({
+        id: `supertype:${s}`,
+        label: s,
+        checked: selectedSupertypes.includes(s),
+        count: supertypeCounts.get(s) || 0,
+        onToggle: () => handleToggleSupertype(s),
+      })),
+    },
+    {
+      id: 'types',
+      label: 'Card Types',
+      emptyMessage: 'No types available',
+      options: availableTypes.map(t => ({
+        id: `type:${t}`,
+        label: t,
+        checked: selectedTypes.includes(t),
+        count: typeCounts.get(t) || 0,
+        onToggle: () => handleToggleType(t),
+      })),
+    },
+    {
+      id: 'rarities',
+      label: 'Rarities',
+      emptyMessage: 'No rarities available',
+      options: availableRarities.map(r => ({
+        id: `rarity:${r}`,
+        label: r,
+        checked: selectedRarities.includes(r),
+        count: rarityCounts.get(r) || 0,
+        onToggle: () => handleToggleRarity(r),
+      })),
+    },
+  ]), [
+    availableSupertypes,
+    availableTypes,
+    availableRarities,
+    selectedSupertypes,
+    selectedTypes,
+    selectedRarities,
+    supertypeCounts,
+    typeCounts,
+    rarityCounts,
+  ])
+
+  const catalogActiveFilterChips = useMemo(() => ([
+    ...selectedSupertypes.map(s => ({
+      id: `chip-supertype:${s}`,
+      label: `Category: ${s}`,
+      onRemove: () => handleToggleSupertype(s),
+    })),
+    ...selectedTypes.map(t => ({
+      id: `chip-type:${t}`,
+      label: `Type: ${t}`,
+      onRemove: () => handleToggleType(t),
+    })),
+    ...selectedRarities.map(r => ({
+      id: `chip-rarity:${r}`,
+      label: `Rarity: ${r}`,
+      onRemove: () => handleToggleRarity(r),
+    })),
+  ]), [selectedSupertypes, selectedTypes, selectedRarities])
 
   // ─────────────────────────────────────────────────────────────────────────
   return (
@@ -456,7 +801,10 @@ function MainApp() {
           <HomeView
             cardCount={cards.length}
             isDatabaseLoaded={isDatabaseLoaded}
-            onScan={() => setScanDialogOpen(true)}
+            onScan={() => { setOpenScanToQueue(false); setScanDialogOpen(true) }}
+            onQueue={() => setScanQueueDialogOpen(true)}
+            queueCount={scanQueue.length}
+            queueProcessing={scanQueue.some(i => i.status === 'processing')}
             onCatalog={() => setAppView('catalog')}
             onBrowseDB={() => setDbBrowserOpen(true)}
             onManageDB={() => setDbManagerOpen(true)}
@@ -485,10 +833,17 @@ function MainApp() {
                       </>
                     )}
                   </p>
+                  {cards.length > 0 && (
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <Badge variant="secondary" className="text-xs">
+                        Dex indexed: {cardsWithDexCount}/{cards.length}
+                      </Badge>
+                    </div>
+                  )}
                 </div>
                 <div className="flex gap-2 shrink-0">
                   <Button variant="outline" size="icon" onClick={() => setExportImportOpen(true)} title="Backup & Restore">
-                    <ArrowsDownUp className="w-5 h-5" />
+                    <Database className="w-5 h-5" />
                   </Button>
                   {cards.length > 0 && !isSelectionMode && (
                     <Button variant="outline" size="icon" onClick={handleToggleSelectionMode} title="Select Multiple Cards">
@@ -500,80 +855,39 @@ function MainApp() {
 
               {cards.length > 0 && (
                 <div className="space-y-4">
-                  <div className="flex gap-2">
-                    <div className="relative flex-1">
-                      <MagnifyingGlass className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-                      <Input
-                        placeholder="Search by name, set, type, or rarity..."
-                        value={searchQuery}
-                        onChange={e => setSearchQuery(e.target.value)}
-                        className="pl-10 h-12 text-base"
-                      />
-                    </div>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="outline" size="lg" className="h-12 px-4 relative">
-                          <Funnel className="w-5 h-5 mr-2" />
-                          Filters
-                          {activeFiltersCount > 0 && (
-                            <Badge variant="default" className="ml-2 h-5 min-w-5 px-1.5 flex items-center justify-center">
-                              {activeFiltersCount}
-                            </Badge>
-                          )}
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-56">
-                        {activeFiltersCount > 0 && (
-                          <>
-                            <div className="px-2 py-1.5">
-                              <Button variant="ghost" size="sm" className="w-full justify-start text-xs h-7" onClick={handleClearFilters}>
-                                <X className="w-3 h-3 mr-1.5" /> Clear all filters
-                              </Button>
-                            </div>
-                            <DropdownMenuSeparator />
-                          </>
-                        )}
-                        <DropdownMenuLabel>Card Category</DropdownMenuLabel>
-                        {availableSupertypes.length > 0 ? availableSupertypes.map(s => (
-                          <DropdownMenuCheckboxItem key={s} checked={selectedSupertypes.includes(s)} onCheckedChange={() => handleToggleSupertype(s)}>{s}</DropdownMenuCheckboxItem>
-                        )) : <div className="px-2 py-1.5 text-sm text-muted-foreground">No categories available</div>}
-                        <DropdownMenuSeparator />
-                        <DropdownMenuLabel>Card Types</DropdownMenuLabel>
-                        {availableTypes.length > 0 ? availableTypes.map(t => (
-                          <DropdownMenuCheckboxItem key={t} checked={selectedTypes.includes(t)} onCheckedChange={() => handleToggleType(t)}>{t}</DropdownMenuCheckboxItem>
-                        )) : <div className="px-2 py-1.5 text-sm text-muted-foreground">No types available</div>}
-                        <DropdownMenuSeparator />
-                        <DropdownMenuLabel>Rarities</DropdownMenuLabel>
-                        {availableRarities.length > 0 ? availableRarities.map(r => (
-                          <DropdownMenuCheckboxItem key={r} checked={selectedRarities.includes(r)} onCheckedChange={() => handleToggleRarity(r)}>{r}</DropdownMenuCheckboxItem>
-                        )) : <div className="px-2 py-1.5 text-sm text-muted-foreground">No rarities available</div>}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                  <div className="relative">
+                    <CatalogSearchBar
+                      placeholder="Search by name, set, type, or rarity..."
+                      value={searchQuery}
+                      onValueChange={setSearchQuery}
+                      inputClassName="h-12 text-base"
+                    />
                   </div>
 
-                  {activeFiltersCount > 0 && (
-                    <div className="flex flex-wrap gap-2">
-                      {selectedSupertypes.map(s => (
-                        <Badge key={s} variant="secondary" className="pl-2.5 pr-1.5 py-1.5 gap-1.5">
-                          <span className="text-xs font-medium">Category: {s}</span>
-                          <button onClick={() => handleToggleSupertype(s)} className="hover:bg-secondary-foreground/20 rounded-full p-0.5 transition-colors"><X className="w-3 h-3" /></button>
-                        </Badge>
-                      ))}
-                      {selectedTypes.map(t => (
-                        <Badge key={t} variant="secondary" className="pl-2.5 pr-1.5 py-1.5 gap-1.5">
-                          <span className="text-xs font-medium">Type: {t}</span>
-                          <button onClick={() => handleToggleType(t)} className="hover:bg-secondary-foreground/20 rounded-full p-0.5 transition-colors"><X className="w-3 h-3" /></button>
-                        </Badge>
-                      ))}
-                      {selectedRarities.map(r => (
-                        <Badge key={r} variant="secondary" className="pl-2.5 pr-1.5 py-1.5 gap-1.5">
-                          <span className="text-xs font-medium">Rarity: {r}</span>
-                          <button onClick={() => handleToggleRarity(r)} className="hover:bg-secondary-foreground/20 rounded-full p-0.5 transition-colors"><X className="w-3 h-3" /></button>
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
+                  <CatalogFilterControls
+                    sortValue={catalogSortBy}
+                    onSortChange={(value) => setCatalogSortBy(value as CatalogSortBy)}
+                    sortOptions={[
+                      { value: 'national-dex', label: 'National Dex' },
+                      { value: 'recent', label: 'Recently Added' },
+                      { value: 'name-asc', label: 'Name A-Z' },
+                      { value: 'name-desc', label: 'Name Z-A' },
+                    ]}
+                    groupByValue={catalogGroupBy}
+                    onGroupByChange={(value) => setCatalogGroupBy(value as CatalogGroupBy)}
+                    groupOptions={[
+                      { value: 'none', label: 'No Group' },
+                      { value: 'supertype', label: 'Category' },
+                      { value: 'type', label: 'Type' },
+                      { value: 'rarity', label: 'Rarity' },
+                    ]}
+                    activeFiltersCount={activeFiltersCount}
+                    onClearFilters={handleClearFilters}
+                    filterSections={catalogFilterSections}
+                    activeFilterChips={catalogActiveFilterChips}
+                  />
 
+                  {viewMode !== 'collection' && (
                   <Tabs value={viewMode} onValueChange={v => setViewMode(v as ViewMode)}>
                     <TabsList className="grid w-full grid-cols-2">
                       <TabsTrigger value="all" className="font-display font-semibold">
@@ -584,6 +898,7 @@ function MainApp() {
                       </TabsTrigger>
                     </TabsList>
                   </Tabs>
+                  )}
                 </div>
               )}
             </header>
@@ -599,30 +914,74 @@ function MainApp() {
                   <Button variant="outline" onClick={handleClearFilters}>Clear All Filters</Button>
                 </div>
               ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                  <AnimatePresence mode="popLayout">
-                    {filteredCards.map(card => card ? (
-                      <CardItem
-                        key={card.id}
-                        card={card}
-                        onClick={() => handleCardClick(card)}
-                        onUpdateQuantity={delta => handleUpdateQuantity(card.id, delta)}
-                        onDelete={() => handleDeleteCard(card.id)}
-                        onAddToCollection={() => handleAddCardToCollection(card)}
-                        isSelectionMode={isSelectionMode}
-                        isSelected={selectedCardIds.has(card.id)}
-                        onToggleSelect={() => handleToggleCardSelection(card.id)}
-                      />
-                    ) : null)}
-                  </AnimatePresence>
-                </div>
+                catalogGroupBy === 'none' ? (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                    <AnimatePresence mode="popLayout">
+                      {filteredCards.map(card => card ? (
+                        <CardItem
+                          key={card.id}
+                          card={card}
+                          onClick={() => handleCardClick(card)}
+                          onUpdateQuantity={delta => handleUpdateQuantity(card.id, delta)}
+                          onDelete={() => handleDeleteCard(card.id)}
+                          onAddToCollection={() => handleAddCardToCollection(card)}
+                          onRematch={() => handleCardRematch(card)}
+                          isSelectionMode={isSelectionMode}
+                          isSelected={selectedCardIds.has(card.id)}
+                          onToggleSelect={() => handleToggleCardSelection(card.id)}
+                        />
+                      ) : null)}
+                    </AnimatePresence>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {groupedCatalogCards.map(group => {
+                      const isCollapsed = collapsedCatalogGroups.has(group.label)
+                      return (
+                        <section key={group.label}>
+                          <button
+                            type="button"
+                            className="flex items-center gap-2 w-full text-left mb-3 group/header"
+                            onClick={() => toggleCatalogGroup(group.label)}
+                          >
+                            {isCollapsed
+                              ? <CaretRight className="w-4 h-4 shrink-0 text-muted-foreground group-hover/header:text-foreground transition-colors" />
+                              : <CaretDown className="w-4 h-4 shrink-0 text-muted-foreground group-hover/header:text-foreground transition-colors" />}
+                            <h3 className="text-lg font-display font-semibold">{group.label}</h3>
+                            <Badge variant="outline">{group.cards.length}</Badge>
+                          </button>
+                          {!isCollapsed && (
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                              <AnimatePresence mode="popLayout">
+                                {group.cards.map(card => (
+                                  <CardItem
+                                    key={card.id}
+                                    card={card}
+                                    onClick={() => handleCardClick(card)}
+                                    onUpdateQuantity={delta => handleUpdateQuantity(card.id, delta)}
+                                    onDelete={() => handleDeleteCard(card.id)}
+                                    onAddToCollection={() => handleAddCardToCollection(card)}
+                                    onRematch={() => handleCardRematch(card)}
+                                    isSelectionMode={isSelectionMode}
+                                    isSelected={selectedCardIds.has(card.id)}
+                                    onToggleSelect={() => handleToggleCardSelection(card.id)}
+                                  />
+                                ))}
+                              </AnimatePresence>
+                            </div>
+                          )}
+                        </section>
+                      )
+                    })}
+                  </div>
+                )
               )}
             </main>
           </>
         )}
 
         <motion.div
-          className="fixed bottom-6 right-6"
+          className="fixed bottom-6 right-6 flex flex-col items-end gap-3"
           initial={{ scale: 0 }}
           animate={{ scale: 1 }}
           transition={{ delay: 0.2, type: 'spring', stiffness: 260, damping: 20 }}
@@ -630,7 +989,7 @@ function MainApp() {
           <Button
             size="lg"
             className="h-16 w-16 rounded-full shadow-2xl bg-accent hover:bg-accent/90 text-accent-foreground"
-            onClick={() => setScanDialogOpen(true)}
+            onClick={() => { setOpenScanToQueue(false); setScanDialogOpen(true) }}
           >
             <Camera className="w-7 h-7" weight="bold" />
           </Button>
@@ -639,19 +998,54 @@ function MainApp() {
 
       <ScanDialog
         open={scanDialogOpen}
-        onOpenChange={setScanDialogOpen}
+        onOpenChange={(v) => { setScanDialogOpen(v); if (!v) setOpenScanToQueue(false) }}
         onCardScanned={handleCardScanned}
         onCardsScanned={handleCardsScanned}
+        cameraPreferences={cameraPreferences}
+        onCameraPreferencesChange={setCameraPreferences}
+        queue={scanQueue}
+        onAddToQueue={(item) => setScanQueue(prev => prev.some(existing => existing.id === item.id) ? prev : [...prev, item])}
+        onOpenQueue={() => { setScanDialogOpen(false); setScanQueueDialogOpen(true) }}
+        openToQueue={openScanToQueue}
+      />
+      <ScanQueueDialog
+        open={scanQueueDialogOpen}
+        onOpenChange={setScanQueueDialogOpen}
+        queue={scanQueue}
+        onQueueChange={(updater) => setScanQueue(updater)}
+        onCardScanned={handleCardScanned}
+        onCardsScanned={handleCardsScanned}
+        onOpenScanCapture={() => { setScanQueueDialogOpen(false); setOpenScanToQueue(true); setScanDialogOpen(true) }}
       />
       <CardDetailsSheet
         card={selectedCard}
         open={detailsOpen}
-        onOpenChange={setDetailsOpen}
+        onOpenChange={v => { setDetailsOpen(v); if (!v) setRematchOnOpen(false) }}
         onUpdateQuantity={handleUpdateQuantity}
         onDelete={handleDeleteCard}
+        onCardUpdate={handleCardUpdate}
+        openRematch={rematchOnOpen}
       />
       <DatabaseManager  open={isDbManagerOpen}        onOpenChange={handleDbManagerOpenChange} onSuccess={refreshStatus} />
-      <DatabaseBrowser  open={dbBrowserOpen}          onOpenChange={setDbBrowserOpen} />
+      <DatabaseBrowser  open={dbBrowserOpen}          onOpenChange={setDbBrowserOpen} onAddCard={(tcgCard) => {
+        const card: PokemonCard = {
+          id: '',
+          name: tcgCard.name,
+          set: tcgCard.set?.name || 'Unknown Set',
+          cardNumber: tcgCard.number || '?',
+          pokedexNumber: tcgCard.nationalPokedexNumbers?.[0],
+          rarity: tcgCard.rarity || 'Common',
+          type: tcgCard.types?.[0] || 'Colorless',
+          supertype: tcgCard.supertype,
+          imageUrl: tcgCard.images?.small || tcgCard.images?.large || `https://placehold.co/400x560/88ccee/ffffff?text=${encodeURIComponent(tcgCard.name)}`,
+          largeImageUrl: tcgCard.images?.large,
+          quantity: 1,
+          dateAdded: Date.now(),
+          prices: buildPricesFromTcgCard(tcgCard),
+          tcgCardId: tcgCard.id,
+        }
+        handleCardScanned(card)
+      }} onAddToCollection={handleDbBrowserAddToCollection} />
       <ExportImportDialog
         open={exportImportOpen} onOpenChange={setExportImportOpen}
         cards={cards} onImport={handleImport}
@@ -673,7 +1067,47 @@ function MainApp() {
         onToggleCollection={handleToggleCardInCollection}
         onCreateNewCollection={() => { setAddToCollectionOpen(false); setCollectionsManagerOpen(true) }}
       />
-      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <SettingsDialog
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        cameraPreferences={cameraPreferences}
+        onCameraPreferencesChange={setCameraPreferences}
+      />
+
+      {/* ── Auth login dialog ─────────────────────────────────────────── */}
+      <Dialog open={authLoginOpen} onOpenChange={(open) => { if (!authRequired) setAuthLoginOpen(open) }}>
+        <DialogContent className="sm:max-w-sm" onInteractOutside={e => e.preventDefault()}>
+          <DialogTitle className="flex items-center gap-2 font-display text-xl">
+            <Lock className="w-5 h-5 text-primary" weight="fill" />
+            Authentication Required
+          </DialogTitle>
+          <DialogDescription>
+            This server is protected. Enter the password to continue.
+          </DialogDescription>
+          <form onSubmit={handleAuthLogin} className="flex flex-col gap-4 pt-2">
+            <div className="space-y-1">
+              <Label htmlFor="auth-password">Password</Label>
+              <Input
+                id="auth-password"
+                type="password"
+                placeholder="Enter password…"
+                value={authPassword}
+                onChange={e => { setAuthPassword(e.target.value); setAuthLoginError('') }}
+                autoFocus
+                autoComplete="current-password"
+              />
+              {authLoginError && <p className="text-xs text-destructive">{authLoginError}</p>}
+            </div>
+            <Button
+              type="submit"
+              className="w-full bg-accent hover:bg-accent/90 text-accent-foreground font-display font-semibold"
+              disabled={authLoggingIn || !authPassword}
+            >
+              {authLoggingIn ? 'Signing in…' : 'Sign In'}
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -5,164 +5,68 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Camera, Upload, Sparkle, PencilSimple, ArrowLeft, Stack, CheckCircle, Trash, MagnifyingGlass } from '@phosphor-icons/react'
+import { Camera, Upload, Sparkle, PencilSimple, ArrowLeft, Stack, CheckCircle, X, ListBullets } from '@phosphor-icons/react'
 import { Badge } from '@/components/ui/badge'
+import { CardReviewPanel } from '@/components/CardReviewPanel'
+import { queueApi } from '@/lib/queue-api'
 import { motion } from 'framer-motion'
-import { toast } from 'sonner'
-import type { PokemonCard } from '@/lib/types'
-import { useTCGDatabase, type TCGCard } from '@/lib/tcg-database'
-import { authHeaders } from '@/lib/api-fetch'
-
-const SCAN_PROXY_URL = '/api/github-models'
+import { toast } from '@/lib/toast'
+import type { CameraPreferences, PokemonCard } from '@/lib/types'
+import { useTCGDatabase } from '@/lib/tcg-database'
+import { assessImageQuality } from '@/lib/image-processing'
+import {
+  analyzeCardImage,
+  analyzeMultipleCardsImage,
+  analyzeBestSingleCard,
+  draftToPokemonCard,
+  isAutoAddEligible,
+  fileToDataUrl,
+  resizeDataUrlForInference,
+  RARITIES,
+  TYPES,
+  BULK_SCAN_JPEG_QUALITY,
+  AUTO_ADD_CONFIDENCE_THRESHOLD,
+  SINGLE_SCAN_MAX_IMAGE_SIDE,
+  BULK_SCAN_MAX_IMAGE_SIDE,
+  SINGLE_SCAN_UPLOAD_QUALITY,
+  BULK_SCAN_UPLOAD_QUALITY,
+  type ScannedCardDraft,
+  type ScanQueueItem,
+} from '@/lib/card-analysis'
 
 interface ScanDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onCardScanned: (card: PokemonCard) => void
   onCardsScanned?: (cards: PokemonCard[]) => void
+  cameraPreferences: CameraPreferences
+  onCameraPreferencesChange: (value: CameraPreferences) => void
+  queue: ScanQueueItem[]
+  onAddToQueue: (item: ScanQueueItem) => void
+  onOpenQueue: () => void
+  reviewDrafts?: ScannedCardDraft[] | null
+  /** When true, opening the dialog jumps straight to the sequential capture view. */
+  openToQueue?: boolean
 }
 
-type Mode = 'idle' | 'camera' | 'analyzing' | 'manual' | 'bulk' | 'bulk-review'
+type Mode = 'idle' | 'single-picker' | 'bulk-picker' | 'camera' | 'analyzing' | 'manual' | 'bulk' | 'bulk-review' | 'sequential'
 
-const RARITIES = ['Common', 'Uncommon', 'Rare', 'Holo Rare', 'Ultra Rare', 'Secret Rare']
-const TYPES = ['Fire', 'Water', 'Grass', 'Electric', 'Psychic', 'Fighting', 'Darkness', 'Metal', 'Dragon', 'Fairy', 'Colorless']
-const BULK_SCAN_JPEG_QUALITY = 0.92
-const LOW_CONFIDENCE_THRESHOLD = 0.74
 
-// Maps common LLM rarity variants (lowercase) to their canonical value
-const RARITY_ALIASES: Record<string, string> = {
-  'holo': 'Holo Rare',
-  'holo rare': 'Holo Rare',
-  'holofoil rare': 'Holo Rare',
-  'rare holo': 'Holo Rare',
-  'ultra-rare': 'Ultra Rare',
-  'secret': 'Secret Rare',
-}
 
-// Maps common LLM type variants (lowercase) to their canonical value
-const TYPE_ALIASES: Record<string, string> = {
-  'colourless': 'Colorless',
-  'lightning': 'Electric',
-  'dark': 'Darkness',
-  'steel': 'Metal',
-  'normal': 'Colorless',
-}
+const RESOLUTION_OPTIONS = {
+  auto: null,
+  hd: { width: 1280, height: 720 },
+  fullhd: { width: 1920, height: 1080 },
+  qhd: { width: 2560, height: 1440 },
+} as const
 
-type ScannedCardDraft = Omit<PokemonCard, 'id' | 'quantity' | 'dateAdded'> & {
-  recognitionConfidence: number
-  matchConfidence: number
-  confidence: number
-  selected: boolean
-  reviewReason?: string
-}
 
-function resolveListValue(value: string | undefined, allowed: readonly string[], aliases: Record<string, string>): string | undefined {
-  const normalized = value?.trim().toLowerCase()
-  if (!normalized) return undefined
-  const aliased = aliases[normalized]
-  if (aliased) return aliased
-  return allowed.find(v => v.toLowerCase() === normalized)
-}
 
-function clampConfidence(value: unknown, fallback: number): number {
-  if (typeof value !== 'number' || Number.isNaN(value)) return fallback
-  return Math.max(0, Math.min(1, value))
-}
-
-function confidencePercent(value: number): string {
-  return `${Math.round(value * 100)}%`
-}
-
-function getConfidenceBadgeVariant(confidence: number): 'default' | 'secondary' | 'destructive' | 'outline' {
-  if (confidence >= 0.8) return 'secondary'
-  if (confidence >= 0.65) return 'outline'
-  return 'destructive'
-}
-
-function getConfidenceBgClass(confidence: number): string {
-  if (confidence >= 0.8) return 'bg-green-50 border-green-200'
-  if (confidence >= 0.65) return 'bg-yellow-50 border-yellow-200'
-  return 'bg-red-50 border-red-200'
-}
-
-function buildPricesFromTcgCard(tcgCard: unknown) {
-  if (!tcgCard?.tcgplayer && !tcgCard?.cardmarket) return undefined
-
-  return {
-    tcgplayer: tcgCard.tcgplayer ? {
-      url: tcgCard.tcgplayer.url,
-      updatedAt: tcgCard.tcgplayer.updatedAt,
-      ...(tcgCard.tcgplayer.prices?.normal?.market && { market: tcgCard.tcgplayer.prices.normal.market }),
-      ...(tcgCard.tcgplayer.prices?.normal?.low && { low: tcgCard.tcgplayer.prices.normal.low }),
-      ...(tcgCard.tcgplayer.prices?.normal?.mid && { mid: tcgCard.tcgplayer.prices.normal.mid }),
-      ...(tcgCard.tcgplayer.prices?.normal?.high && { high: tcgCard.tcgplayer.prices.normal.high }),
-      ...(tcgCard.tcgplayer.prices?.holofoil?.market && { holofoil: tcgCard.tcgplayer.prices.holofoil.market }),
-      ...(tcgCard.tcgplayer.prices?.reverseHolofoil?.market && { reverseHolofoil: tcgCard.tcgplayer.prices.reverseHolofoil.market }),
-      ...(tcgCard.tcgplayer.prices?.['1stEditionHolofoil']?.market && { '1stEditionHolofoil': tcgCard.tcgplayer.prices['1stEditionHolofoil'].market }),
-      ...(tcgCard.tcgplayer.prices?.['1stEditionNormal']?.market && { '1stEditionNormal': tcgCard.tcgplayer.prices['1stEditionNormal'].market }),
-    } : undefined,
-    cardmarket: tcgCard.cardmarket ? {
-      url: tcgCard.cardmarket.url,
-      updatedAt: tcgCard.cardmarket.updatedAt,
-      ...(tcgCard.cardmarket.prices?.averageSellPrice && { averageSellPrice: tcgCard.cardmarket.prices.averageSellPrice }),
-      ...(tcgCard.cardmarket.prices?.lowPrice && { lowPrice: tcgCard.cardmarket.prices.lowPrice }),
-      ...(tcgCard.cardmarket.prices?.trendPrice && { trendPrice: tcgCard.cardmarket.prices.trendPrice }),
-      ...(tcgCard.cardmarket.prices?.germanProLow && { germanProLow: tcgCard.cardmarket.prices.germanProLow }),
-      ...(tcgCard.cardmarket.prices?.suggestedPrice && { suggestedPrice: tcgCard.cardmarket.prices.suggestedPrice }),
-      ...(tcgCard.cardmarket.prices?.reverseHoloSell && { reverseHoloSell: tcgCard.cardmarket.prices.reverseHoloSell }),
-      ...(tcgCard.cardmarket.prices?.reverseHoloLow && { reverseHoloLow: tcgCard.cardmarket.prices.reverseHoloLow }),
-      ...(tcgCard.cardmarket.prices?.reverseHoloTrend && { reverseHoloTrend: tcgCard.cardmarket.prices.reverseHoloTrend }),
-      ...(tcgCard.cardmarket.prices?.lowPriceExPlus && { lowPriceExPlus: tcgCard.cardmarket.prices.lowPriceExPlus }),
-      ...(tcgCard.cardmarket.prices?.avg1 && { avg1: tcgCard.cardmarket.prices.avg1 }),
-      ...(tcgCard.cardmarket.prices?.avg7 && { avg7: tcgCard.cardmarket.prices.avg7 }),
-      ...(tcgCard.cardmarket.prices?.avg30 && { avg30: tcgCard.cardmarket.prices.avg30 }),
-      ...(tcgCard.cardmarket.prices?.reverseHoloAvg1 && { reverseHoloAvg1: tcgCard.cardmarket.prices.reverseHoloAvg1 }),
-      ...(tcgCard.cardmarket.prices?.reverseHoloAvg7 && { reverseHoloAvg7: tcgCard.cardmarket.prices.reverseHoloAvg7 }),
-      ...(tcgCard.cardmarket.prices?.reverseHoloAvg30 && { reverseHoloAvg30: tcgCard.cardmarket.prices.reverseHoloAvg30 }),
-    } : undefined,
-  }
-}
-
-function buildDraftCard(
-  raw: { name: string; set: string; cardNumber: string; rarity?: string; type?: string; confidence?: number; reason?: string },
-  tcgCard: unknown,
-): ScannedCardDraft {
-  const name = raw.name || 'Unknown'
-  const set = raw.set || 'Unknown Set'
-  const cardNumber = raw.cardNumber || '?'
-  const rarity = resolveListValue(raw.rarity, RARITIES, RARITY_ALIASES) ?? 'Common'
-  const type = resolveListValue(raw.type, TYPES, TYPE_ALIASES) ?? 'Colorless'
-
-  let imageUrl = `https://placehold.co/400x560/88ccee/ffffff?text=${encodeURIComponent(name)}`
-  let largeImageUrl: string | undefined
-  if (tcgCard?.images?.small) imageUrl = tcgCard.images.small
-  else if (tcgCard?.images?.large) imageUrl = tcgCard.images.large
-  if (tcgCard?.images?.large) largeImageUrl = tcgCard.images.large
-
-  const recognitionConfidence = clampConfidence(raw.confidence, 0.6)
-  const matchConfidence = tcgCard ? 0.95 : 0.35
-  const confidence = Math.min(recognitionConfidence, matchConfidence)
-
-  return {
-    name,
-    set,
-    cardNumber,
-    rarity,
-    type,
-    supertype: tcgCard?.supertype,
-    imageUrl,
-    largeImageUrl,
-    prices: buildPricesFromTcgCard(tcgCard),
-    tcgCardId: tcgCard?.id,
-    recognitionConfidence,
-    matchConfidence,
-    confidence,
-    selected: !!tcgCard && confidence >= LOW_CONFIDENCE_THRESHOLD,
-    reviewReason: raw.reason,
-  }
-}
-
-async function configureTrackForRecognition(track: MediaStreamTrack, targetMode: 'camera' | 'bulk') {
+async function configureTrackForRecognition(
+  track: MediaStreamTrack,
+  targetMode: 'camera' | 'bulk',
+  cameraPreferences: CameraPreferences,
+) {
   if (typeof track.getCapabilities !== 'function' || typeof track.applyConstraints !== 'function') return
 
   const caps = track.getCapabilities() as Record<string, unknown>
@@ -171,10 +75,18 @@ async function configureTrackForRecognition(track: MediaStreamTrack, targetMode:
   if (Array.isArray(caps.focusMode) && caps.focusMode.includes('continuous')) {
     advanced.push({ focusMode: 'continuous' })
   }
-  if (caps.zoom?.max) {
-    const zoomValue = targetMode === 'bulk' ? Math.min(1.4, caps.zoom.max) : Math.min(1.8, caps.zoom.max)
-    if (zoomValue >= (caps.zoom.min ?? 1)) advanced.push({ zoom: zoomValue })
+  const zoomCaps = caps.zoom as { min?: number; max?: number } | undefined
+  if (zoomCaps?.max) {
+    const minZoom = zoomCaps.min ?? 1
+    const maxZoom = zoomCaps.max
+    const zoomValue = Math.max(minZoom, Math.min(cameraPreferences.zoom, maxZoom))
+    advanced.push({ zoom: zoomValue })
   }
+
+  if (caps.torch && typeof cameraPreferences.torchEnabled === 'boolean') {
+    advanced.push({ torch: cameraPreferences.torchEnabled })
+  }
+
   if (targetMode === 'bulk' && Array.isArray(caps.whiteBalanceMode) && caps.whiteBalanceMode.includes('continuous')) {
     advanced.push({ whiteBalanceMode: 'continuous' })
   }
@@ -188,189 +100,19 @@ async function configureTrackForRecognition(track: MediaStreamTrack, targetMode:
   }
 }
 
-async function analyzeCardImage(imageDataUrl: string, findCard: (name: string, setName?: string, cardNumber?: string) => Promise<unknown>): Promise<ScannedCardDraft> {
-  const body = {
-    messages: [
-      {
-        role: 'system',
-        content: 'You are a Pokémon TCG card recognition expert. Analyze card images and return accurate JSON data.',
-      },
-      {
-        role: 'user',
-        content: [
-          {
-            type: 'text',
-            text: `Analyze this Pokémon card image and return a JSON object with these fields:
-{
-  "name": "Exact full card name exactly as printed (include form/variant words like ex, VMAX, Radiant, Alolan, etc.)",
-  "set": "Set name (e.g., Base Set, Jungle, Fossil, Team Rocket, Sword & Shield, Scarlet & Violet, etc.)",
-  "cardNumber": "Card number as shown (e.g., 25/102)",
-  "rarity": "One of: Common, Uncommon, Rare, Holo Rare, Ultra Rare, Secret Rare",
-  "type": "One of: Fire, Water, Grass, Electric, Psychic, Fighting, Darkness, Metal, Dragon, Fairy, Colorless",
-  "confidence": 0.0-1.0,
-  "reason": "Short reason if confidence < 0.8"
-}
-If this is not a Pokémon card or the image is too unclear to read, return: {"error": "Unable to identify card"}`,
-          },
-          {
-            type: 'image_url',
-            image_url: { url: imageDataUrl },
-          },
-        ],
-      },
-    ],
-    model: 'openai/gpt-4o',
-    response_format: { type: 'json_object' },
-    max_tokens: 500,
-    temperature: 0.1,
-    top_p: 1.0,
-  }
-
-  const response = await fetch(SCAN_PROXY_URL, {
-    method: 'POST',
-    body: JSON.stringify(body),
-    headers: {
-      'Content-Type': 'application/json',
-      ...authHeaders(),
-    },
-  })
-
-  if (!response.ok) {
-    const errorText = await response.text()
-    throw new Error(`LLM request failed: ${response.status} - ${errorText}`)
-  }
-
-  const data = await response.json() as { choices: Array<{ message: { content: string } }> }
-  const parsed = JSON.parse(data.choices[0].message.content)
-
-  if (parsed.error) {
-    throw new Error(parsed.error)
-  }
-
-  const name = parsed.name || 'Unknown'
-  const set = parsed.set || 'Unknown Set'
-  const cardNumber = parsed.cardNumber || '?'
-  const tcgCard = await findCard(name, set, cardNumber)
-
-  return buildDraftCard(
-    {
-      name,
-      set,
-      cardNumber,
-      rarity: parsed.rarity,
-      type: parsed.type,
-      confidence: parsed.confidence,
-      reason: parsed.reason,
-    },
-    tcgCard,
-  )
-}
-
-async function analyzeMultipleCardsImage(
-  imageDataUrl: string,
-  findCard: (name: string, setName?: string, cardNumber?: string) => Promise<unknown>,
-): Promise<ScannedCardDraft[]> {
-  const body = {
-    messages: [
-      {
-        role: 'system',
-        content: 'You are a Pokémon TCG card recognition expert. Analyze card images and return accurate JSON data.',
-      },
-      {
-        role: 'user',
-        content: [
-          {
-            type: 'text',
-            text: `Analyze this image and identify ALL visible Pokémon TCG cards.
-Return a JSON object with a "cards" array — one entry per card you can clearly identify:
-{
-  "cards": [
-    {
-      "name": "Exact full card name exactly as printed (include form/variant words like ex, VMAX, Radiant, Alolan, etc.)",
-      "set": "Set name (e.g., Base Set, Jungle, Fossil, Team Rocket, Sword & Shield, Scarlet & Violet, etc.)",
-      "cardNumber": "Card number as shown (e.g., 25/102)",
-      "rarity": "One of: Common, Uncommon, Rare, Holo Rare, Ultra Rare, Secret Rare",
-      "type": "One of: Fire, Water, Grass, Electric, Psychic, Fighting, Darkness, Metal, Dragon, Fairy, Colorless",
-      "confidence": 0.0-1.0,
-      "reason": "Short reason if confidence < 0.8"
-    }
-  ]
-}
-Cards may be organized, rotated, overlapping, on table/floor/book pages, and photographed at an angle. Include every card you can identify with useful confidence. If no Pokémon cards are visible, return: {"cards": []}`,
-          },
-          {
-            type: 'image_url',
-            image_url: { url: imageDataUrl },
-          },
-        ],
-      },
-    ],
-    model: 'openai/gpt-4o',
-    response_format: { type: 'json_object' },
-    max_tokens: 2000,
-    temperature: 0.1,
-    top_p: 1.0,
-  }
-
-  const response = await fetch(SCAN_PROXY_URL, {
-    method: 'POST',
-    body: JSON.stringify(body),
-    headers: {
-      'Content-Type': 'application/json',
-      ...authHeaders(),
-    },
-  })
-
-  if (!response.ok) {
-    const errorText = await response.text()
-    throw new Error(`LLM request failed: ${response.status} - ${errorText}`)
-  }
-
-  const data = await response.json() as { choices: Array<{ message: { content: string } }> }
-  const parsed = JSON.parse(data.choices[0].message.content)
-  const rawCards: Array<{ name?: string; set?: string; cardNumber?: string; rarity?: string; type?: string; confidence?: number; reason?: string }> =
-    Array.isArray(parsed.cards) ? parsed.cards : []
-
-  const identifiable = rawCards.filter(card => {
-    const name = card.name?.trim()
-    return name && name.toLowerCase() !== 'unknown'
-  })
-
-  const results = await Promise.all(
-    identifiable.map(async (card) => {
-      const name = card.name!.trim()
-      const set = card.set?.trim() || 'Unknown Set'
-      const cardNumber = card.cardNumber?.trim() || '?'
-      const tcgCard = await findCard(name, set, cardNumber)
-
-      return buildDraftCard(
-        {
-          name,
-          set,
-          cardNumber,
-          rarity: card.rarity,
-          type: card.type,
-          confidence: card.confidence,
-          reason: card.reason,
-        },
-        tcgCard,
-      )
-    })
-  )
-
-  return results
-}
-
-function fileToDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result as string)
-    reader.onerror = reject
-    reader.readAsDataURL(file)
-  })
-}
-
-export function ScanDialog({ open, onOpenChange, onCardScanned, onCardsScanned }: ScanDialogProps) {
+export function ScanDialog({
+  open,
+  onOpenChange,
+  onCardScanned,
+  onCardsScanned,
+  cameraPreferences,
+  onCameraPreferencesChange,
+  queue,
+  onAddToQueue,
+  onOpenQueue,
+  reviewDrafts,
+  openToQueue,
+}: ScanDialogProps) {
   const [mode, setMode] = useState<Mode>('idle')
   const [videoReady, setVideoReady] = useState(false)
   const [manualForm, setManualForm] = useState({
@@ -386,15 +128,32 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onCardsScanned }
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const nativeSingleInputRef = useRef<HTMLInputElement>(null)
+  const nativeBulkInputRef = useRef<HTMLInputElement>(null)
+  const bulkFileInputRef = useRef<HTMLInputElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const [bulkQueue, setBulkQueue] = useState<ScannedCardDraft[]>([])
   const [isMultiAnalyzing, setIsMultiAnalyzing] = useState(false)
-  const [activeReviewIndex, setActiveReviewIndex] = useState<number | null>(null)
-  const [reviewQuery, setReviewQuery] = useState('')
-  const [reviewResults, setReviewResults] = useState<TCGCard[]>([])
-  const [isSearchingMatches, setIsSearchingMatches] = useState(false)
   const [isBurstCapturing, setIsBurstCapturing] = useState(false)
   const [burstProgress, setBurstProgress] = useState(0)
+  // Sequential capture
+  const [sequentialHasCamera, setSequentialHasCamera] = useState(false)
+  const [cameraSettingsOpen, setCameraSettingsOpen] = useState(false)
+  const [torchSupported, setTorchSupported] = useState(false)
+  const [zoomRange, setZoomRange] = useState<{ min: number; max: number; supported: boolean }>({ min: 1, max: 3, supported: false })
+  const [preferNativeCamera, setPreferNativeCamera] = useState(false)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const mediaQuery = window.matchMedia('(max-width: 768px), (pointer: coarse)')
+    const updatePreference = () => setPreferNativeCamera(mediaQuery.matches)
+    updatePreference()
+
+    mediaQuery.addEventListener('change', updatePreference)
+    return () => mediaQuery.removeEventListener('change', updatePreference)
+  }, [])
+
 
   const stopCamera = useCallback(() => {
     if (streamRef.current) {
@@ -410,14 +169,17 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onCardsScanned }
       setVideoReady(false)
       setBulkQueue([])
       setIsMultiAnalyzing(false)
-      setActiveReviewIndex(null)
-      setReviewQuery('')
-      setReviewResults([])
-      setIsSearchingMatches(false)
       setIsBurstCapturing(false)
       setBurstProgress(0)
+      setCameraSettingsOpen(false)
+      setTorchSupported(false)
+      setZoomRange({ min: 1, max: 3, supported: false })
+      setSequentialHasCamera(false)
+    } else if (openToQueue) {
+      setMode('sequential')
     }
-  }, [open, stopCamera])
+  }, [open, openToQueue, stopCamera])
+
 
   const handleClose = (nextOpen: boolean) => {
     if (!nextOpen) {
@@ -432,11 +194,10 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onCardsScanned }
     setMode('idle')
     setBulkQueue([])
     setIsMultiAnalyzing(false)
-    setActiveReviewIndex(null)
-    setReviewQuery('')
-    setReviewResults([])
     setIsBurstCapturing(false)
     setBurstProgress(0)
+    setCameraSettingsOpen(false)
+    setSequentialHasCamera(false)
   }
 
   const processCard = useCallback((cardData: Omit<PokemonCard, 'id' | 'quantity' | 'dateAdded'>) => {
@@ -454,70 +215,69 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onCardsScanned }
   }, [onCardScanned, onOpenChange])
 
   const openReview = useCallback((cards: ScannedCardDraft[]) => {
+    if (cards.length === 1 && isAutoAddEligible(cards[0].confidence)) {
+      processCard({
+        name: cards[0].name,
+        set: cards[0].set,
+        cardNumber: cards[0].cardNumber,
+        pokedexNumber: cards[0].pokedexNumber,
+        rarity: cards[0].rarity,
+        type: cards[0].type,
+        supertype: cards[0].supertype,
+        imageUrl: cards[0].imageUrl,
+        largeImageUrl: cards[0].largeImageUrl,
+        prices: cards[0].prices,
+        tcgCardId: cards[0].tcgCardId,
+      })
+      return
+    }
+
+    if (cards.length > 1) {
+      const autoAddCards = cards.filter(card => isAutoAddEligible(card.confidence))
+      const needsReviewCards = cards.filter(card => !isAutoAddEligible(card.confidence))
+
+      if (autoAddCards.length > 0) {
+        try {
+          const newCards = autoAddCards.map(draftToPokemonCard)
+          if (onCardsScanned) {
+            onCardsScanned(newCards)
+          } else {
+            newCards.forEach(card => onCardScanned(card))
+          }
+
+          if (needsReviewCards.length === 0) {
+            toast.success(`${newCards.length} cards added automatically`, {
+              description: `All cards scanned above ${Math.round(AUTO_ADD_CONFIDENCE_THRESHOLD * 100)}% confidence.`,
+            })
+            onOpenChange(false)
+            return
+          }
+
+          toast.success(`${newCards.length} cards added automatically`, {
+            description: `${needsReviewCards.length} card(s) need manual review.`,
+          })
+
+          cards = needsReviewCards
+        } catch {
+          // If auto-add fails, continue with full manual review list.
+        }
+      }
+    }
+
     setBulkQueue(cards)
-    setActiveReviewIndex(cards.length ? 0 : null)
-    setReviewQuery(cards[0]?.name ?? '')
     setMode('bulk-review')
-  }, [])
-
-  useEffect(() => {
-    if (mode !== 'bulk-review' || activeReviewIndex === null) {
-      setReviewResults([])
-      setIsSearchingMatches(false)
-      return
-    }
-
-    const query = reviewQuery.trim()
-    if (query.length < 2) {
-      setReviewResults([])
-      return
-    }
-
-    const timer = window.setTimeout(async () => {
-      setIsSearchingMatches(true)
-      try {
-        const results = await searchCards(query, 8)
-        setReviewResults(results)
-      } catch {
-        setReviewResults([])
-      } finally {
-        setIsSearchingMatches(false)
-      }
-    }, 200)
-
-    return () => window.clearTimeout(timer)
-  }, [mode, activeReviewIndex, reviewQuery, searchCards])
-
-  const applyDatabaseMatch = useCallback((index: number, matchedCard: TCGCard) => {
-    setBulkQueue(prev => prev.map((card, i) => {
-      if (i !== index) return card
-
-      return {
-        ...card,
-        name: matchedCard.name,
-        set: matchedCard.set.name,
-        cardNumber: matchedCard.number,
-        rarity: matchedCard.rarity || card.rarity,
-        type: matchedCard.types?.[0] || card.type,
-        supertype: matchedCard.supertype || card.supertype,
-        imageUrl: matchedCard.images.small || matchedCard.images.large || card.imageUrl,
-        largeImageUrl: matchedCard.images.large || card.largeImageUrl,
-        prices: buildPricesFromTcgCard(matchedCard),
-        tcgCardId: matchedCard.id,
-        matchConfidence: 0.98,
-        confidence: Math.min(card.recognitionConfidence, 0.98),
-        selected: true,
-        reviewReason: undefined,
-      }
-    }))
-    toast.success('Card match updated')
-  }, [])
+  }, [onCardScanned, onCardsScanned, onOpenChange, processCard])
 
   const handleUpload = async (file: File) => {
     setMode('analyzing')
     try {
-      const dataUrl = await fileToDataUrl(file)
-      const cardData = await analyzeCardImage(dataUrl, findCard)
+      const rawDataUrl = await fileToDataUrl(file)
+      const dataUrl = await resizeDataUrlForInference(rawDataUrl, SINGLE_SCAN_MAX_IMAGE_SIDE, SINGLE_SCAN_UPLOAD_QUALITY)
+      const qualityReport = await assessImageQuality(dataUrl)
+      if (qualityReport.suggestion) {
+        toast.warning(qualityReport.suggestion, { duration: 5000 })
+      }
+      const cardData = await analyzeCardImage(dataUrl, findCard, searchCards, qualityReport)
       openReview([cardData])
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error'
@@ -532,28 +292,169 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onCardsScanned }
     }
   }
 
+  const handleBulkUpload = async (file: File) => {
+    setIsMultiAnalyzing(true)
+    setMode('analyzing')
+    try {
+      const rawDataUrl = await fileToDataUrl(file)
+      const dataUrl = await resizeDataUrlForInference(rawDataUrl, BULK_SCAN_MAX_IMAGE_SIDE, BULK_SCAN_UPLOAD_QUALITY)
+      const qualityReport = await assessImageQuality(dataUrl)
+      if (qualityReport.suggestion) {
+        toast.warning(qualityReport.suggestion, { duration: 5000 })
+      }
+      const cards = await analyzeMultipleCardsImage(dataUrl, findCard, searchCards, qualityReport)
+      if (cards.length === 0) {
+        toast.error('No Pokemon cards detected. Try again with better lighting or angle.')
+        setMode('idle')
+        return
+      }
+      openReview(cards)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error'
+      toast.error('Could not analyze the image. Please try again.', {
+        description: message.toLowerCase().includes('timeout')
+          ? `${message}. Tip: try 3-5 cards per shot, then continue with another photo.`
+          : message,
+      })
+      setMode('idle')
+    } finally {
+      setIsMultiAnalyzing(false)
+    }
+  }
+
+  const addSingleToQueue = useCallback(async (file: File) => {
+    try {
+      const rawDataUrl = await fileToDataUrl(file)
+      const dataUrl = await resizeDataUrlForInference(rawDataUrl, SINGLE_SCAN_MAX_IMAGE_SIDE, SINGLE_SCAN_UPLOAD_QUALITY)
+      const qualityReport = await assessImageQuality(dataUrl)
+      if (qualityReport.suggestion) toast.warning(qualityReport.suggestion, { duration: 4000 })
+      const id = crypto.randomUUID()
+      await queueApi.add(id, dataUrl)
+      const item: ScanQueueItem = { id, dataUrl: '', imageUrl: `/api/scan-queue/${id}/image`, status: 'pending' }
+      onAddToQueue(item)
+      setSequentialHasCamera(false)
+      setMode('sequential')
+      toast.success('Card added to queue')
+    } catch {
+      toast.error('Could not read image. Please try again.')
+    }
+  }, [onAddToQueue])
+
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
+    if (file) addSingleToQueue(file)
+    e.target.value = ''
+  }
+
+  const handleNativeSingleChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) addSingleToQueue(file)
+    e.target.value = ''
+  }
+
+  const handleNativeBulkChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
     if (file) {
-      handleUpload(file)
+      handleBulkUpload(file)
     }
     e.target.value = ''
   }
 
-  const startCamera = async (targetMode: 'camera' | 'bulk' = 'camera') => {
-    setMode(targetMode)
+  const handleBulkFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      handleBulkUpload(file)
+    }
+    e.target.value = ''
+  }
+
+  const openSingleScanner = () => setMode('single-picker')
+  const openBulkScanner   = () => setMode('bulk-picker')
+
+  const applyTrackPreferences = useCallback(async (
+    track: MediaStreamTrack,
+    targetMode: 'camera' | 'bulk',
+    prefs: CameraPreferences,
+  ) => {
+    await configureTrackForRecognition(track, targetMode, prefs)
+    const caps = track.getCapabilities() as Record<string, unknown>
+
+    const hasTorch = Boolean(caps.torch)
+    setTorchSupported(hasTorch)
+
+    const zoomCaps = caps.zoom as { min?: number; max?: number } | undefined
+    if (zoomCaps?.max) {
+      setZoomRange({
+        min: zoomCaps.min ?? 1,
+        max: zoomCaps.max,
+        supported: true,
+      })
+    } else {
+      setZoomRange({ min: 1, max: 3, supported: false })
+    }
+  }, [])
+
+  const updateCameraPreferences = async (
+    patch: Partial<CameraPreferences>,
+  ) => {
+    const nextPreferences = { ...cameraPreferences, ...patch }
+    onCameraPreferencesChange(nextPreferences)
+
+    if (mode !== 'camera' && mode !== 'bulk' && mode !== 'sequential') {
+      return
+    }
+
+    const changedRequiresRestart =
+      patch.resolution !== undefined || patch.facingMode !== undefined
+
+    if (changedRequiresRestart) {
+      const cameraMode: 'camera' | 'bulk' = mode === 'sequential' ? 'bulk' : mode as 'camera' | 'bulk'
+      await startCamera(cameraMode, nextPreferences, mode === 'sequential')
+      if (mode === 'sequential') setMode('sequential')
+      return
+    }
+
+    const track = streamRef.current?.getVideoTracks()[0]
+    if (!track) return
+    const trackMode: 'camera' | 'bulk' = mode === 'sequential' ? 'bulk' : mode as 'camera' | 'bulk'
+    await applyTrackPreferences(track, trackMode, nextPreferences)
+  }
+
+  const startCamera = useCallback(async (
+    targetMode: 'camera' | 'bulk' = 'camera',
+    preferencesOverride?: CameraPreferences,
+    keepMode = false,
+  ) => {
+    const activePreferences = preferencesOverride ?? cameraPreferences
+
+    stopCamera()
+    setVideoReady(false)
+    if (!keepMode) setMode(targetMode)
     try {
-      const preferredConstraints: MediaTrackConstraints[] = targetMode === 'bulk'
-        ? [
-            { facingMode: { ideal: 'environment' }, width: { ideal: 2560 }, height: { ideal: 1440 }, aspectRatio: { ideal: 16 / 9 } },
-            { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 }, aspectRatio: { ideal: 16 / 9 } },
-            { facingMode: 'environment' },
-          ]
-        : [
-            { facingMode: { ideal: 'environment' }, width: { ideal: 1080 }, height: { ideal: 1920 }, aspectRatio: { ideal: 9 / 16 } },
-            { facingMode: { ideal: 'environment' }, width: { ideal: 720 }, height: { ideal: 1280 }, aspectRatio: { ideal: 9 / 16 } },
-            { facingMode: 'environment' },
-          ]
+      const selectedResolution = RESOLUTION_OPTIONS[activePreferences.resolution]
+      const preferredConstraints: MediaTrackConstraints[] = []
+
+      if (selectedResolution) {
+        preferredConstraints.push({
+          facingMode: { ideal: activePreferences.facingMode },
+          width: { ideal: selectedResolution.width },
+          height: { ideal: selectedResolution.height },
+        })
+      }
+
+      if (targetMode === 'bulk') {
+        preferredConstraints.push(
+          { facingMode: { ideal: activePreferences.facingMode }, width: { ideal: 2560 }, height: { ideal: 1440 }, aspectRatio: { ideal: 16 / 9 } },
+          { facingMode: { ideal: activePreferences.facingMode }, width: { ideal: 1920 }, height: { ideal: 1080 }, aspectRatio: { ideal: 16 / 9 } },
+        )
+      } else {
+        preferredConstraints.push(
+          { facingMode: { ideal: activePreferences.facingMode }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+          { facingMode: { ideal: activePreferences.facingMode }, width: { ideal: 1280 }, height: { ideal: 720 } },
+        )
+      }
+
+      preferredConstraints.push({ facingMode: activePreferences.facingMode })
 
       let stream: MediaStream | null = null
       for (const constraint of preferredConstraints) {
@@ -568,7 +469,7 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onCardsScanned }
 
       streamRef.current = stream
       const videoTrack = stream.getVideoTracks()[0]
-      if (videoTrack) await configureTrackForRecognition(videoTrack, targetMode)
+      if (videoTrack) await applyTrackPreferences(videoTrack, targetMode, activePreferences)
 
       if (videoRef.current) {
         videoRef.current.srcObject = stream
@@ -583,7 +484,7 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onCardsScanned }
       )
       setMode('idle')
     }
-  }
+  }, [applyTrackPreferences, cameraPreferences, stopCamera])
 
   const capturePhoto = async () => {
     if (!videoRef.current || !canvasRef.current) return
@@ -593,61 +494,34 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onCardsScanned }
 
     setIsBurstCapturing(true)
     setBurstProgress(0)
-    stopCamera()
-    setVideoReady(false)
 
     try {
-      // Capture 4 frames over ~800ms for burst analysis
-      const frames: string[] = []
-      const frameCount = 4
-      const intervalMs = 200
+      canvas.width = video.videoWidth
+      canvas.height = video.videoHeight
+      const ctx = canvas.getContext('2d')
+      if (!ctx) throw new Error('Camera frame capture failed')
 
-      for (let i = 0; i < frameCount; i++) {
-        // Simulate frame capture by just using the same canvas
-        // In real burst mode with video still playing, each iteration would get a new frame
-        canvas.width = video.videoWidth
-        canvas.height = video.videoHeight
-        const ctx = canvas.getContext('2d')
-        if (!ctx) continue
+      ctx.drawImage(video, 0, 0)
+      const rawDataUrl = canvas.toDataURL('image/jpeg', 0.92)
+      const dataUrl = await resizeDataUrlForInference(rawDataUrl, SINGLE_SCAN_MAX_IMAGE_SIDE, SINGLE_SCAN_UPLOAD_QUALITY)
+      setBurstProgress(100)
 
-        ctx.drawImage(video, 0, 0)
-        frames.push(canvas.toDataURL('image/jpeg', 0.9))
-        setBurstProgress(Math.round(((i + 1) / frameCount) * 100))
-
-        if (i < frameCount - 1) {
-          await new Promise(resolve => setTimeout(resolve, intervalMs))
-        }
+      // Assess image quality and warn the user if needed — still proceed.
+      const qualityReport = await assessImageQuality(dataUrl)
+      if (qualityReport.suggestion) {
+        toast.warning(qualityReport.suggestion, { duration: 5000 })
       }
+
+      // Stop the camera only after frame acquisition is complete.
+      stopCamera()
+      setVideoReady(false)
 
       setMode('analyzing')
-
-      // Analyze all frames and pick the best one
-      const analyses = await Promise.all(
-        frames.map((dataUrl, idx) =>
-          analyzeCardImage(dataUrl, findCard)
-            .catch(err => {
-              console.error(`[ScanDialog] Frame ${idx} analysis failed:`, err)
-              return null
-            })
-        )
-      )
-
-      // Filter out failed analyses and sort by confidence
-      const validAnalyses = analyses.filter((a): a is ScannedCardDraft => a !== null)
-      if (validAnalyses.length === 0) {
-        throw new Error('Could not analyze any captured frames')
-      }
-
-      const bestCard = validAnalyses.reduce((best, current) =>
-        current.confidence > best.confidence ? current : best
-      )
-
-      console.log(
-        `[ScanDialog] Burst analysis: ${validAnalyses.length}/${frameCount} frames analyzed, best confidence: ${confidencePercent(bestCard.confidence)}`
-      )
-
+      const bestCard = await analyzeBestSingleCard(dataUrl, findCard, searchCards, qualityReport)
       openReview([bestCard])
     } catch (error) {
+      stopCamera()
+      setVideoReady(false)
       const message = error instanceof Error ? error.message : 'Unknown error'
       toast.error('Could not identify the card. Try manual entry instead.', {
         description: message,
@@ -673,13 +547,20 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onCardsScanned }
     const ctx = canvas.getContext('2d')
     if (!ctx) return
     ctx.drawImage(video, 0, 0)
-    const dataUrl = canvas.toDataURL('image/jpeg', BULK_SCAN_JPEG_QUALITY)
+    const rawDataUrl = canvas.toDataURL('image/jpeg', BULK_SCAN_JPEG_QUALITY)
+    const dataUrl = await resizeDataUrlForInference(rawDataUrl, BULK_SCAN_MAX_IMAGE_SIDE, BULK_SCAN_UPLOAD_QUALITY)
     stopCamera()
     setVideoReady(false)
 
+    // Assess quality and warn — analysis gets enhancement hints via qualityReport.
+    const qualityReport = await assessImageQuality(dataUrl)
+    if (qualityReport.suggestion) {
+      toast.warning(qualityReport.suggestion, { duration: 5000 })
+    }
+
     setIsMultiAnalyzing(true)
     try {
-      const cards = await analyzeMultipleCardsImage(dataUrl, findCard)
+      const cards = await analyzeMultipleCardsImage(dataUrl, findCard, searchCards, qualityReport)
       if (cards.length === 0) {
         toast.error('No Pokémon cards detected. Try again with better lighting or angle.')
         setMode('bulk')
@@ -700,6 +581,40 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onCardsScanned }
     }
   }
 
+  // ── Sequential capture ───────────────────────────────────────────────────
+
+  const captureSequentialShot = async () => {
+    if (!videoRef.current || !canvasRef.current) return
+    const video = videoRef.current
+    const canvas = canvasRef.current
+    if (!video.videoWidth || !video.videoHeight) return
+
+    canvas.width = video.videoWidth
+    canvas.height = video.videoHeight
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    ctx.drawImage(video, 0, 0)
+    const rawDataUrl = canvas.toDataURL('image/jpeg', BULK_SCAN_JPEG_QUALITY)
+    const dataUrl = await resizeDataUrlForInference(rawDataUrl, SINGLE_SCAN_MAX_IMAGE_SIDE, SINGLE_SCAN_UPLOAD_QUALITY)
+
+    const qualityReport = await assessImageQuality(dataUrl)
+    if (qualityReport.suggestion) toast.warning(qualityReport.suggestion, { duration: 4000 })
+
+    const id = crypto.randomUUID()
+    try {
+      await queueApi.add(id, dataUrl)
+    } catch {
+      toast.error('Could not save shot to server. Please try again.')
+      return
+    }
+    const item: ScanQueueItem = { id, dataUrl: '', imageUrl: `/api/scan-queue/${id}/image`, status: 'pending' }
+    onAddToQueue(item)
+    toast.success('Shot added to queue', { description: `${queue.length + 1} card(s) queued` })
+  }
+
+
+  // ── Bulk done ────────────────────────────────────────────────────────────
+
   const handleBulkDone = useCallback(() => {
     const selectedCards = bulkQueue.filter(card => card.selected)
     if (selectedCards.length === 0) {
@@ -707,21 +622,7 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onCardsScanned }
       return
     }
 
-    const newCards: PokemonCard[] = selectedCards.map((cardData) => ({
-      id: crypto.randomUUID(),
-      name: cardData.name,
-      set: cardData.set,
-      cardNumber: cardData.cardNumber,
-      rarity: cardData.rarity,
-      type: cardData.type,
-      supertype: cardData.supertype,
-      imageUrl: cardData.imageUrl,
-      largeImageUrl: cardData.largeImageUrl,
-      prices: cardData.prices,
-      tcgCardId: cardData.tcgCardId,
-      quantity: 1,
-      dateAdded: Date.now(),
-    }))
+    const newCards: PokemonCard[] = selectedCards.map(draftToPokemonCard)
 
     if (onCardsScanned) {
       onCardsScanned(newCards)
@@ -751,9 +652,106 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onCardsScanned }
     setManualForm({ name: '', set: '', cardNumber: '', rarity: '', type: '', imageUrl: '' })
   }
 
+  // When the dialog opens with pre-loaded review drafts (e.g. from ScanQueueDialog), enter bulk-review mode.
+  const openReviewRef = useRef(openReview)
+  useEffect(() => { openReviewRef.current = openReview }, [openReview])
+  useEffect(() => {
+    if (open && reviewDrafts && reviewDrafts.length > 0) {
+      openReviewRef.current(reviewDrafts)
+    }
+  }, [open, reviewDrafts])
+
+  const cameraSettingsPanel = (
+    <details
+      className="rounded-lg border border-border bg-muted/20"
+      open={cameraSettingsOpen}
+      onToggle={(event) => setCameraSettingsOpen((event.currentTarget as HTMLDetailsElement).open)}
+    >
+      <summary className="cursor-pointer list-none px-3 py-3 text-sm font-medium text-foreground [&::-webkit-details-marker]:hidden">
+        <div className="flex items-center justify-between gap-3">
+          <span>Camera Settings</span>
+          <span className="text-xs text-muted-foreground">{cameraSettingsOpen ? 'Hide' : 'Show'}</span>
+        </div>
+      </summary>
+
+      <div className="space-y-3 border-t border-border p-3">
+        <div className="grid gap-2 sm:grid-cols-2">
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Resolution</Label>
+            <Select
+              value={cameraPreferences.resolution}
+              onValueChange={(value) => updateCameraPreferences({ resolution: value as CameraPreferences['resolution'] })}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select resolution" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="auto">Auto</SelectItem>
+                <SelectItem value="hd">HD (1280x720)</SelectItem>
+                <SelectItem value="fullhd">Full HD (1920x1080)</SelectItem>
+                <SelectItem value="qhd">QHD (2560x1440)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Camera</Label>
+            <Select
+              value={cameraPreferences.facingMode}
+              onValueChange={(value) => updateCameraPreferences({ facingMode: value as CameraPreferences['facingMode'] })}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select camera" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="environment">Back Camera</SelectItem>
+                <SelectItem value="user">Front Camera</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        {zoomRange.supported && (
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Zoom</Label>
+            <div className="flex items-center gap-3">
+              <Input
+                type="range"
+                min={zoomRange.min}
+                max={zoomRange.max}
+                step={0.1}
+                value={cameraPreferences.zoom}
+                onChange={(e) => updateCameraPreferences({ zoom: Number(e.target.value) })}
+                className="flex-1"
+              />
+              <span className="text-xs w-10 text-right">{cameraPreferences.zoom.toFixed(1)}x</span>
+            </div>
+          </div>
+        )}
+
+        {torchSupported && (
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="scan-torch"
+              checked={cameraPreferences.torchEnabled}
+              onCheckedChange={(checked) => updateCameraPreferences({ torchEnabled: checked === true })}
+            />
+            <Label htmlFor="scan-torch" className="text-sm">Flash/Torch</Label>
+          </div>
+        )}
+
+        {!zoomRange.supported && !torchSupported && (
+          <p className="text-xs text-muted-foreground">
+            This camera only exposes basic controls on this device.
+          </p>
+        )}
+      </div>
+    </details>
+  )
+
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className={mode === 'bulk-review' ? 'max-h-[92vh] max-w-[96vw] overflow-y-auto sm:max-w-6xl' : (mode === 'camera' || mode === 'bulk' || mode === 'sequential') ? 'max-h-[92vh] max-w-[96vw] overflow-y-auto sm:max-w-3xl' : 'sm:max-w-md'}>
         <DialogTitle className="sr-only">Add Pokemon Card</DialogTitle>
 
         {mode === 'idle' && (
@@ -762,28 +760,26 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onCardsScanned }
               <Camera className="w-12 h-12 text-primary" weight="duotone" />
             </div>
             <div className="text-center space-y-2">
-              <h2 className="text-2xl font-bold font-display">Add a Pokemon Card</h2>
-              <p className="text-muted-foreground">
-                Scan, upload, or manually enter your card details
-              </p>
+              <h2 className="text-2xl font-bold font-display">Add a Pokémon Card</h2>
+              <p className="text-muted-foreground text-sm">Choose how you'd like to add cards to your collection</p>
             </div>
             <div className="flex flex-col gap-3 w-full">
               <Button
                 size="lg"
                 className="w-full bg-accent hover:bg-accent/90 text-accent-foreground font-display font-semibold"
-                onClick={() => startCamera('camera')}
+                onClick={openSingleScanner}
               >
                 <Camera className="w-5 h-5 mr-2" />
-                Scan with Camera
+                Scan Single Card
               </Button>
               <Button
                 size="lg"
                 variant="outline"
                 className="w-full font-display font-semibold"
-                onClick={() => startCamera('bulk')}
+                onClick={openBulkScanner}
               >
                 <Stack className="w-5 h-5 mr-2" />
-                Bulk Scan (Multiple Cards)
+                Bulk Scan
               </Button>
               <Button
                 size="lg"
@@ -804,13 +800,141 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onCardsScanned }
                 Enter Manually
               </Button>
             </div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={handleFileChange}
-            />
+            <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
+          </div>
+        )}
+
+        {/* ── Single card method picker ──────────────────────────────────── */}
+        {mode === 'single-picker' && (
+          <div className="flex flex-col gap-6 py-6">
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="icon" onClick={() => setMode('idle')}>
+                <ArrowLeft className="w-5 h-5" />
+              </Button>
+              <div>
+                <h2 className="text-xl font-bold font-display">Scan Single Card</h2>
+                <p className="text-xs text-muted-foreground">Choose your capture method</p>
+              </div>
+            </div>
+            <div className="flex flex-col gap-3">
+              <button
+                className="flex items-center gap-4 rounded-xl border border-border bg-card p-4 text-left transition-colors hover:border-primary hover:bg-accent/10"
+                onClick={() => { nativeSingleInputRef.current?.click() }}
+              >
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary/10">
+                  <Camera className="w-6 h-6 text-primary" weight="duotone" />
+                </div>
+                <div>
+                  <p className="font-display font-semibold text-sm">Native Camera</p>
+                  <p className="text-xs text-muted-foreground">Use your device's built-in camera app for best results</p>
+                </div>
+              </button>
+              <button
+                className="flex items-center gap-4 rounded-xl border border-border bg-card p-4 text-left transition-colors hover:border-primary hover:bg-accent/10"
+                onClick={() => { setSequentialHasCamera(true); setMode('sequential'); startCamera('camera', undefined, true) }}
+              >
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary/10">
+                  <Camera className="w-6 h-6 text-primary" weight="fill" />
+                </div>
+                <div>
+                  <p className="font-display font-semibold text-sm">In-App Camera</p>
+                  <p className="text-xs text-muted-foreground">Live viewfinder with zoom &amp; torch controls</p>
+                </div>
+              </button>
+              <button
+                className="flex items-center gap-4 rounded-xl border border-border bg-card p-4 text-left transition-colors hover:border-primary hover:bg-accent/10"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary/10">
+                  <Upload className="w-6 h-6 text-primary" />
+                </div>
+                <div>
+                  <p className="font-display font-semibold text-sm">Upload Image</p>
+                  <p className="text-xs text-muted-foreground">Pick an existing photo from your device</p>
+                </div>
+              </button>
+              <button
+                className="flex items-center gap-4 rounded-xl border border-border bg-card p-4 text-left transition-colors hover:border-primary hover:bg-accent/10"
+                onClick={() => setMode('manual')}
+              >
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary/10">
+                  <PencilSimple className="w-6 h-6 text-primary" />
+                </div>
+                <div>
+                  <p className="font-display font-semibold text-sm">Enter Manually</p>
+                  <p className="text-xs text-muted-foreground">Type in the card details yourself</p>
+                </div>
+              </button>
+            </div>
+            <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
+            <input ref={nativeSingleInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleNativeSingleChange} />
+          </div>
+        )}
+
+        {/* ── Bulk scan method picker ────────────────────────────────────── */}
+        {mode === 'bulk-picker' && (
+          <div className="flex flex-col gap-6 py-6">
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="icon" onClick={() => setMode('idle')}>
+                <ArrowLeft className="w-5 h-5" />
+              </Button>
+              <div>
+                <h2 className="text-xl font-bold font-display">Bulk Scan</h2>
+                <p className="text-xs text-muted-foreground">Choose your capture method</p>
+              </div>
+            </div>
+            <div className="flex flex-col gap-3">
+              <button
+                className="flex items-center gap-4 rounded-xl border border-border bg-card p-4 text-left transition-colors hover:border-primary hover:bg-accent/10"
+                onClick={() => { nativeBulkInputRef.current?.click() }}
+              >
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary/10">
+                  <Camera className="w-6 h-6 text-primary" weight="duotone" />
+                </div>
+                <div>
+                  <p className="font-display font-semibold text-sm">Native Camera</p>
+                  <p className="text-xs text-muted-foreground">Photograph multiple cards at once with your device camera</p>
+                </div>
+              </button>
+              <button
+                className="flex items-center gap-4 rounded-xl border border-border bg-card p-4 text-left transition-colors hover:border-primary hover:bg-accent/10"
+                onClick={() => startCamera('bulk')}
+              >
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary/10">
+                  <Stack className="w-6 h-6 text-primary" weight="fill" />
+                </div>
+                <div>
+                  <p className="font-display font-semibold text-sm">In-App Camera (one shot)</p>
+                  <p className="text-xs text-muted-foreground">Lay all cards out and capture them in a single frame</p>
+                </div>
+              </button>
+              <button
+                className="flex items-center gap-4 rounded-xl border border-border bg-card p-4 text-left transition-colors hover:border-primary hover:bg-accent/10"
+                onClick={() => setMode('sequential')}
+              >
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary/10">
+                  <ListBullets className="w-6 h-6 text-primary" />
+                </div>
+                <div>
+                  <p className="font-display font-semibold text-sm">Sequential Shots</p>
+                  <p className="text-xs text-muted-foreground">Photograph each card individually — they queue up for batch processing</p>
+                </div>
+              </button>
+              <button
+                className="flex items-center gap-4 rounded-xl border border-border bg-card p-4 text-left transition-colors hover:border-primary hover:bg-accent/10"
+                onClick={() => bulkFileInputRef.current?.click()}
+              >
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary/10">
+                  <Upload className="w-6 h-6 text-primary" />
+                </div>
+                <div>
+                  <p className="font-display font-semibold text-sm">Upload Image</p>
+                  <p className="text-xs text-muted-foreground">Pick a photo with multiple cards already taken</p>
+                </div>
+              </button>
+            </div>
+            <input ref={nativeBulkInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleNativeBulkChange} />
+            <input ref={bulkFileInputRef} type="file" accept="image/*" className="hidden" onChange={handleBulkFileChange} />
           </div>
         )}
 
@@ -822,25 +946,18 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onCardsScanned }
               </Button>
               <h2 className="text-xl font-bold font-display">Point at a Card</h2>
             </div>
-            <div className="relative rounded-lg overflow-hidden bg-black aspect-[9/16]">
+            {cameraSettingsPanel}
+            <div className="relative h-[52vh] min-h-[18rem] w-full overflow-hidden rounded-lg bg-black sm:h-[60vh]">
               <video
                 ref={videoRef}
                 autoPlay
                 playsInline
                 muted
-                className="w-full h-full object-cover"
+                className="absolute inset-0 block h-full w-full object-cover object-center"
               />
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div className="relative w-[70%] aspect-[5/7] border-4 border-accent rounded-xl shadow-2xl">
-                  <div className="absolute -top-3 -left-3 w-6 h-6 border-t-4 border-l-4 border-accent rounded-tl-lg" />
-                  <div className="absolute -top-3 -right-3 w-6 h-6 border-t-4 border-r-4 border-accent rounded-tr-lg" />
-                  <div className="absolute -bottom-3 -left-3 w-6 h-6 border-b-4 border-l-4 border-accent rounded-bl-lg" />
-                  <div className="absolute -bottom-3 -right-3 w-6 h-6 border-b-4 border-r-4 border-accent rounded-br-lg" />
-                </div>
-              </div>
               <div className="absolute bottom-4 left-0 right-0 text-center">
                 <p className="text-white text-sm font-medium bg-black/60 backdrop-blur-sm px-4 py-2 rounded-full inline-block">
-                  Keep card centered and avoid glare
+                  Fill the frame with the card and avoid glare
                 </p>
               </div>
               {isBurstCapturing && (
@@ -883,20 +1000,19 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onCardsScanned }
               <h2 className="text-xl font-bold font-display">Scan All Cards</h2>
             </div>
 
-            <div className="relative rounded-lg overflow-hidden bg-black aspect-video">
+            {cameraSettingsPanel}
+
+            <div className="relative h-[52vh] min-h-[18rem] w-full overflow-hidden rounded-lg bg-black sm:h-[60vh]">
               <video
                 ref={videoRef}
                 autoPlay
                 playsInline
                 muted
-                className="w-full h-full object-cover"
+                className="absolute inset-0 block h-full w-full object-cover object-center"
               />
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div className="w-[88%] h-[80%] border-2 border-dashed border-accent/70 rounded-xl" />
-              </div>
               <div className="absolute bottom-3 left-0 right-0 text-center">
                 <p className="text-white text-xs font-medium bg-black/60 backdrop-blur-sm px-3 py-1.5 rounded-full inline-block">
-                  Include all cards, even rotated or on table/floor/book page
+                  Use the full frame and include all visible cards
                 </p>
               </div>
               {isMultiAnalyzing && (
@@ -931,6 +1047,103 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onCardsScanned }
           </div>
         )}
 
+        {/* ── Sequential / single-queue capture mode ───────────────────── */}
+        {mode === 'sequential' && (
+          <div className="flex flex-col gap-4 py-4">
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="icon" onClick={handleBack}>
+                <ArrowLeft className="w-5 h-5" />
+              </Button>
+              <div className="flex-1">
+                <h2 className="text-xl font-bold font-display">Capture Cards</h2>
+                <p className="text-xs text-muted-foreground">
+                  {sequentialHasCamera ? 'Photograph each card, then view your queue' : 'Add cards using camera or upload'}
+                </p>
+              </div>
+              {queue.length > 0 && (
+                <Badge variant="secondary">{queue.length} queued</Badge>
+              )}
+            </div>
+
+            {sequentialHasCamera && (
+              <>
+                {cameraSettingsPanel}
+                <div className="relative h-[40vh] min-h-[16rem] w-full overflow-hidden rounded-lg bg-black sm:h-[50vh]">
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className="absolute inset-0 block h-full w-full object-cover object-center"
+                  />
+                  <div className="absolute bottom-3 left-0 right-0 text-center">
+                    <p className="text-white text-xs font-medium bg-black/60 backdrop-blur-sm px-3 py-1.5 rounded-full inline-block">
+                      Fill the frame with one card, then tap Add to Queue
+                    </p>
+                  </div>
+                  {!videoReady && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/70">
+                      <p className="text-white text-sm">Camera warming up…</p>
+                    </div>
+                  )}
+                </div>
+                <canvas ref={canvasRef} className="hidden" />
+                <Button
+                  size="lg"
+                  className="w-full bg-accent hover:bg-accent/90 text-accent-foreground font-display font-semibold"
+                  onClick={captureSequentialShot}
+                  disabled={!videoReady}
+                >
+                  <Camera className="w-5 h-5 mr-2" />
+                  Add to Queue
+                </Button>
+              </>
+            )}
+
+            {!sequentialHasCamera && (
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  variant="outline"
+                  className="font-display font-semibold"
+                  onClick={() => nativeSingleInputRef.current?.click()}
+                >
+                  <Camera className="w-4 h-4 mr-2" weight="duotone" />
+                  Native Camera
+                </Button>
+                <Button
+                  variant="outline"
+                  className="font-display font-semibold"
+                  onClick={() => { setSequentialHasCamera(true); startCamera('camera', undefined, true) }}
+                >
+                  <Camera className="w-4 h-4 mr-2" weight="fill" />
+                  In-App Camera
+                </Button>
+                <Button
+                  variant="outline"
+                  className="col-span-2 font-display font-semibold"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <Upload className="w-4 h-4 mr-2" />
+                  Upload Another Image
+                </Button>
+              </div>
+            )}
+            <input ref={nativeSingleInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleNativeSingleChange} />
+            <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
+
+            {queue.length > 0 && (
+              <Button
+                size="lg"
+                className="w-full bg-accent hover:bg-accent/90 text-accent-foreground font-display font-semibold"
+                onClick={onOpenQueue}
+              >
+                <ListBullets className="w-5 h-5 mr-2" />
+                View Queue ({queue.length} item{queue.length !== 1 ? 's' : ''})
+              </Button>
+            )}
+          </div>
+        )}
+
         {mode === 'bulk-review' && (
           <div className="flex flex-col gap-4 py-4">
             <div className="flex items-center gap-2">
@@ -942,115 +1155,24 @@ export function ScanDialog({ open, onOpenChange, onCardScanned, onCardsScanned }
                 {bulkQueue.length} card{bulkQueue.length !== 1 ? 's' : ''}
               </Badge>
             </div>
-
-            <p className="text-xs text-muted-foreground">
-              Low-confidence cards are unselected by default. Search below to manually match and confirm cards.
-            </p>
-
-            {bulkQueue.length === 0 ? (
-              <div className="flex flex-col items-center gap-3 py-8 text-center">
-                <p className="text-muted-foreground text-sm">All cards removed. Go back and try again.</p>
-              </div>
-            ) : (
-              <div className="overflow-y-auto max-h-[45vh] space-y-2 pr-1">
-                {bulkQueue.map((card, i) => (
-                  <div key={i} className={`flex items-center gap-3 p-3 rounded-lg border ${activeReviewIndex === i ? 'border-primary ring-2 ring-primary/50' : 'border-border'} ${getConfidenceBgClass(card.confidence)}`}>
-                    <Checkbox
-                      checked={card.selected}
-                      onCheckedChange={(checked) => {
-                        const next = checked === true
-                        setBulkQueue(prev => prev.map((entry, idx) => idx === i ? { ...entry, selected: next } : entry))
-                      }}
-                      aria-label={`Select ${card.name}`}
-                    />
-                    <div className="w-10 h-14 flex-shrink-0 rounded overflow-hidden bg-muted border border-border">
-                      <img src={card.imageUrl} alt={card.name} className="w-full h-full object-cover" />
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActiveReviewIndex(i)
-                        setReviewQuery(card.name)
-                      }}
-                      className="flex-1 min-w-0 text-left"
-                    >
-                      <p className="font-semibold text-sm truncate">{card.name}</p>
-                      <p className="text-xs text-muted-foreground truncate">{card.set} · #{card.cardNumber}</p>
-                      <p className="text-xs text-muted-foreground">{card.rarity} · {card.type}</p>
-                      <div className="mt-1 flex items-center gap-2 flex-wrap">
-                        <Badge variant={getConfidenceBadgeVariant(card.confidence)} className="text-[10px]">
-                          {confidencePercent(card.confidence)} confidence
-                        </Badge>
-                        {!card.tcgCardId && <Badge variant="outline" className="text-[10px]">No DB match</Badge>}
-                      </div>
-                      {card.reviewReason && card.confidence < LOW_CONFIDENCE_THRESHOLD && (
-                        <p className="text-[11px] text-muted-foreground truncate mt-1">{card.reviewReason}</p>
-                      )}
-                    </button>
-                    <button
-                      onClick={() => setBulkQueue(prev => prev.filter((_, idx) => idx !== i))}
-                      className="flex-shrink-0 w-8 h-8 flex items-center justify-center text-muted-foreground hover:text-destructive transition-colors rounded-md hover:bg-destructive/10"
-                      aria-label={`Remove ${card.name}`}
-                    >
-                      <Trash className="w-4 h-4" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {activeReviewIndex !== null && bulkQueue[activeReviewIndex] && (
-              <div className="space-y-2 rounded-lg border border-border p-3 bg-muted/20">
-                <p className="text-xs font-medium">Manual Match</p>
-                <div className="relative">
-                  <MagnifyingGlass className="w-4 h-4 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    value={reviewQuery}
-                    onChange={(e) => setReviewQuery(e.target.value)}
-                    className="pl-8"
-                    placeholder="Search card in database..."
-                  />
-                </div>
-                {isSearchingMatches && <p className="text-xs text-muted-foreground">Searching...</p>}
-                {!isSearchingMatches && reviewResults.length > 0 && (
-                  <div className="max-h-40 overflow-y-auto space-y-1">
-                    {reviewResults.map(result => (
-                      <button
-                        type="button"
-                        key={result.id}
-                        onClick={() => applyDatabaseMatch(activeReviewIndex, result)}
-                        className="w-full text-left p-2 rounded border border-border hover:border-primary hover:bg-muted/50"
-                      >
-                        <p className="text-xs font-semibold truncate">{result.name}</p>
-                        <p className="text-[11px] text-muted-foreground truncate">{result.set.name} · #{result.number}</p>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div className="flex flex-col gap-2">
-              {bulkQueue.length > 0 && (
+            <CardReviewPanel
+              cards={bulkQueue}
+              onCardsChange={setBulkQueue}
+              onConfirm={handleBulkDone}
+              scannedCardsNote="These previews are cropped from your original scan to help visual matching."
+              listMaxHeight="58vh"
+              bottomActions={
                 <Button
                   size="lg"
-                  className="w-full bg-accent hover:bg-accent/90 text-accent-foreground font-display font-semibold"
-                  onClick={handleBulkDone}
+                  variant="outline"
+                  className="w-full font-display font-semibold"
+                  onClick={() => { setBulkQueue([]); startCamera('bulk') }}
                 >
-                  <CheckCircle className="w-5 h-5 mr-2" />
-                  Add {bulkQueue.filter(card => card.selected).length} Card{bulkQueue.filter(card => card.selected).length !== 1 ? 's' : ''} to Collection
+                  <Camera className="w-5 h-5 mr-2" />
+                  Scan Again
                 </Button>
-              )}
-              <Button
-                size="lg"
-                variant="outline"
-                className="w-full font-display font-semibold"
-                onClick={() => { setBulkQueue([]); startCamera('bulk') }}
-              >
-                <Camera className="w-5 h-5 mr-2" />
-                Scan Again
-              </Button>
-            </div>
+              }
+            />
           </div>
         )}
 

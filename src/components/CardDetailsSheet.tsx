@@ -1,11 +1,15 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
-import { Plus, Minus, Trash, X, TrendUp, CurrencyDollar, ArrowSquareOut } from '@phosphor-icons/react'
+import { Input } from '@/components/ui/input'
+import { Plus, Minus, Trash, X, TrendUp, CurrencyDollar, ArrowSquareOut, MagnifyingGlass, ArrowsClockwise, CheckCircle, Warning } from '@phosphor-icons/react'
+import { CardDetailPresentation } from '@/components/shared/CardDetailPresentation'
+import { getFriendlySetName } from '@/lib/set-display'
+import { rarityColors, typeColors } from '@/lib/card-colors'
+import { useTCGDatabase, type TCGCard } from '@/lib/tcg-database'
 import type { PokemonCard } from '@/lib/types'
 
 interface CardDetailsSheetProps {
@@ -14,29 +18,8 @@ interface CardDetailsSheetProps {
   onOpenChange: (open: boolean) => void
   onUpdateQuantity: (cardId: string, delta: number) => void
   onDelete: (cardId: string) => void
-}
-
-const rarityColors: Record<string, string> = {
-  'Common': 'bg-slate-500',
-  'Uncommon': 'bg-green-500',
-  'Rare': 'bg-blue-500',
-  'Holo Rare': 'bg-purple-500',
-  'Ultra Rare': 'bg-amber-500',
-  'Secret Rare': 'bg-rose-500'
-}
-
-const typeColors: Record<string, string> = {
-  'Fire': 'bg-red-500',
-  'Water': 'bg-blue-500',
-  'Grass': 'bg-green-500',
-  'Electric': 'bg-yellow-500',
-  'Psychic': 'bg-purple-500',
-  'Fighting': 'bg-orange-500',
-  'Darkness': 'bg-gray-800',
-  'Metal': 'bg-gray-500',
-  'Dragon': 'bg-indigo-500',
-  'Fairy': 'bg-pink-500',
-  'Colorless': 'bg-gray-400'
+  onCardUpdate?: (cardId: string, patch: Partial<PokemonCard>) => void
+  openRematch?: boolean
 }
 
 export function CardDetailsSheet({
@@ -44,61 +27,133 @@ export function CardDetailsSheet({
   open,
   onOpenChange,
   onUpdateQuantity,
-  onDelete
+  onDelete,
+  onCardUpdate,
+  openRematch,
 }: CardDetailsSheetProps) {
   const [zoomOpen, setZoomOpen] = useState(false)
-  
+  const [rematchOpen, setRematchOpen] = useState(false)
+  const [rematchQuery, setRematchQuery] = useState('')
+  const [rematchResults, setRematchResults] = useState<TCGCard[]>([])
+  const [rematchSearching, setRematchSearching] = useState(false)
+  const [rematchApplied, setRematchApplied] = useState<string | null>(null)
+  const rematchInputRef = useRef<HTMLInputElement>(null)
+  const { searchCards } = useTCGDatabase()
+
+  // Auto-open rematch panel when triggered from outside
+  useEffect(() => {
+    if (open && openRematch) setRematchOpen(true)
+  }, [open, openRematch])
+
+  // Seed search from current card name when panel opens
+  useEffect(() => {
+    if (rematchOpen && card) {
+      setRematchQuery(card.name)
+      setRematchResults([])
+      setRematchApplied(null)
+      setTimeout(() => rematchInputRef.current?.select(), 50)
+    }
+  }, [rematchOpen, card])
+
+  // Debounced search
+  useEffect(() => {
+    if (!rematchOpen) return
+    const q = rematchQuery.trim()
+    if (q.length < 2) { setRematchResults([]); return }
+    const timer = window.setTimeout(async () => {
+      setRematchSearching(true)
+      try {
+        setRematchResults(await searchCards(q, 12))
+      } catch {
+        setRematchResults([])
+      } finally {
+        setRematchSearching(false)
+      }
+    }, 250)
+    return () => window.clearTimeout(timer)
+  }, [rematchQuery, rematchOpen, searchCards])
+
+  const applyRematch = (tcgCard: TCGCard) => {
+    if (!card || !onCardUpdate) return
+    const patch: Partial<PokemonCard> = {
+      name: tcgCard.name,
+      set: tcgCard.set.name,
+      cardNumber: tcgCard.number,
+      pokedexNumber: tcgCard.nationalPokedexNumbers?.[0],
+      rarity: tcgCard.rarity || card.rarity,
+      type: tcgCard.types?.[0] || card.type,
+      supertype: tcgCard.supertype || card.supertype,
+      imageUrl: tcgCard.images.small || tcgCard.images.large || card.imageUrl,
+      largeImageUrl: tcgCard.images.large || undefined,
+      tcgCardId: tcgCard.id,
+    }
+    onCardUpdate(card.id, patch)
+    setRematchApplied(tcgCard.id)
+  }
+
   if (!card) return null
 
   return (
     <>
       <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent side="bottom" className="h-[85vh] max-h-[85vh] flex flex-col p-0">
+        <SheetContent side="bottom" className="h-[85vh] max-h-[85vh] min-h-0 flex flex-col p-0">
           <SheetHeader className="px-4 pt-4 pb-2 shrink-0">
             <SheetTitle className="font-display text-2xl">{card.name}</SheetTitle>
           </SheetHeader>
-          
-          <ScrollArea className="flex-1">
-            <div className="px-4 pb-24 space-y-6">
-              <div className="flex justify-center pt-2">
-                <button 
-                  onClick={() => setZoomOpen(true)}
-                  className="w-64 aspect-[2.5/3.5] rounded-lg overflow-hidden shadow-2xl cursor-pointer hover:shadow-3xl transition-shadow active:scale-[0.98] transition-transform relative bg-gradient-to-br from-blue-400 via-purple-400 to-pink-400"
-                >
-                  {(card.largeImageUrl || card.imageUrl) && !(card.largeImageUrl || card.imageUrl).includes('placehold.co') ? (
-                    <img
-                      src={card.largeImageUrl || card.imageUrl}
-                      alt={card.name}
-                      className="w-full h-full object-cover absolute inset-0"
-                      loading="lazy"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center p-6 absolute inset-0">
-                      <div className="text-center">
-                        <div className="text-white text-2xl font-bold font-display mb-2 drop-shadow-lg">
-                          {card.name}
-                        </div>
-                        <div className="text-white/80 text-sm drop-shadow">
-                          No Image Available
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </button>
-              </div>
 
-            <div className="space-y-4">
+          <div className="relative flex-1 min-h-0">
+            <div
+              className="absolute inset-0 overflow-y-auto overscroll-contain"
+              style={{ touchAction: 'pan-y', WebkitOverflowScrolling: 'touch' }}
+            >
+              <CardDetailPresentation
+                contentClassName="px-4 pb-24 space-y-6"
+                image={(
+                  <div className="flex justify-center pt-2">
+                    <button
+                      onClick={() => setZoomOpen(true)}
+                      className="w-64 aspect-[2.5/3.5] rounded-lg overflow-hidden shadow-2xl cursor-pointer hover:shadow-3xl transition-shadow active:scale-[0.98] transition-transform relative bg-gradient-to-br from-blue-400 via-purple-400 to-pink-400"
+                    >
+                      {(card.largeImageUrl || card.imageUrl) && !(card.largeImageUrl || card.imageUrl).includes('placehold.co') ? (
+                        <img
+                          src={card.largeImageUrl || card.imageUrl}
+                          alt={card.name}
+                          className="w-full h-full object-cover absolute inset-0"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center p-6 absolute inset-0">
+                          <div className="text-center">
+                            <div className="text-white text-2xl font-bold font-display mb-2 drop-shadow-lg">
+                              {card.name}
+                            </div>
+                            <div className="text-white/80 text-sm drop-shadow">
+                              No Image Available
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </button>
+                  </div>
+                )}
+              >
               <div>
                 <h3 className="text-sm font-medium text-muted-foreground mb-2">Details</h3>
                 <div className="space-y-3">
                   <div className="flex justify-between items-center">
                     <span className="text-sm">Set</span>
-                    <span className="font-medium">{card.set}</span>
+                    <span className="font-medium">{getFriendlySetName(card.set)}</span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-sm">Card Number</span>
                     <span className="font-medium">#{card.cardNumber}</span>
                   </div>
+                  {typeof card.pokedexNumber === 'number' && card.pokedexNumber > 0 && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm">National Dex</span>
+                      <span className="font-medium">#{card.pokedexNumber}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between items-center">
                     <span className="text-sm">Rarity</span>
                     <Badge className={`${rarityColors[card.rarity] || 'bg-gray-500'} text-white`}>
@@ -277,6 +332,84 @@ export function CardDetailsSheet({
 
               <Separator />
 
+              {/* Re-match panel */}
+              <div className="space-y-2">
+                <Button
+                  variant="outline"
+                  className="w-full font-display font-semibold"
+                  onClick={() => setRematchOpen(v => !v)}
+                >
+                  <ArrowsClockwise className="w-4 h-4 mr-2" />
+                  Re-match Card
+                </Button>
+
+                {rematchOpen && (
+                  <div className="border border-border rounded-lg p-3 space-y-3">
+                    <div className="relative">
+                      <MagnifyingGlass className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <Input
+                        ref={rematchInputRef}
+                        value={rematchQuery}
+                        onChange={e => setRematchQuery(e.target.value)}
+                        placeholder="Search card name…"
+                        className="pl-8 text-sm"
+                      />
+                    </div>
+
+                    {rematchSearching && (
+                      <div className="flex items-center justify-center gap-2 py-2 text-sm text-muted-foreground">
+                        <ArrowsClockwise className="w-4 h-4 animate-spin" />
+                        Searching…
+                      </div>
+                    )}
+
+                    {!rematchSearching && rematchResults.length === 0 && rematchQuery.trim().length >= 2 && (
+                      <div className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
+                        <Warning className="w-4 h-4" />
+                        No results found
+                      </div>
+                    )}
+
+                    {rematchResults.length > 0 && (
+                      <div className="space-y-1.5 max-h-64 overflow-y-auto pr-0.5">
+                        {rematchResults.map(tcgCard => (
+                          <div
+                            key={tcgCard.id}
+                            className="flex items-center gap-2 p-1.5 rounded-md hover:bg-accent/50 cursor-pointer transition-colors"
+                            onClick={() => applyRematch(tcgCard)}
+                          >
+                            {tcgCard.images.small ? (
+                              <img
+                                src={tcgCard.images.small}
+                                alt={tcgCard.name}
+                                className="w-9 h-12 object-contain rounded flex-shrink-0"
+                                loading="lazy"
+                              />
+                            ) : (
+                              <div className="w-9 h-12 bg-muted rounded flex-shrink-0" />
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm font-medium truncate">{tcgCard.name}</div>
+                              <div className="text-xs text-muted-foreground truncate">{tcgCard.set.name} · #{tcgCard.number}</div>
+                              {tcgCard.rarity && (
+                                <div className="text-xs text-muted-foreground">{tcgCard.rarity}</div>
+                              )}
+                            </div>
+                            {rematchApplied === tcgCard.id ? (
+                              <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" weight="fill" />
+                            ) : (
+                              <Button size="sm" variant="ghost" className="flex-shrink-0 text-xs h-7 px-2">
+                                Apply
+                              </Button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
               <Button
                 variant="destructive"
                 className="w-full font-display font-semibold"
@@ -288,9 +421,9 @@ export function CardDetailsSheet({
                 <Trash className="w-4 h-4 mr-2" />
                 Remove from Collection
               </Button>
-            </div>
+              </CardDetailPresentation>
           </div>
-        </ScrollArea>
+          </div>
       </SheetContent>
     </Sheet>
 
