@@ -3,7 +3,7 @@ import { Toaster } from '@/components/ui/sonner'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
-import { Camera, Copy, CheckSquare, Database, ArrowLeft, ListBullets, Lock, CaretDown, CaretRight } from '@phosphor-icons/react'
+import { Camera, Copy, CheckSquare, Database, ArrowLeft, Lock, CaretDown, CaretRight } from '@phosphor-icons/react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ScanDialog } from '@/components/ScanDialog'
 import { ScanQueueDialog } from '@/components/ScanQueueDialog'
@@ -683,7 +683,6 @@ function MainApp() {
   }, [filteredCards, catalogGroupBy])
 
   // Reset collapsed groups when grouping option changes
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { setCollapsedCatalogGroups(new Set()) }, [catalogGroupBy])
 
   const duplicateCount  = useMemo(() => cards.filter(c => c.quantity > 1).length, [cards])

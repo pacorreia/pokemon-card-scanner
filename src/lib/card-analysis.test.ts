@@ -7,7 +7,6 @@ import {
   draftToPokemonCard,
   buildPricesFromTcgCard,
   AUTO_ADD_CONFIDENCE_THRESHOLD,
-  LOW_CONFIDENCE_THRESHOLD,
   type ScannedCardDraft,
 } from './card-analysis'
 

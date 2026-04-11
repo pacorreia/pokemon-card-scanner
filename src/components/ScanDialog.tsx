@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Camera, Upload, Sparkle, PencilSimple, ArrowLeft, Stack, CheckCircle, X, ListBullets } from '@phosphor-icons/react'
+import { Camera, Upload, Sparkle, PencilSimple, ArrowLeft, Stack, CheckCircle, ListBullets } from '@phosphor-icons/react'
 import { Badge } from '@/components/ui/badge'
 import { CardReviewPanel } from '@/components/CardReviewPanel'
 import { queueApi } from '@/lib/queue-api'
@@ -141,7 +141,7 @@ export function ScanDialog({
   const [cameraSettingsOpen, setCameraSettingsOpen] = useState(false)
   const [torchSupported, setTorchSupported] = useState(false)
   const [zoomRange, setZoomRange] = useState<{ min: number; max: number; supported: boolean }>({ min: 1, max: 3, supported: false })
-  const [preferNativeCamera, setPreferNativeCamera] = useState(false)
+  const [_preferNativeCamera, setPreferNativeCamera] = useState(false)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -268,7 +268,7 @@ export function ScanDialog({
     setMode('bulk-review')
   }, [onCardScanned, onCardsScanned, onOpenChange, processCard])
 
-  const handleUpload = async (file: File) => {
+  const _handleUpload = async (file: File) => {
     setMode('analyzing')
     try {
       const rawDataUrl = await fileToDataUrl(file)
