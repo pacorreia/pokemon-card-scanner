@@ -132,7 +132,7 @@ export function DatabaseBrowser({ open, onOpenChange, onAddCard, onAddToCollecti
       }
     }
     loadCards()
-  }, [open, isLoaded, getAllCards])
+  }, [open, isLoaded, cards.length, isLoadingCards, getAllCards])
   
   useEffect(() => {
     logger.debug('DatabaseBrowser', 'State:', {
