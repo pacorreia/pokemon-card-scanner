@@ -210,7 +210,7 @@ export function CardReviewPanel({
                 />
               </div>
             </div>
-            <div className={`max-h-[${listMaxHeight}] overflow-y-auto p-3`}>
+            <div className="overflow-y-auto p-3" style={{ maxHeight: listMaxHeight }}>
               {isSearching && <p className="text-xs text-muted-foreground">Searching...</p>}
               {!isSearching && reviewResults.length === 0 && (
                 <p className="text-xs text-muted-foreground">No database cards found for the current search.</p>
