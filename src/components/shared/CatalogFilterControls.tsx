@@ -177,16 +177,25 @@ export function CatalogFilterControls({
                     {sectionIndex > 0 && <DropdownMenuSeparator />}
                     <DropdownMenuLabel>{section.label}</DropdownMenuLabel>
                     {section.options.length > 0 ? section.options.map(option => (
-                      <DropdownMenuItem key={option.id} className="cursor-pointer" onSelect={(event) => event.preventDefault()}>
-                        <label className="flex w-full items-center justify-between gap-2 text-sm cursor-pointer">
+                      <DropdownMenuItem
+                        key={option.id}
+                        className="cursor-pointer"
+                        role="menuitemcheckbox"
+                        aria-checked={option.checked}
+                        onSelect={(event) => {
+                          event.preventDefault()
+                          option.onToggle()
+                        }}
+                      >
+                        <div className="flex w-full items-center justify-between gap-2 text-sm">
                           <div className="flex items-center gap-2 min-w-0">
-                            <Checkbox checked={option.checked} onCheckedChange={option.onToggle} />
+                            <Checkbox checked={option.checked} className="pointer-events-none" />
                             <span className="truncate">{option.label}</span>
                           </div>
                           {typeof option.count === 'number' && (
                             <Badge variant="outline" className="text-[10px] h-4 px-1.5 shrink-0">{option.count}</Badge>
                           )}
-                        </label>
+                        </div>
                       </DropdownMenuItem>
                     )) : (
                       <div className="px-2 py-1.5 text-sm text-muted-foreground">
