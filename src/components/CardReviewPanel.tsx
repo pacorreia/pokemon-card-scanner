@@ -134,7 +134,7 @@ export function CardReviewPanel({
                 <p className="text-xs text-muted-foreground">{scannedCardsNote}</p>
               )}
             </div>
-            <div className={`max-h-[${listMaxHeight}] space-y-2 overflow-y-auto p-3`}>
+            <div className="space-y-2 overflow-y-auto p-3" style={{ maxHeight: listMaxHeight }}>
               {cards.map((card, i) => (
                 <div
                   key={i}
