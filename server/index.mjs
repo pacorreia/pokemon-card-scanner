@@ -708,7 +708,7 @@ const requestHandler = async (req, res) => {
       }
       if (!valid) { writeJson(res, 401, { error: 'Invalid password' }, req); return }
       const token  = createSessionToken()
-      const secure = HTTPS_ENABLED ? ' Secure;' : ''
+      const secure = isSecureRequest(req) ? ' Secure;' : ''
       res.setHeader('Set-Cookie', `${SESSION_COOKIE}=${encodeURIComponent(token)}; HttpOnly;${secure} SameSite=Strict; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}; Path=/`)
       writeJson(res, 200, { ok: true }, req)
       return
