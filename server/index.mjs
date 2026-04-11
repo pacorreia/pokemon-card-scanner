@@ -806,8 +806,8 @@ const requestHandler = async (req, res) => {
         if (!id || typeof id !== 'string' || !/^[0-9a-f-]{8,64}$/i.test(id)) {
           writeJson(res, 400, { error: 'Invalid id' }, req); return
         }
-        const match = typeof dataUrl === 'string' && dataUrl.match(/^data:image\/(?:jpeg|jpg|png|webp);base64,(.+)$/)
-        if (!match) { writeJson(res, 400, { error: 'Invalid dataUrl' }, req); return }
+        const match = typeof dataUrl === 'string' && dataUrl.match(/^data:image\/(?:jpeg|jpg);base64,(.+)$/)
+        if (!match) { writeJson(res, 400, { error: 'Invalid dataUrl: only JPEG data URLs are supported' }, req); return }
         const imageBuffer = Buffer.from(match[1], 'base64')
         const imagePath = path.join(QUEUE_DIR, `${id}.jpg`)
         if (!path.resolve(imagePath).startsWith(path.resolve(QUEUE_DIR))) {
