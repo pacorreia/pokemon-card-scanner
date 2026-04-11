@@ -8,7 +8,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Plus, Trash, Pencil, Folder, Star, Heart, Fire, Lightning, Sparkle, Target } from '@phosphor-icons/react'
 import { motion, AnimatePresence } from 'framer-motion'
 import type { CardCollection } from '@/lib/types'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 
 interface CollectionsManagerProps {

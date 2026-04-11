@@ -11,6 +11,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { apiFetch, authHeaders } from './api-fetch'
+import { logger } from './logger'
 
 // ── Re-exported types (used by DatabaseBrowser and other components) ────────
 
@@ -85,7 +86,7 @@ export async function findCard(
     if (cardNumber) params.set('number', cardNumber)
     return await apiFetch<TCGCard | null>(`/api/cards/find?${params}`)
   } catch (err) {
-    console.error('[TCG] findCard error:', err)
+    logger.error('TCG', 'findCard error:', err)
     return null
   }
 }
@@ -94,7 +95,7 @@ export async function getCardById(id: string): Promise<TCGCard | null> {
   try {
     return await apiFetch<TCGCard | null>(`/api/cards/${encodeURIComponent(id)}`)
   } catch (err) {
-    console.error('[TCG] getCardById error:', err)
+    logger.error('TCG', 'getCardById error:', err)
     return null
   }
 }
@@ -166,7 +167,7 @@ export function useTCGDatabase() {
       const status = await apiFetch<DatabaseMetadata | null>('/api/db/status')
       setMetadata(status)
     } catch (err) {
-      console.error('[TCG] Failed to refresh status:', err)
+      logger.error('TCG', 'Failed to refresh status:', err)
     }
   }, [])
 

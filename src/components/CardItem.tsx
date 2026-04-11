@@ -20,8 +20,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { DotsThreeVertical, Eye, Plus, Minus, Trash, FolderPlus } from '@phosphor-icons/react'
-import { useEffect, useMemo, useState } from 'react'
+import { DotsThreeVertical, Eye, Plus, Minus, Trash, FolderPlus, ArrowsClockwise } from '@phosphor-icons/react'
+import { useMemo, useState, memo } from 'react'
+import { rarityColors, typeColors } from '@/lib/card-colors'
+import { isUsableImageUrl } from '@/lib/utils'
 
 interface CardItemProps {
   card: PokemonCard
@@ -29,45 +31,15 @@ interface CardItemProps {
   onUpdateQuantity: (delta: number) => void
   onDelete: () => void
   onAddToCollection?: () => void
+  onRematch?: () => void
   isSelectionMode?: boolean
   isSelected?: boolean
   onToggleSelect?: () => void
 }
 
-const rarityColors: Record<string, string> = {
-  'Common': 'bg-slate-500',
-  'Uncommon': 'bg-green-500',
-  'Rare': 'bg-blue-500',
-  'Holo Rare': 'bg-purple-500',
-  'Ultra Rare': 'bg-amber-500',
-  'Secret Rare': 'bg-rose-500'
-}
-
-const typeColors: Record<string, string> = {
-  'Fire': 'bg-red-500',
-  'Water': 'bg-blue-500',
-  'Grass': 'bg-green-500',
-  'Electric': 'bg-yellow-500',
-  'Psychic': 'bg-purple-500',
-  'Fighting': 'bg-orange-500',
-  'Darkness': 'bg-gray-800',
-  'Metal': 'bg-gray-500',
-  'Dragon': 'bg-indigo-500',
-  'Fairy': 'bg-pink-500',
-  'Colorless': 'bg-gray-400'
-}
-
-function isUsableImageUrl(value: unknown): value is string {
-  if (typeof value !== 'string') return false
-  const normalized = value.trim()
-  if (!normalized || normalized === 'undefined' || normalized === 'null') return false
-  if (normalized.includes('placehold.co')) return false
-  return normalized.startsWith('https://') || normalized.startsWith('http://') || normalized.startsWith('data:image/')
-}
-
-export function CardItem({ card, onClick, onUpdateQuantity, onDelete, onAddToCollection, isSelectionMode, isSelected, onToggleSelect }: CardItemProps) {
+export function CardItemBase({ card, onClick, onUpdateQuantity, onDelete, onAddToCollection, onRematch, isSelectionMode, isSelected, onToggleSelect }: CardItemProps) {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
-  const [imageError, setImageError] = useState(false)
+  const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null)
   const [dropdownOpen, setDropdownOpen] = useState(false)
 
   const primaryImageUrl = useMemo(() => {
@@ -80,10 +52,8 @@ export function CardItem({ card, onClick, onUpdateQuantity, onDelete, onAddToCol
     return ''
   }, [card.imageUrl, card.largeImageUrl])
 
-  useEffect(() => {
-    // Reset image error state when the primary image URL changes
-    // This allows retry if a previously failed image becomes valid
-  }, [primaryImageUrl])
+  // Derived: only treat current URL as errored if it's specifically the one that failed
+  const imageError = failedImageUrl === primaryImageUrl && primaryImageUrl !== ''
 
   const handleMenuClick = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -163,13 +133,7 @@ export function CardItem({ card, onClick, onUpdateQuantity, onDelete, onAddToCol
                 alt={card.name}
                 className="w-full h-full object-cover absolute inset-0"
                 loading="lazy"
-                onError={() => {
-                  console.error(`[CardItem] Image failed to load for ${card.name}:`, primaryImageUrl)
-                  setImageError(true)
-                }}
-                onLoad={() => {
-                  console.log(`[CardItem] Image loaded successfully for ${card.name}:`, primaryImageUrl)
-                }}
+                onError={() => setFailedImageUrl(primaryImageUrl)}
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center p-4 absolute inset-0">
@@ -216,6 +180,12 @@ export function CardItem({ card, onClick, onUpdateQuantity, onDelete, onAddToCol
                       <FolderPlus className="w-4 h-4 mr-2" />
                       Add to Collection
                     </DropdownMenuItem>
+                    {onRematch && (
+                      <DropdownMenuItem onClick={() => { setDropdownOpen(false); onRematch() }}>
+                        <ArrowsClockwise className="w-4 h-4 mr-2" />
+                        Re-match Card
+                      </DropdownMenuItem>
+                    )}
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={handleIncreaseQuantity}>
                       <Plus className="w-4 h-4 mr-2" />
@@ -304,3 +274,5 @@ export function CardItem({ card, onClick, onUpdateQuantity, onDelete, onAddToCol
   </>
   )
 }
+
+export const CardItem = memo(CardItemBase)

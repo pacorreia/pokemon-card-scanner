@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { Database, ArrowsClockwise, CheckCircle, Warning } from '@phosphor-icons/react'
 import { useTCGDatabase } from '@/lib/tcg-database'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 
 interface DatabaseManagerProps {
   open: boolean

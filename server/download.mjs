@@ -8,6 +8,7 @@
  */
 
 import { insertSets, insertCards, clearTcgData, setTcgMetadata } from './db.mjs'
+import { logger } from './logger.mjs'
 
 const GITHUB_API = 'https://api.github.com/repos/PokemonTCG/pokemon-tcg-data'
 const GITHUB_RAW = 'https://raw.githubusercontent.com/PokemonTCG/pokemon-tcg-data'
@@ -26,7 +27,7 @@ export async function runDownload(onProgress) {
   }).then(r => { if (!r.ok) throw new Error(`GitHub API ${r.status}`); return r.json() })
 
   const tag = release.tag_name
-  console.log(`[download] Latest release: ${tag}`)
+  logger.info('download', `Latest release: ${tag}`)
 
   // ── 2. Sets (single file) ───────────────────────────────────────────────
   onProgress(10, 100, 'Fetching sets...')
@@ -35,7 +36,7 @@ export async function runDownload(onProgress) {
 
   if (!Array.isArray(setsData)) throw new Error('Unexpected sets format')
   const validSets = setsData.filter(s => s && s.id && s.name)
-  console.log(`[download] ${validSets.length} sets`)
+  logger.info('download', `${validSets.length} sets`)
 
   // ── 3. Card file list (GitHub contents API) ─────────────────────────────
   onProgress(15, 100, `Found ${validSets.length} sets, fetching card file list...`)
@@ -47,7 +48,7 @@ export async function runDownload(onProgress) {
     .filter(f => f.type === 'file' && f.name.endsWith('.json'))
     .map(f => f.name)
 
-  console.log(`[download] ${cardFiles.length} card files`)
+  logger.info('download', `${cardFiles.length} card files`)
 
   if (cardFiles.length === 0) throw new Error('No card files found – repository structure may have changed.')
 
@@ -86,7 +87,7 @@ export async function runDownload(onProgress) {
     onProgress(pct, 100, `Downloaded ${processedFiles}/${cardFiles.length} files (${allCards.length} cards)...`)
   }
 
-  console.log(`[download] ${allCards.length} cards total`)
+  logger.info('download', `${allCards.length} cards total`)
 
   // ── 5. Persist to SQLite ────────────────────────────────────────────────
   onProgress(89, 100, 'Clearing old database...')

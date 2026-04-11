@@ -14,6 +14,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { logger } from './logger.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DATA_DIR = process.env.DATA_DIR || path.resolve(__dirname, '..', 'data')
@@ -22,6 +23,86 @@ mkdirSync(DATA_DIR, { recursive: true })
 export const DB_PATH = path.join(DATA_DIR, 'pokedex.db')
 
 let db
+
+function normalizePokedexNumber(value) {
+  const number = Number(value)
+  if (!Number.isFinite(number) || number <= 0) return null
+  return Math.trunc(number)
+}
+
+function hasColumn(tableName, columnName) {
+  const rows = db.prepare(`PRAGMA table_info(${tableName})`).all()
+  return rows.some(row => row.name === columnName)
+}
+
+function ensureCollectionSchemaMigrations() {
+  if (!hasColumn('collection_cards', 'pokedex_number')) {
+    db.exec('ALTER TABLE collection_cards ADD COLUMN pokedex_number INTEGER')
+  }
+
+  db.exec('CREATE INDEX IF NOT EXISTS idx_collection_cards_pokedex_number ON collection_cards(pokedex_number)')
+
+  const needsBackfill = db.prepare('SELECT id, data, pokedex_number FROM collection_cards WHERE pokedex_number IS NULL').all()
+  if (needsBackfill.length === 0) return
+
+  const updateStmt = db.prepare('UPDATE collection_cards SET pokedex_number = ? WHERE id = ?')
+  const selectTcgByIdStmt = db.prepare('SELECT data FROM tcg_cards WHERE id = ?')
+  const selectTcgByIdentityStmt = db.prepare(
+    `SELECT tcg_cards.data AS data
+       FROM tcg_cards
+       LEFT JOIN tcg_sets ON tcg_sets.id = tcg_cards.set_id
+      WHERE lower(tcg_cards.name) = lower(?)
+        AND tcg_cards.number = ?
+        AND lower(COALESCE(tcg_sets.name, '')) = lower(?)
+      LIMIT 1`
+  )
+
+  function resolveDexFromCollectionCard(card) {
+    const fromCard = normalizePokedexNumber(card?.pokedexNumber)
+    if (fromCard) return fromCard
+
+    const tcgCardId = card?.tcgCardId
+    if (tcgCardId) {
+      const tcgRow = selectTcgByIdStmt.get(tcgCardId)
+      if (tcgRow?.data) {
+        try {
+          const tcgCard = JSON.parse(tcgRow.data)
+          const dex = normalizePokedexNumber(tcgCard?.nationalPokedexNumbers?.[0])
+          if (dex) return dex
+        } catch {
+          // Ignore malformed TCG row JSON and continue fallback path.
+        }
+      }
+    }
+
+    const cardName = card?.name
+    const cardNumber = card?.cardNumber
+    const setName = card?.set
+    if (!cardName || !cardNumber || !setName) return null
+
+    const tcgByIdentityRow = selectTcgByIdentityStmt.get(cardName, cardNumber, setName)
+    if (!tcgByIdentityRow?.data) return null
+
+    try {
+      const tcgCard = JSON.parse(tcgByIdentityRow.data)
+      return normalizePokedexNumber(tcgCard?.nationalPokedexNumbers?.[0])
+    } catch {
+      return null
+    }
+  }
+
+  runInTransaction(() => {
+    for (const row of needsBackfill) {
+      try {
+        const card = JSON.parse(row.data)
+        const pokedexNumber = resolveDexFromCollectionCard(card)
+        updateStmt.run(pokedexNumber, row.id)
+      } catch {
+        updateStmt.run(null, row.id)
+      }
+    }
+  })
+}
 
 function initializeDatabaseConnection() {
   db = new DatabaseSync(DB_PATH)
@@ -79,7 +160,17 @@ function initializeDatabaseConnection() {
       card_id       TEXT NOT NULL,
       PRIMARY KEY (collection_id, card_id)
     );
+
+    CREATE TABLE IF NOT EXISTS scan_queue (
+      id          TEXT PRIMARY KEY,
+      status      TEXT NOT NULL DEFAULT 'pending',
+      error       TEXT,
+      drafts_json TEXT,
+      created_at  INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000)
+    );
   `)
+
+  ensureCollectionSchemaMigrations()
 }
 
 initializeDatabaseConnection()
@@ -210,8 +301,11 @@ export function insertCards(cards) {
 // ── TCG card lookup (used by /api/cards/find) ─────────────────────────────
 
 function _normalize(v) { return (v ?? '').toLowerCase().trim() }
+function _normalizeAscii(v) {
+  return _normalize(v).normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+}
 function _normalizeSetText(v) {
-  return _normalize(v).replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim()
+  return _normalizeAscii(v).replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim()
 }
 function _normalizeNumber(v) {
   const base = (v ?? '').split('/')[0].trim()
@@ -243,6 +337,52 @@ function _setMatches(card, incomingSet) {
   return setName === target || target.includes(setName) || setId === target || target.includes(setId)
 }
 
+function _tokenSet(v) {
+  return new Set(_normalizeSetText(v).split(' ').filter(Boolean))
+}
+
+function _setTokenOverlapScore(cardSetName, incomingSet) {
+  const left = _tokenSet(cardSetName)
+  const right = _tokenSet(incomingSet)
+  if (left.size === 0 || right.size === 0) return 0
+  let overlap = 0
+  for (const token of left) {
+    if (right.has(token)) overlap += 1
+  }
+  return overlap
+}
+
+function _setSpecificityScore(card, incomingSet) {
+  const target = _normalizeSetText(incomingSet)
+  if (!target) return 0
+
+  const setName = _normalizeSetText(card?.set?.name)
+  const series = _normalizeSetText(card?.set?.series)
+
+  // Prefer full "series + set name" exact matches when available.
+  const full = [series, setName].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim()
+  if (full && full === target) return 10
+  if (setName && setName === target) return 8
+  if (full && target.includes(full)) return 6
+  if (setName && target.includes(setName)) return 4
+
+  return _setTokenOverlapScore(card?.set?.name, incomingSet)
+}
+
+function _nameSimilarityScore(cardName, incomingName) {
+  const left = _normalizeSetText(cardName)
+  const right = _normalizeSetText(incomingName)
+  if (!left || !right) return 0
+  if (left === right) return 4
+  if (left.includes(right) || right.includes(left)) return 2
+  return 0
+}
+
+function _nameMatchesCandidate(cardName, incomingName) {
+  if (!incomingName) return true
+  return _nameSimilarityScore(cardName, incomingName) > 0
+}
+
 export function findCard(name, setName, cardNumber) {
   const lowerName   = _normalize(name)
   const lowerSet    = _normalize(setName)
@@ -253,9 +393,32 @@ export function findCard(name, setName, cardNumber) {
     const rows = db.prepare('SELECT data FROM tcg_cards WHERE number = ?').all(normNumber)
     const candidates = rows.map(r => JSON.parse(r.data)).filter(c => _setMatches(c, lowerSet))
 
-    if (candidates.length === 1) return candidates[0]
+    if (candidates.length === 1) {
+      const only = candidates[0]
+      const expectedTotal = _parseDenominator(cardNumber)
+      const totalMatches = !expectedTotal || only.set?.total === expectedTotal || only.set?.printedTotal === expectedTotal
+      const nameMatches = _nameMatchesCandidate(only.name, name)
+      if (totalMatches && nameMatches) return only
+      logger.warn('db', 'Rejecting set+number single-candidate match due total/name mismatch')
+    }
 
     if (candidates.length > 1) {
+      if (setName) {
+        const withSetScore = candidates
+          .map(card => ({ card, score: _setSpecificityScore(card, setName) }))
+          .sort((a, b) => b.score - a.score)
+
+        if (withSetScore[0]?.score > 0) {
+          const topScore = withSetScore[0].score
+          const narrowedBySet = withSetScore.filter(item => item.score === topScore).map(item => item.card)
+          if (narrowedBySet.length === 1) return narrowedBySet[0]
+          if (narrowedBySet.length < candidates.length) {
+            candidates.length = 0
+            candidates.push(...narrowedBySet)
+          }
+        }
+      }
+
       if (lowerName) {
         const byName = candidates.filter(c => {
           const n = c.name.toLowerCase()
@@ -263,11 +426,11 @@ export function findCard(name, setName, cardNumber) {
         })
         const narrowed = _filterByTotal(byName, cardNumber)
         if (narrowed.length === 1) return narrowed[0]
-        if (narrowed.length > 1) { console.warn('[db] Ambiguous set+number+name, failing closed'); return null }
+        if (narrowed.length > 1) { logger.warn('db', 'Ambiguous set+number+name, failing closed'); return null }
       }
       const byTotal = _filterByTotal(candidates, cardNumber)
       if (byTotal.length === 1) return byTotal[0]
-      console.warn('[db] Ambiguous set+number, failing closed')
+      logger.warn('db', 'Ambiguous set+number, failing closed')
       return null
     }
   }
@@ -297,11 +460,40 @@ export function findCard(name, setName, cardNumber) {
   }
 
   if (matches.length > 1) {
-    console.warn('[db] Ambiguous name match, failing closed')
+    logger.warn('db', 'Ambiguous name match, failing closed')
     return null
   }
 
-  return matches[0] ?? null
+  if (matches.length === 1) return matches[0]
+
+  // ── Final fallback: number-driven match for localized card names ────────
+  // Only use this when we have BOTH a set signal AND a name signal to avoid
+  // returning a wrong card that merely shares the same number.
+  if (normNumber && (setName || name)) {
+    const byNumber = db.prepare('SELECT data FROM tcg_cards WHERE number = ?').all(normNumber).map(r => JSON.parse(r.data))
+    if (byNumber.length === 0) return null
+
+    let narrowed = _filterByTotal(byNumber, cardNumber)
+
+    // Score and require a positive signal on at least one dimension
+    const scored = narrowed.map(card => ({
+      card,
+      setScore: setName ? _setTokenOverlapScore(card.set?.name, setName) : 0,
+      nameScore: name ? _nameSimilarityScore(card.name, name) : 0,
+    }))
+
+    // Keep only candidates with at least one non-zero score
+    const viable = scored.filter(item => item.setScore > 0 || item.nameScore > 0)
+    if (viable.length === 0) return null
+
+    // Sort by combined score
+    viable.sort((a, b) => (b.setScore + b.nameScore) - (a.setScore + a.nameScore))
+    const topScore = viable[0].setScore + viable[0].nameScore
+    const topTier = viable.filter(item => item.setScore + item.nameScore === topScore)
+    if (topTier.length === 1) return topTier[0].card
+  }
+
+  return null
 }
 
 export function getCardById(id) {
@@ -313,30 +505,39 @@ export function getAllSets() {
   return db.prepare('SELECT data FROM tcg_sets ORDER BY name').all().map(r => JSON.parse(r.data))
 }
 
-export function searchCards({ q = '', supertype = '', setId = '', limit = 200, offset = 0 } = {}) {
-  let sql = 'SELECT data FROM tcg_cards WHERE 1=1'
+function _buildCardWhereClause(q, supertype, setId) {
+  let sql = ' WHERE 1=1'
   const params = []
-  if (q) { sql += ' AND name LIKE ?'; params.push(`%${q}%`) }
+  if (q) {
+    sql += ' AND (name LIKE ? OR number LIKE ? OR EXISTS (SELECT 1 FROM tcg_sets s WHERE s.id = tcg_cards.set_id AND s.name LIKE ?))'
+    params.push(`%${q}%`, `%${q}%`, `%${q}%`)
+  }
   if (supertype) { sql += ' AND supertype = ?'; params.push(supertype) }
-  if (setId) { sql += ' AND set_id = ?'; params.push(setId) }
-  sql += ' ORDER BY name LIMIT ? OFFSET ?'
-  params.push(limit, offset)
-  return db.prepare(sql).all(...params).map(r => JSON.parse(r.data))
+  if (setId)     { sql += ' AND set_id = ?';    params.push(setId) }
+  return { sql, params }
+}
+
+export function searchCards({ q = '', supertype = '', setId = '', limit = 200, offset = 0 } = {}) {
+  const { sql, params } = _buildCardWhereClause(q, supertype, setId)
+  return db.prepare(`SELECT data FROM tcg_cards${sql} ORDER BY name LIMIT ? OFFSET ?`)
+    .all(...params, limit, offset).map(r => JSON.parse(r.data))
 }
 
 export function countCards({ q = '', supertype = '', setId = '' } = {}) {
-  let sql = 'SELECT COUNT(*) AS c FROM tcg_cards WHERE 1=1'
-  const params = []
-  if (q) { sql += ' AND name LIKE ?'; params.push(`%${q}%`) }
-  if (supertype) { sql += ' AND supertype = ?'; params.push(supertype) }
-  if (setId) { sql += ' AND set_id = ?'; params.push(setId) }
-  return db.prepare(sql).get(...params).c
+  const { sql, params } = _buildCardWhereClause(q, supertype, setId)
+  return db.prepare(`SELECT COUNT(*) AS c FROM tcg_cards${sql}`).get(...params).c
 }
 
 // ── User collection ─────────────────────────────────────────────────────────
 
 export function getCollection() {
-  const cards = db.prepare('SELECT data FROM collection_cards ORDER BY date_added DESC').all().map(r => JSON.parse(r.data))
+  const cards = db.prepare('SELECT data, pokedex_number FROM collection_cards ORDER BY date_added DESC').all().map(r => {
+    const card = JSON.parse(r.data)
+    if (card.pokedexNumber == null && r.pokedex_number != null) {
+      card.pokedexNumber = normalizePokedexNumber(r.pokedex_number) ?? undefined
+    }
+    return card
+  })
   if (cards.length === 0) return cards
 
   const cardIds = cards.map(card => card.id)
@@ -362,8 +563,15 @@ export function getCollection() {
 }
 
 export function addToCollection(card) {
-  db.prepare('INSERT OR REPLACE INTO collection_cards (id, name, date_added, data) VALUES (?, ?, ?, ?)')
-    .run(card.id, card.name ?? '', card.dateAdded ?? Date.now(), JSON.stringify({ ...card, collectionIds: undefined }))
+  const pokedexNumber = normalizePokedexNumber(card?.pokedexNumber)
+  db.prepare('INSERT OR REPLACE INTO collection_cards (id, name, date_added, pokedex_number, data) VALUES (?, ?, ?, ?, ?)')
+    .run(
+      card.id,
+      card.name ?? '',
+      card.dateAdded ?? Date.now(),
+      pokedexNumber,
+      JSON.stringify({ ...card, pokedexNumber: pokedexNumber ?? undefined, collectionIds: undefined }),
+    )
   return card
 }
 
@@ -372,8 +580,16 @@ export function updateCollectionCard(id, updates) {
   if (!row) return null
   const existing = JSON.parse(row.data)
   const updated  = { ...existing, ...updates, id }
-  db.prepare('UPDATE collection_cards SET name = ?, date_added = ?, data = ? WHERE id = ?')
-    .run(updated.name ?? '', updated.dateAdded ?? Date.now(), JSON.stringify({ ...updated, collectionIds: undefined }), id)
+  const pokedexNumber = normalizePokedexNumber(updated.pokedexNumber)
+  db.prepare('UPDATE collection_cards SET name = ?, date_added = ?, pokedex_number = ?, data = ? WHERE id = ?')
+    .run(
+      updated.name ?? '',
+      updated.dateAdded ?? Date.now(),
+      pokedexNumber,
+      JSON.stringify({ ...updated, pokedexNumber: pokedexNumber ?? undefined, collectionIds: undefined }),
+      id,
+    )
+  updated.pokedexNumber = pokedexNumber ?? undefined
   updated.collectionIds = db.prepare(
     'SELECT collection_id FROM collection_memberships WHERE card_id = ?'
   ).all(id).map(m => m.collection_id)
@@ -436,4 +652,51 @@ export function setCollectionMembership(collectionId, cardId, add) {
       .run(collectionId, cardId)
   }
   return { ok: true }
+}
+
+// ── Scan queue ────────────────────────────────────────────────────────────────
+
+export function queueAdd(id) {
+  db.prepare('INSERT OR IGNORE INTO scan_queue (id) VALUES (?)').run(id)
+}
+
+export function queueGetAll() {
+  const rows = db.prepare('SELECT * FROM scan_queue ORDER BY created_at ASC').all()
+  return rows.map(r => ({
+    id:        r.id,
+    status:    r.status,
+    error:     r.error ?? undefined,
+    drafts:    r.drafts_json ? JSON.parse(r.drafts_json) : undefined,
+    createdAt: r.created_at,
+  }))
+}
+
+export function queueUpdate(id, patch) {
+  const fields = []
+  const values = []
+  if (patch.status !== undefined) { fields.push('status = ?'); values.push(patch.status) }
+  if ('error' in patch)           { fields.push('error = ?');  values.push(patch.error ?? null) }
+  if ('drafts' in patch)          { fields.push('drafts_json = ?'); values.push(patch.drafts != null ? JSON.stringify(patch.drafts) : null) }
+  if (fields.length === 0) return
+  values.push(id)
+  db.prepare(`UPDATE scan_queue SET ${fields.join(', ')} WHERE id = ?`).run(...values)
+}
+
+export function queueDelete(id) {
+  db.prepare('DELETE FROM scan_queue WHERE id = ?').run(id)
+}
+
+export function queueClear() {
+  const rows = db.prepare('SELECT id FROM scan_queue').all()
+  db.prepare('DELETE FROM scan_queue').run()
+  return rows.map(r => r.id)
+}
+
+export function queueDeleteStale(maxAgeMs) {
+  const cutoff = Date.now() - maxAgeMs
+  const rows = db.prepare('SELECT id FROM scan_queue WHERE created_at < ?').all(cutoff)
+  if (rows.length > 0) {
+    db.prepare('DELETE FROM scan_queue WHERE created_at < ?').run(cutoff)
+  }
+  return rows.map(r => r.id)
 }
