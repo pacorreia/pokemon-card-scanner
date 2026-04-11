@@ -176,7 +176,11 @@ function parseCookies(req) {
     const [rawKey, ...rawValueParts] = part.trim().split('=')
     if (!rawKey) continue
     const rawValue = rawValueParts.join('=')
-    cookies[rawKey] = decodeURIComponent(rawValue || '')
+    try {
+      cookies[rawKey] = decodeURIComponent(rawValue || '')
+    } catch {
+      cookies[rawKey] = rawValue || ''
+    }
   }
   return cookies
 }
