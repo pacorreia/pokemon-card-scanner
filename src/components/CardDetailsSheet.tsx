@@ -375,8 +375,16 @@ export function CardDetailsSheet({
                         {rematchResults.map(tcgCard => (
                           <div
                             key={tcgCard.id}
+                            role="button"
+                            tabIndex={0}
                             className="flex items-center gap-2 p-1.5 rounded-md hover:bg-accent/50 cursor-pointer transition-colors"
                             onClick={() => applyRematch(tcgCard)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault()
+                                applyRematch(tcgCard)
+                              }
+                            }}
                           >
                             {tcgCard.images.small ? (
                               <img
