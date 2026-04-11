@@ -162,9 +162,10 @@ async function flushClientLogs(): Promise<void> {
       if (!sent) {
         // Re-queue the batch, but respect the hard cap so the queue can't grow
         // without bound if the server is persistently unreachable.
+        // Preserve the most-recent entries (tail of the batch) when capacity is limited.
         const available = Math.max(0, CLIENT_LOG_MAX_QUEUE_SIZE - clientLogQueue.length)
         if (available > 0) {
-          clientLogQueue.unshift(...batch.slice(0, available))
+          clientLogQueue.unshift(...batch.slice(-available))
         }
         break
       }
