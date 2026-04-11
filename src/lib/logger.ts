@@ -32,6 +32,7 @@ const CLIENT_LOG_ENDPOINT = '/api/logs/client'
 const CLIENT_LOG_TOKEN_ENDPOINT = '/api/logs/client-token'
 const CLIENT_LOG_BATCH_SIZE = 20
 const CLIENT_LOG_FLUSH_MS = 600
+const CLIENT_LOG_MAX_QUEUE_SIZE = 500
 const MAX_MESSAGE_LENGTH = 4000
 const CLIENT_LOG_TOKEN_REFRESH_SKEW_MS = 15_000
 
@@ -159,7 +160,12 @@ async function flushClientLogs(): Promise<void> {
       const batch = clientLogQueue.splice(0, CLIENT_LOG_BATCH_SIZE)
       const sent = await postClientLogBatch(batch)
       if (!sent) {
-        clientLogQueue.unshift(...batch)
+        // Re-queue the batch, but respect the hard cap so the queue can't grow
+        // without bound if the server is persistently unreachable.
+        const available = Math.max(0, CLIENT_LOG_MAX_QUEUE_SIZE - clientLogQueue.length)
+        if (available > 0) {
+          clientLogQueue.unshift(...batch.slice(0, available))
+        }
         break
       }
     }
@@ -173,6 +179,9 @@ async function flushClientLogs(): Promise<void> {
 
 function enqueueClientLog(payload: ClientLogPayload): void {
   if (!CLIENT_LOGS_ENABLED) return
+  if (clientLogQueue.length >= CLIENT_LOG_MAX_QUEUE_SIZE) {
+    clientLogQueue.shift() // drop oldest to stay within cap
+  }
   clientLogQueue.push(payload)
   if (clientLogQueue.length >= CLIENT_LOG_BATCH_SIZE) {
     void flushClientLogs()

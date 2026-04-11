@@ -39,6 +39,10 @@ export const queueApi = {
    */
   fetchImageDataUrl: async (id: string): Promise<string> => {
     const res = await fetch(`/api/scan-queue/${encodeURIComponent(id)}/image`)
+    if (res.status === 401 || res.status === 403) {
+      window.dispatchEvent(new CustomEvent('auth:required'))
+      throw new Error('Authentication required')
+    }
     if (!res.ok) throw new Error(`Queue image not found (${id})`)
     const blob = await res.blob()
     return new Promise<string>((resolve, reject) => {

@@ -548,7 +548,7 @@ function MainApp() {
     } else {
       try {
         const cardData: PokemonCard = {
-          id: '',
+          id: crypto.randomUUID(),
           name: tcgCard.name,
           set: tcgCard.set?.name || 'Unknown Set',
           cardNumber: tcgCard.number || '?',
@@ -1029,7 +1029,7 @@ function MainApp() {
       <DatabaseManager  open={isDbManagerOpen}        onOpenChange={handleDbManagerOpenChange} onSuccess={refreshStatus} />
       <DatabaseBrowser  open={dbBrowserOpen}          onOpenChange={setDbBrowserOpen} onAddCard={(tcgCard) => {
         const card: PokemonCard = {
-          id: '',
+          id: crypto.randomUUID(),
           name: tcgCard.name,
           set: tcgCard.set?.name || 'Unknown Set',
           cardNumber: tcgCard.number || '?',
