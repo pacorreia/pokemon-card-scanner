@@ -101,30 +101,27 @@ export function CatalogFilterControls({
   const open = collapsible ? isOpen : true
 
   return (
-    <div className="space-y-2">
+    <Collapsible open={open} onOpenChange={setIsOpen} className="space-y-2">
       <div className={summaryText ? 'flex items-center justify-between gap-2' : 'flex items-center gap-2'}>
         {summaryText && (
           <div className="text-xs text-muted-foreground min-w-0 truncate">{summaryText}</div>
         )}
 
         {collapsible && (
-          <Collapsible open={open} onOpenChange={setIsOpen}>
-            <CollapsibleTrigger asChild>
-              <Button variant="outline" size={compact ? 'sm' : 'lg'} className={triggerButtonClass}>
-                <Funnel className={iconClass} />
-                Sort / Filter / Group
-                {activeFiltersCount > 0 && (
-                  <Badge variant="default" className={countBadgeClass}>{activeFiltersCount}</Badge>
-                )}
-                <CaretDown className={`ml-1.5 h-3.5 w-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />
-              </Button>
-            </CollapsibleTrigger>
-          </Collapsible>
+          <CollapsibleTrigger asChild>
+            <Button variant="outline" size={compact ? 'sm' : 'lg'} className={triggerButtonClass}>
+              <Funnel className={iconClass} />
+              Sort / Filter / Group
+              {activeFiltersCount > 0 && (
+                <Badge variant="default" className={countBadgeClass}>{activeFiltersCount}</Badge>
+              )}
+              <CaretDown className={`ml-1.5 h-3.5 w-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />
+            </Button>
+          </CollapsibleTrigger>
         )}
       </div>
 
-      <Collapsible open={open} onOpenChange={setIsOpen}>
-        <CollapsibleContent className="space-y-2">
+      <CollapsibleContent className="space-y-2">
           <div className={controlsRowClass}>
             {sortValue && sortOptions && sortOptions.length > 0 && onSortChange && (
               <Select value={sortValue} onValueChange={onSortChange}>
@@ -227,7 +224,6 @@ export function CatalogFilterControls({
             </div>
           )}
         </CollapsibleContent>
-      </Collapsible>
-    </div>
+    </Collapsible>
   )
 }

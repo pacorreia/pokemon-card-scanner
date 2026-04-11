@@ -7,7 +7,7 @@
  * The parent owns the `cards` array and handles confirm/cancel actions.
  * Internal review state (active card, search query, DB results) is managed here.
  */
-import { useState, useEffect, useCallback, type Dispatch, type SetStateAction } from 'react'
+import { useState, useEffect, useCallback, type Dispatch, type SetStateAction, type ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -33,7 +33,7 @@ export interface CardReviewPanelProps {
   /** max-h value for the scrollable card lists. Defaults to '58vh'. */
   listMaxHeight?: string
   /** Extra buttons rendered below the confirm button (e.g. "Scan Again" or "Back to Queue"). */
-  bottomActions?: React.ReactNode
+  bottomActions?: ReactNode
 }
 
 export function CardReviewPanel({
