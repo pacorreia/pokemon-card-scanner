@@ -27,4 +27,13 @@ export default defineConfig({
   build: {
     chunkSizeWarningLimit: 900,
   },
+  test: {
+    environment: 'node',
+    include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
+    coverage: {
+      provider: 'v8',
+      include: ['src/lib/**', 'src/hooks/**'],
+      exclude: ['src/lib/image-processing.ts', 'src/lib/tcg-database.ts', 'src/lib/queue-api.ts', 'src/lib/api-fetch.ts'],
+    },
+  },
 });
