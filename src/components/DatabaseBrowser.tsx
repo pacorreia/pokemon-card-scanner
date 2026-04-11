@@ -726,8 +726,17 @@ export function DatabaseBrowser({ open, onOpenChange, onAddCard, onAddToCollecti
                               {row.cards.map(card => (
                                 <div
                                   key={card.id}
+                                  role="button"
+                                  tabIndex={0}
+                                  aria-label={`View details for ${card.name}`}
                                   className="group relative bg-card rounded-lg overflow-hidden border hover:border-primary transition-all hover:shadow-lg cursor-pointer"
                                   onClick={() => setSelectedCard(card)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                      e.preventDefault()
+                                      setSelectedCard(card)
+                                    }
+                                  }}
                                 >
                                   <div className="aspect-[2/3] bg-muted relative">
                                     {card.images?.small ? (
