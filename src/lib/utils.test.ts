@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isUsableImageUrl, pickBestImageUrl } from './utils'
+import { isUsableImageUrl, pickBestImageUrl, formatEstimatedValue } from './utils'
 
 describe('isUsableImageUrl', () => {
   it('returns true for https URLs', () => {
@@ -57,5 +57,27 @@ describe('pickBestImageUrl', () => {
 
   it('returns empty string with no arguments', () => {
     expect(pickBestImageUrl()).toBe('')
+  })
+})
+
+describe('formatEstimatedValue', () => {
+  it('returns null when both values are zero', () => {
+    expect(formatEstimatedValue(0, 0)).toBeNull()
+  })
+
+  it('returns null when both values are negative', () => {
+    expect(formatEstimatedValue(-1, -5)).toBeNull()
+  })
+
+  it('formats USD-only value', () => {
+    expect(formatEstimatedValue(12.34, 0)).toBe('Est. value: $12.34')
+  })
+
+  it('formats EUR-only value', () => {
+    expect(formatEstimatedValue(0, 10.5)).toBe('Est. value: €10.50')
+  })
+
+  it('formats both USD and EUR', () => {
+    expect(formatEstimatedValue(12.34, 10.5)).toBe('Est. value: $12.34 / €10.50')
   })
 })

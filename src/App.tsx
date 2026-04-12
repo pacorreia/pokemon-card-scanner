@@ -298,6 +298,7 @@ function MainApp() {
       <CollectionsManager
         open={collectionsManagerOpen} onOpenChange={setCollectionsManagerOpen}
         collections={collection.collections}
+        cards={collection.cards}
         onCreateCollection={collection.handleCreateCollection}
         onUpdateCollection={collection.handleUpdateCollection}
         onDeleteCollection={collection.handleDeleteCollection}

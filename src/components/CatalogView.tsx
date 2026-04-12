@@ -1,4 +1,4 @@
-import { type RefObject } from 'react'
+import { type RefObject, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
@@ -10,6 +10,7 @@ import { CatalogFilterControls } from '@/components/shared/CatalogFilterControls
 import type { CatalogFilterSection, CatalogActiveFilterChip } from '@/components/shared/CatalogFilterControls'
 import type { PokemonCard, CardCollection, ViewMode } from '@/lib/types'
 import type { CatalogSortBy, CatalogGroupBy, CatalogVirtualRow } from '@/lib/catalog-types'
+import { formatEstimatedValue } from '@/lib/utils'
 
 const DEFAULT_PRICE_SORT: CatalogSortBy = 'price-tcgplayer-market-desc'
 
@@ -120,7 +121,10 @@ export function CatalogView({
   onToggleSelectionMode,
   onScan,
 }: CatalogViewProps) {
-  const eurSeparator = collectionValueUsd > 0 ? ' / ' : ' • Est. value: '
+  const estimatedValueLabel = useMemo(
+    () => formatEstimatedValue(collectionValueUsd, collectionValueEur),
+    [collectionValueUsd, collectionValueEur],
+  )
   return (
     <div className={`flex-1 flex flex-col min-h-0 ${isSelectionMode && selectedCardIds.size > 0 ? 'pt-16' : ''}`}>
       {/* ── Sticky catalog header ──────────────────────────────────────── */}
@@ -143,11 +147,7 @@ export function CatalogView({
               )}
               <p className="text-muted-foreground">
                 {cards.length === 0 ? 'No cards yet' : (
-                  <>
-                    {cards.length} unique {cards.length === 1 ? 'card' : 'cards'} • {totalCards} total
-                    {collectionValueUsd > 0 && <> • Est. value: ${collectionValueUsd.toFixed(2)}</>}
-                    {collectionValueEur > 0 && <>{eurSeparator}{collectionValueEur.toFixed(2)}€</>}
-                  </>
+                  <>{cards.length} unique {cards.length === 1 ? 'card' : 'cards'} • {totalCards} total</>
                 )}
               </p>
               {cards.length > 0 && (
@@ -155,6 +155,11 @@ export function CatalogView({
                   <Badge variant="secondary" className="text-xs">
                     Dex indexed: {cardsWithDexCount}/{cards.length}
                   </Badge>
+                  {estimatedValueLabel && (
+                    <Badge variant="secondary" className="text-xs">
+                      {estimatedValueLabel}
+                    </Badge>
+                  )}
                 </div>
               )}
             </div>
