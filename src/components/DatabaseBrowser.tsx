@@ -1,9 +1,11 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
+import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
+import { Separator } from '@/components/ui/separator'
 import { Card, CardContent } from '@/components/ui/card'
 import {
   DropdownMenu,
@@ -12,13 +14,15 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Package, SquaresFour, Warning, ArrowLeft, Plus, FolderPlus, DotsThreeVertical, Eye, CaretDown, CaretRight } from '@phosphor-icons/react'
+import { Package, SquaresFour, Warning, ArrowLeft, Plus, FolderPlus, DotsThreeVertical, Eye, CaretDown, CaretRight, X, TrendUp, CurrencyDollar, ArrowSquareOut } from '@phosphor-icons/react'
 import { CatalogSearchBar } from '@/components/shared/CatalogSearchBar'
 import { CatalogFilterControls } from '@/components/shared/CatalogFilterControls'
 import { CardDetailPresentation } from '@/components/shared/CardDetailPresentation'
 import { useTCGDatabase } from '@/lib/tcg-database'
+import { buildPricesFromTcgCard } from '@/lib/card-analysis'
 import { logger } from '@/lib/logger'
 import { getFriendlySetName } from '@/lib/set-display'
+import { rarityColors, typeColors } from '@/lib/card-colors'
 import type { TCGCard, TCGSet } from '@/lib/tcg-database'
 
 interface DatabaseBrowserProps {
@@ -69,6 +73,7 @@ export function DatabaseBrowser({ open, onOpenChange, onAddCard, onAddToCollecti
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedTab, setSelectedTab] = useState<'cards' | 'sets'>('cards')
   const [selectedCard, setSelectedCard] = useState<TCGCard | null>(null)
+  const [zoomOpen, setZoomOpen] = useState(false)
   const [isLoadingCards, setIsLoadingCards] = useState(false)
   const [cols, setCols] = useState(3)
   const [selectedSupertypes, setSelectedSupertypes] = useState<QuickFilterSupertype[]>([])
@@ -441,10 +446,10 @@ export function DatabaseBrowser({ open, onOpenChange, onAddCard, onAddToCollecti
 
   return (
     <Sheet open={open} onOpenChange={handleOpenChange}>
-      <SheetContent side="right" className="w-full sm:max-w-2xl p-0 flex h-full min-h-0 flex-col">
+      <SheetContent side="right" className="w-full sm:max-w-2xl p-0 flex h-full min-h-0 flex-col" onOpenAutoFocus={(e) => e.preventDefault()}>
         {selectedCard ? (
           <>
-            <SheetHeader className="px-6 pt-6 pb-4 border-b shrink-0">
+            <SheetHeader className="px-4 pt-4 pb-2 shrink-0">
               <div className="flex items-center gap-3">
                 <Button
                   variant="ghost"
@@ -456,83 +461,86 @@ export function DatabaseBrowser({ open, onOpenChange, onAddCard, onAddToCollecti
                   <ArrowLeft className="w-5 h-5" />
                 </Button>
                 <div className="min-w-0 flex-1">
-                  <SheetTitle className="font-display">{selectedCard.name}</SheetTitle>
-                  <SheetDescription>{getSetDisplayName(selectedCard.set || { name: 'Unknown Set', series: '' })}</SheetDescription>
+                  <SheetTitle className="font-display text-2xl">{selectedCard.name}</SheetTitle>
                 </div>
-                {onAddCard && (
-                  <Button
-                    size="sm"
-                    className="shrink-0 gap-1.5"
-                    onClick={() => onAddCard(selectedCard)}
-                  >
-                    <Plus className="w-4 h-4" weight="bold" />
-                    Add to Catalog
-                  </Button>
-                )}
               </div>
             </SheetHeader>
 
             <div className="relative flex-1 min-h-0">
               <div className="absolute inset-0 overflow-y-auto overscroll-contain" style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}>
                 <CardDetailPresentation
-                  image={(
-                    <div className="bg-muted rounded-lg overflow-hidden">
-                      {selectedCard.images?.large ? (
-                        <img
-                          src={selectedCard.images.large}
-                          alt={selectedCard.name}
-                          className="w-full"
-                        />
-                      ) : (
-                        <div className="w-full aspect-[2/3] flex items-center justify-center text-muted-foreground">
-                          No Image Available
-                        </div>
-                      )}
+                  contentClassName="px-4 pb-24 space-y-6"
+                  image={
+                    <div className="flex justify-center pt-2">
+                      <button
+                        onClick={() => setZoomOpen(true)}
+                        className="w-64 aspect-[2.5/3.5] rounded-lg overflow-hidden shadow-2xl cursor-pointer hover:shadow-3xl transition-shadow active:scale-[0.98] relative bg-gradient-to-br from-blue-400 via-purple-400 to-pink-400"
+                      >
+                        {selectedCard.images?.large || selectedCard.images?.small ? (
+                          <img
+                            src={selectedCard.images.large || selectedCard.images.small}
+                            alt={selectedCard.name}
+                            className="w-full h-full object-cover absolute inset-0"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center p-6 absolute inset-0">
+                            <div className="text-center">
+                              <div className="text-white text-2xl font-bold font-display mb-2 drop-shadow-lg">{selectedCard.name}</div>
+                              <div className="text-white/80 text-sm drop-shadow">No Image Available</div>
+                            </div>
+                          </div>
+                        )}
+                      </button>
                     </div>
-                  )}
+                  }
                 >
                   <div>
-                    <h4 className="text-sm font-semibold text-muted-foreground mb-2">Details</h4>
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Type</span>
-                        <span className="font-medium">{selectedCard.supertype}</span>
+                    <h3 className="text-sm font-medium text-muted-foreground mb-2">Details</h3>
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm">Set</span>
+                        <span className="font-medium">{getSetDisplayName(selectedCard.set || { name: 'Unknown Set', series: '' })}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm">Card Number</span>
+                        <span className="font-medium">#{selectedCard.number}{selectedCard.set?.total ? `/${selectedCard.set.total}` : ''}</span>
                       </div>
                       {typeof selectedCard.nationalPokedexNumbers?.[0] === 'number' && (
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">National Dex</span>
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm">National Dex</span>
                           <span className="font-medium">#{selectedCard.nationalPokedexNumbers[0]}</span>
                         </div>
                       )}
+                      {selectedCard.rarity && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm">Rarity</span>
+                          <Badge className={`${rarityColors[selectedCard.rarity] || 'bg-gray-500'} text-white`}>{selectedCard.rarity}</Badge>
+                        </div>
+                      )}
                       {selectedCard.types && selectedCard.types.length > 0 && (
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Types</span>
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm">Type</span>
                           <div className="flex gap-1">
                             {selectedCard.types.map(type => (
-                              <Badge key={type} variant="secondary">{type}</Badge>
+                              <Badge key={type} className={`${typeColors[type] || 'bg-gray-400'} text-white border-0`}>{type}</Badge>
                             ))}
                           </div>
                         </div>
                       )}
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm">Supertype</span>
+                        <span className="font-medium">{selectedCard.supertype}</span>
+                      </div>
                       {selectedCard.hp && (
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">HP</span>
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm">HP</span>
                           <span className="font-medium">{selectedCard.hp}</span>
                         </div>
                       )}
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Number</span>
-                        <span className="font-medium">{selectedCard.number}/{selectedCard.set?.total || '?'}</span>
-                      </div>
-                      {selectedCard.rarity && (
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Rarity</span>
-                          <span className="font-medium">{selectedCard.rarity}</span>
-                        </div>
-                      )}
                       {selectedCard.artist && (
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Artist</span>
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm">Artist</span>
                           <span className="font-medium">{selectedCard.artist}</span>
                         </div>
                       )}
@@ -540,40 +548,226 @@ export function DatabaseBrowser({ open, onOpenChange, onAddCard, onAddToCollecti
                   </div>
 
                   {selectedCard.attacks && selectedCard.attacks.length > 0 && (
-                    <div>
-                      <h4 className="text-sm font-semibold text-muted-foreground mb-2">Attacks</h4>
-                      <div className="space-y-3">
-                        {selectedCard.attacks.map((attack, idx) => (
-                          <div key={idx} className="p-3 bg-muted rounded-lg">
-                            <div className="flex justify-between items-start mb-1">
-                              <span className="font-semibold">{attack.name}</span>
-                              <span className="font-bold">{attack.damage}</span>
+                    <>
+                      <Separator />
+                      <div>
+                        <h3 className="text-sm font-medium text-muted-foreground mb-2">Attacks</h3>
+                        <div className="space-y-2">
+                          {selectedCard.attacks.map((attack, idx) => (
+                            <div key={idx} className="p-3 bg-muted/50 rounded-lg">
+                              <div className="flex justify-between items-start mb-1">
+                                <span className="font-semibold text-sm">{attack.name}</span>
+                                {attack.damage && <span className="font-bold text-sm">{attack.damage}</span>}
+                              </div>
+                              {attack.text && <p className="text-xs text-muted-foreground">{attack.text}</p>}
                             </div>
-                            {attack.text && (
-                              <p className="text-xs text-muted-foreground">{attack.text}</p>
-                            )}
-                          </div>
-                        ))}
+                          ))}
+                        </div>
                       </div>
-                    </div>
+                    </>
                   )}
 
                   {selectedCard.abilities && selectedCard.abilities.length > 0 && (
-                    <div>
-                      <h4 className="text-sm font-semibold text-muted-foreground mb-2">Abilities</h4>
-                      <div className="space-y-3">
-                        {selectedCard.abilities.map((ability, idx) => (
-                          <div key={idx} className="p-3 bg-muted rounded-lg">
-                            <div className="font-semibold mb-1">{ability.name}</div>
-                            <p className="text-xs text-muted-foreground">{ability.text}</p>
-                          </div>
-                        ))}
+                    <>
+                      <Separator />
+                      <div>
+                        <h3 className="text-sm font-medium text-muted-foreground mb-2">Abilities</h3>
+                        <div className="space-y-2">
+                          {selectedCard.abilities.map((ability, idx) => (
+                            <div key={idx} className="p-3 bg-muted/50 rounded-lg">
+                              <div className="font-semibold text-sm mb-1">{ability.name}</div>
+                              <p className="text-xs text-muted-foreground">{ability.text}</p>
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                    </div>
+                    </>
                   )}
+
+                  {(() => {
+                    const prices = buildPricesFromTcgCard(selectedCard)
+                    if (!prices?.tcgplayer && !prices?.cardmarket) return null
+                    return (
+                      <>
+                        <Separator />
+                        <div>
+                          <h3 className="text-sm font-medium text-muted-foreground mb-3 flex items-center gap-2">
+                            <TrendUp className="w-4 h-4" />
+                            Market Prices
+                          </h3>
+                          <div className="space-y-4">
+                            {prices.tcgplayer && (
+                              <div className="p-3 bg-muted/50 rounded-lg space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <span className="font-semibold text-sm flex items-center gap-1.5">
+                                    <CurrencyDollar className="w-4 h-4" weight="bold" />
+                                    TCGPlayer
+                                  </span>
+                                  {prices.tcgplayer.url && (
+                                    <a
+                                      href={prices.tcgplayer.url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-primary hover:underline text-xs flex items-center gap-1"
+                                    >
+                                      View <ArrowSquareOut className="w-3 h-3" />
+                                    </a>
+                                  )}
+                                </div>
+                                <div className="grid grid-cols-2 gap-2 text-xs">
+                                  {prices.tcgplayer.market && (
+                                    <div className="flex justify-between">
+                                      <span className="text-muted-foreground">Market:</span>
+                                      <span className="font-semibold">${prices.tcgplayer.market.toFixed(2)}</span>
+                                    </div>
+                                  )}
+                                  {prices.tcgplayer.low && (
+                                    <div className="flex justify-between">
+                                      <span className="text-muted-foreground">Low:</span>
+                                      <span className="font-medium">${prices.tcgplayer.low.toFixed(2)}</span>
+                                    </div>
+                                  )}
+                                  {prices.tcgplayer.mid && (
+                                    <div className="flex justify-between">
+                                      <span className="text-muted-foreground">Mid:</span>
+                                      <span className="font-medium">${prices.tcgplayer.mid.toFixed(2)}</span>
+                                    </div>
+                                  )}
+                                  {prices.tcgplayer.high && (
+                                    <div className="flex justify-between">
+                                      <span className="text-muted-foreground">High:</span>
+                                      <span className="font-medium">${prices.tcgplayer.high.toFixed(2)}</span>
+                                    </div>
+                                  )}
+                                  {prices.tcgplayer.holofoil && (
+                                    <div className="flex justify-between">
+                                      <span className="text-muted-foreground">Holofoil:</span>
+                                      <span className="font-medium">${prices.tcgplayer.holofoil.toFixed(2)}</span>
+                                    </div>
+                                  )}
+                                  {prices.tcgplayer.reverseHolofoil && (
+                                    <div className="flex justify-between">
+                                      <span className="text-muted-foreground">Reverse:</span>
+                                      <span className="font-medium">${prices.tcgplayer.reverseHolofoil.toFixed(2)}</span>
+                                    </div>
+                                  )}
+                                </div>
+                                {prices.tcgplayer.updatedAt && (
+                                  <div className="text-xs text-muted-foreground pt-1 border-t border-border/50">
+                                    Updated: {new Date(prices.tcgplayer.updatedAt).toLocaleDateString()}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {prices.cardmarket && (
+                              <div className="p-3 bg-muted/50 rounded-lg space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <span className="font-semibold text-sm flex items-center gap-1.5">
+                                    <CurrencyDollar className="w-4 h-4" weight="bold" />
+                                    Cardmarket (€)
+                                  </span>
+                                  {prices.cardmarket.url && (
+                                    <a
+                                      href={prices.cardmarket.url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-primary hover:underline text-xs flex items-center gap-1"
+                                    >
+                                      View <ArrowSquareOut className="w-3 h-3" />
+                                    </a>
+                                  )}
+                                </div>
+                                <div className="grid grid-cols-2 gap-2 text-xs">
+                                  {prices.cardmarket.trendPrice && (
+                                    <div className="flex justify-between">
+                                      <span className="text-muted-foreground">Trend:</span>
+                                      <span className="font-semibold">€{prices.cardmarket.trendPrice.toFixed(2)}</span>
+                                    </div>
+                                  )}
+                                  {prices.cardmarket.averageSellPrice && (
+                                    <div className="flex justify-between">
+                                      <span className="text-muted-foreground">Avg Sell:</span>
+                                      <span className="font-medium">€{prices.cardmarket.averageSellPrice.toFixed(2)}</span>
+                                    </div>
+                                  )}
+                                  {prices.cardmarket.lowPrice && (
+                                    <div className="flex justify-between">
+                                      <span className="text-muted-foreground">Low:</span>
+                                      <span className="font-medium">€{prices.cardmarket.lowPrice.toFixed(2)}</span>
+                                    </div>
+                                  )}
+                                  {prices.cardmarket.avg30 && (
+                                    <div className="flex justify-between">
+                                      <span className="text-muted-foreground">30d Avg:</span>
+                                      <span className="font-medium">€{prices.cardmarket.avg30.toFixed(2)}</span>
+                                    </div>
+                                  )}
+                                </div>
+                                {prices.cardmarket.updatedAt && (
+                                  <div className="text-xs text-muted-foreground pt-1 border-t border-border/50">
+                                    Updated: {new Date(prices.cardmarket.updatedAt).toLocaleDateString()}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </>
+                    )
+                  })()}
                 </CardDetailPresentation>
+              </div>
             </div>
+
+            {/* Sticky bottom action bar */}
+            <div className="shrink-0 px-4 py-3 border-t bg-background flex gap-2">
+              {onAddCard && (
+                <Button
+                  className="flex-1 bg-accent hover:bg-accent/90 text-accent-foreground font-display font-semibold"
+                  onClick={() => onAddCard(selectedCard)}
+                >
+                  <Plus className="w-4 h-4 mr-1.5" weight="bold" />
+                  Add to Catalog
+                </Button>
+              )}
+              {onAddToCollection && (
+                <Button
+                  variant="outline"
+                  className="flex-1 font-display font-semibold"
+                  onClick={() => onAddToCollection(selectedCard)}
+                >
+                  <FolderPlus className="w-4 h-4 mr-1.5" />
+                  Add to Collection
+                </Button>
+              )}
             </div>
+
+            <Dialog open={zoomOpen} onOpenChange={setZoomOpen}>
+              <DialogContent className="max-w-full w-full h-full p-0 border-0 bg-black/95 flex items-center justify-center">
+                <button
+                  onClick={() => setZoomOpen(false)}
+                  className="absolute top-4 right-4 z-50 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
+                >
+                  <X className="w-6 h-6" weight="bold" />
+                </button>
+                <div className="w-full max-w-2xl px-4">
+                  <div className="w-full aspect-[2.5/3.5] rounded-lg shadow-2xl relative bg-gradient-to-br from-blue-400 via-purple-400 to-pink-400 overflow-hidden">
+                    {(selectedCard.images?.large || selectedCard.images?.small) ? (
+                      <img
+                        src={selectedCard.images.large || selectedCard.images.small}
+                        alt={selectedCard.name}
+                        className="w-full h-full object-contain absolute inset-0"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <span className="text-white text-xl font-bold">{selectedCard.name}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
           </>
         ) : (
           <>

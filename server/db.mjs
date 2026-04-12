@@ -11,7 +11,7 @@
  */
 
 import { DatabaseSync } from 'node:sqlite'
-import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { logger } from './logger.mjs'
@@ -263,10 +263,13 @@ export function getTcgStatus() {
   const setCount  = db.prepare('SELECT COUNT(*) AS c FROM tcg_sets').get().c
   if (!cardCount) return null
   const lastUpdatedRow = db.prepare("SELECT value FROM tcg_metadata WHERE key = 'lastUpdated'").get()
+  let sizeBytes = null
+  try { sizeBytes = statSync(DB_PATH).size } catch { /* ignore */ }
   return {
     cardCount,
     setCount,
     lastUpdated: lastUpdatedRow ? Number(lastUpdatedRow.value) : null,
+    sizeBytes,
   }
 }
 
@@ -501,6 +504,15 @@ export function getCardById(id) {
   return row ? JSON.parse(row.data) : null
 }
 
+export function updateTcgCardPrices(id, tcgplayer, cardmarket) {
+  const row = db.prepare('SELECT data FROM tcg_cards WHERE id = ?').get(id)
+  if (!row) return
+  const card = JSON.parse(row.data)
+  if (tcgplayer) card.tcgplayer = tcgplayer
+  if (cardmarket) card.cardmarket = cardmarket
+  db.prepare('UPDATE tcg_cards SET data = ? WHERE id = ?').run(JSON.stringify(card), id)
+}
+
 export function getAllSets() {
   return db.prepare('SELECT data FROM tcg_sets ORDER BY name').all().map(r => JSON.parse(r.data))
 }
@@ -564,6 +576,38 @@ export function getCollection() {
 
 export function addToCollection(card) {
   const pokedexNumber = normalizePokedexNumber(card?.pokedexNumber)
+
+  // Deduplicate: prefer tcgCardId match, fall back to name+set+cardNumber
+  let existing = null
+  if (card.tcgCardId) {
+    existing = db.prepare(
+      "SELECT id, data FROM collection_cards WHERE json_extract(data, '$.tcgCardId') = ?"
+    ).get(card.tcgCardId)
+  }
+  if (!existing && card.name && card.set && card.cardNumber) {
+    existing = db.prepare(
+      "SELECT id, data FROM collection_cards WHERE json_extract(data,'$.name') = ? AND json_extract(data,'$.set') = ? AND json_extract(data,'$.cardNumber') = ?"
+    ).get(card.name, card.set, card.cardNumber)
+  }
+
+  if (existing) {
+    // Increment quantity on the existing row instead of inserting a duplicate
+    const prev = JSON.parse(existing.data)
+    const merged = {
+      ...prev,
+      quantity: (prev.quantity || 1) + (card.quantity || 1),
+      imageUrl:      card.imageUrl && !card.imageUrl.includes('placehold.co') ? card.imageUrl : prev.imageUrl,
+      largeImageUrl: card.largeImageUrl || prev.largeImageUrl,
+      prices:        card.prices || prev.prices,
+      tcgCardId:     card.tcgCardId || prev.tcgCardId,
+      supertype:     prev.supertype || card.supertype,
+      pokedexNumber: pokedexNumber ?? prev.pokedexNumber,
+    }
+    db.prepare('UPDATE collection_cards SET name = ?, pokedex_number = ?, data = ? WHERE id = ?')
+      .run(merged.name ?? '', normalizePokedexNumber(merged.pokedexNumber), JSON.stringify({ ...merged, collectionIds: undefined }), existing.id)
+    return { ...merged, id: existing.id }
+  }
+
   db.prepare('INSERT OR REPLACE INTO collection_cards (id, name, date_added, pokedex_number, data) VALUES (?, ?, ?, ?, ?)')
     .run(
       card.id,

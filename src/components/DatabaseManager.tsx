@@ -50,7 +50,7 @@ export function DatabaseManager({ open, onOpenChange, onSuccess }: DatabaseManag
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="flex flex-col max-h-[90vh] sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="font-display text-2xl flex items-center gap-2">
             <Database className="w-6 h-6" weight="duotone" />
@@ -61,7 +61,7 @@ export function DatabaseManager({ open, onOpenChange, onSuccess }: DatabaseManag
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6 py-4">
+        <div className="flex-1 min-h-0 overflow-y-auto space-y-6 py-4">
           {isLoaded ? (
             <div className="space-y-4">
               <div className="flex items-center gap-3 p-4 bg-green-50 rounded-lg border border-green-200">
@@ -90,6 +90,16 @@ export function DatabaseManager({ open, onOpenChange, onSuccess }: DatabaseManag
                     <span className="text-muted-foreground">Total Sets</span>
                     <span className="font-medium">{metadata.setCount}</span>
                   </div>
+                  {metadata.sizeBytes != null && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Database Size</span>
+                      <span className="font-medium">
+                        {metadata.sizeBytes >= 1024 * 1024
+                          ? `${(metadata.sizeBytes / (1024 * 1024)).toFixed(1)} MB`
+                          : `${(metadata.sizeBytes / 1024).toFixed(0)} KB`}
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

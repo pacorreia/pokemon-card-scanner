@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Camera, Upload, Sparkle, PencilSimple, ArrowLeft, Stack, CheckCircle, ListBullets } from '@phosphor-icons/react'
+import { Camera, Upload, Sparkle, PencilSimple, ArrowLeft, Stack, CheckCircle, ListBullets, GearSix } from '@phosphor-icons/react'
 import { Badge } from '@/components/ui/badge'
 import { CardReviewPanel } from '@/components/CardReviewPanel'
 import { queueApi } from '@/lib/queue-api'
@@ -506,30 +506,26 @@ export function ScanDialog({
       const dataUrl = await resizeDataUrlForInference(rawDataUrl, SINGLE_SCAN_MAX_IMAGE_SIDE, SINGLE_SCAN_UPLOAD_QUALITY)
       setBurstProgress(100)
 
-      // Assess image quality and warn the user if needed — still proceed.
       const qualityReport = await assessImageQuality(dataUrl)
       if (qualityReport.suggestion) {
         toast.warning(qualityReport.suggestion, { duration: 5000 })
       }
 
-      // Stop the camera only after frame acquisition is complete.
       stopCamera()
       setVideoReady(false)
 
-      setMode('analyzing')
-      const bestCard = await analyzeBestSingleCard(dataUrl, findCard, searchCards, qualityReport)
-      openReview([bestCard])
+      const id = crypto.randomUUID()
+      await queueApi.add(id, dataUrl)
+      const item: ScanQueueItem = { id, dataUrl: '', imageUrl: `/api/scan-queue/${id}/image`, status: 'pending' }
+      onAddToQueue(item)
+      setSequentialHasCamera(false)
+      setMode('sequential')
+      toast.success('Card added to queue')
     } catch (error) {
       stopCamera()
       setVideoReady(false)
       const message = error instanceof Error ? error.message : 'Unknown error'
-      toast.error('Could not identify the card. Try manual entry instead.', {
-        description: message,
-        action: {
-          label: 'Enter manually',
-          onClick: () => setMode('manual'),
-        },
-      })
+      toast.error('Could not capture the card. Please try again.', { description: message })
       setMode('idle')
     } finally {
       setIsBurstCapturing(false)
@@ -751,7 +747,7 @@ export function ScanDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className={mode === 'bulk-review' ? 'max-h-[92vh] max-w-[96vw] overflow-y-auto sm:max-w-6xl' : (mode === 'camera' || mode === 'bulk' || mode === 'sequential') ? 'max-h-[92vh] max-w-[96vw] overflow-y-auto sm:max-w-3xl' : 'sm:max-w-md'}>
+      <DialogContent className={mode === 'bulk-review' ? 'max-h-[92vh] max-w-[96vw] overflow-y-auto sm:max-w-6xl' : mode === 'camera' ? 'h-[96svh] max-w-[96vw] overflow-hidden p-0 gap-0 flex flex-col [&>button:last-child]:hidden sm:max-w-2xl' : (mode === 'bulk' || mode === 'sequential') ? 'max-h-[92vh] max-w-[96vw] overflow-y-auto sm:max-w-3xl' : 'flex flex-col max-h-[90vh] overflow-y-auto sm:max-w-md'}>
         <DialogTitle className="sr-only">Add Pokemon Card</DialogTitle>
 
         {mode === 'idle' && (
@@ -939,55 +935,84 @@ export function ScanDialog({
         )}
 
         {mode === 'camera' && (
-          <div className="flex flex-col gap-4 py-4">
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" size="icon" onClick={handleBack}>
+          <div className="relative flex-1 min-h-0 w-full bg-black">
+            {/* Full-height video */}
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className="block h-full w-full object-cover object-center"
+            />
+            <canvas ref={canvasRef} className="hidden" />
+
+            {/* Top bar — back + settings */}
+            <div className="absolute top-0 left-0 right-0 flex items-center justify-between px-3 pt-3 pb-6 bg-gradient-to-b from-black/60 to-transparent">
+              <button
+                onClick={handleBack}
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur-sm"
+                aria-label="Back"
+              >
                 <ArrowLeft className="w-5 h-5" />
-              </Button>
-              <h2 className="text-xl font-bold font-display">Point at a Card</h2>
+              </button>
+              <button
+                onClick={() => setCameraSettingsOpen(v => !v)}
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur-sm"
+                aria-label="Camera Settings"
+              >
+                <GearSix className="w-5 h-5" />
+              </button>
             </div>
-            {cameraSettingsPanel}
-            <div className="relative h-[52vh] min-h-[18rem] w-full overflow-hidden rounded-lg bg-black sm:h-[60vh]">
-              <video
-                ref={videoRef}
-                autoPlay
-                playsInline
-                muted
-                className="absolute inset-0 block h-full w-full object-cover object-center"
-              />
-              <div className="absolute bottom-4 left-0 right-0 text-center">
-                <p className="text-white text-sm font-medium bg-black/60 backdrop-blur-sm px-4 py-2 rounded-full inline-block">
+
+            {/* Collapsed settings panel overlay */}
+            {cameraSettingsOpen && (
+              <div className="absolute top-14 left-3 right-3 z-10">
+                {cameraSettingsPanel}
+              </div>
+            )}
+
+            {/* Hint */}
+            {!isBurstCapturing && (
+              <div className="absolute bottom-28 left-0 right-0 text-center pointer-events-none">
+                <p className="text-white text-sm font-medium bg-black/50 backdrop-blur-sm px-4 py-1.5 rounded-full inline-block">
                   Fill the frame with the card and avoid glare
                 </p>
               </div>
-              {isBurstCapturing && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/75 backdrop-blur-sm">
-                  <motion.div
-                    animate={{ scale: [1, 1.1, 1] }}
-                    transition={{ duration: 0.5, repeat: Infinity }}
-                  >
-                    <Camera className="w-10 h-10 text-accent" weight="fill" />
-                  </motion.div>
-                  <p className="text-white text-sm font-semibold">Capturing best frame...</p>
-                  <p className="text-white/70 text-xs">{burstProgress}%</p>
-                </div>
-              )}
-              {!videoReady && !isBurstCapturing && (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/70">
-                  <p className="text-white text-sm">Camera warming up...</p>
-                </div>
-              )}
+            )}
+
+            {/* Burst capturing overlay */}
+            {isBurstCapturing && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/75 backdrop-blur-sm">
+                <motion.div
+                  animate={{ scale: [1, 1.1, 1] }}
+                  transition={{ duration: 0.5, repeat: Infinity }}
+                >
+                  <Camera className="w-12 h-12 text-accent" weight="fill" />
+                </motion.div>
+                <p className="text-white text-sm font-semibold">Capturing best frame...</p>
+                <p className="text-white/70 text-xs">{burstProgress}%</p>
+              </div>
+            )}
+
+            {/* Camera warming up overlay */}
+            {!videoReady && !isBurstCapturing && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black/70">
+                <p className="text-white text-sm">Camera warming up...</p>
+              </div>
+            )}
+
+            {/* Bottom shutter bar */}
+            <div className="absolute bottom-0 left-0 right-0 flex items-center justify-center pb-6 pt-4 bg-gradient-to-t from-black/70 to-transparent">
+              <button
+                onClick={capturePhoto}
+                disabled={!videoReady || isBurstCapturing}
+                className="flex h-18 w-18 items-center justify-center rounded-full border-4 border-white bg-white/20 backdrop-blur-sm disabled:opacity-40 active:scale-95 transition-transform"
+                aria-label="Capture"
+                style={{ height: '4.5rem', width: '4.5rem' }}
+              >
+                <div className="h-14 w-14 rounded-full bg-white" style={{ height: '3.5rem', width: '3.5rem' }} />
+              </button>
             </div>
-            <canvas ref={canvasRef} className="hidden" />
-            <Button
-              size="lg"
-              className="w-full bg-accent hover:bg-accent/90 text-accent-foreground font-display font-semibold"
-              onClick={capturePhoto}
-              disabled={!videoReady || isBurstCapturing}
-            >
-              <Camera className="w-5 h-5 mr-2" />
-              {isBurstCapturing ? 'Burst capturing...' : videoReady ? 'Capture Card' : 'Waiting for camera...'}
-            </Button>
           </div>
         )}
 

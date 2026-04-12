@@ -71,6 +71,7 @@ export interface DatabaseMetadata {
   cardCount: number
   setCount: number
   lastUpdated: number | null
+  sizeBytes: number | null
 }
 
 // ── Module-level exports used directly by ScanDialog ────────────────────────

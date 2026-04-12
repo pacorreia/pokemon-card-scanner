@@ -70,7 +70,7 @@ export function AddToCollectionDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="flex flex-col max-h-[90vh] max-w-md">
         <DialogHeader>
           <DialogTitle className="font-display">Add to Collection</DialogTitle>
           <p className="text-sm text-muted-foreground line-clamp-1">{cardName}</p>

@@ -965,7 +965,23 @@ const requestHandler = async (req, res) => {
     // ── TCG card by ID ──────────────────────────────────────────────────────
     const cardByIdMatch = pathname.match(/^\/api\/cards\/(.+)$/)
     if (cardByIdMatch && method === 'GET') {
-      writeJson(res, 200, db.getCardById(decodeURIComponent(cardByIdMatch[1])), req)
+      const tcgId = decodeURIComponent(cardByIdMatch[1])
+      let card = db.getCardById(tcgId)
+      if (card && !card.tcgplayer && !card.cardmarket) {
+        try {
+          const liveRes = await fetch(`https://api.pokemontcg.io/v2/cards/${encodeURIComponent(tcgId)}`)
+          if (liveRes.ok) {
+            const { data } = await liveRes.json()
+            if (data?.tcgplayer || data?.cardmarket) {
+              db.updateTcgCardPrices(tcgId, data.tcgplayer, data.cardmarket)
+              card = { ...card, tcgplayer: data.tcgplayer, cardmarket: data.cardmarket }
+            }
+          }
+        } catch {
+          // Live price fetch failed — return card without prices
+        }
+      }
+      writeJson(res, 200, card, req)
       return
     }
 
