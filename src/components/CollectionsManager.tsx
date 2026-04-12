@@ -64,17 +64,19 @@ export function CollectionsManager({
 
   const cardMap = useMemo(() => new Map(cards.map(c => [c.id, c])), [cards])
 
-  const getCollectionValue = (collection: CardCollection) => {
-    let usd = 0
-    let eur = 0
-    for (const cardId of collection.cardIds) {
-      const card = cardMap.get(cardId)
-      if (!card) continue
-      usd += (card.prices?.tcgplayer?.market ?? 0) * card.quantity
-      eur += (card.prices?.cardmarket?.trendPrice ?? 0) * card.quantity
-    }
-    return { usd, eur }
-  }
+  const collectionValues = useMemo(() => {
+    return new Map(collections.map(collection => {
+      let usd = 0
+      let eur = 0
+      for (const cardId of collection.cardIds) {
+        const card = cardMap.get(cardId)
+        if (!card) continue
+        usd += (card.prices?.tcgplayer?.market ?? 0) * card.quantity
+        eur += (card.prices?.cardmarket?.trendPrice ?? 0) * card.quantity
+      }
+      return [collection.id, formatEstimatedValue(usd, eur)] as const
+    }))
+  }, [collections, cardMap])
 
   const handleCreate = () => {
     if (!formData.name.trim()) {
@@ -195,8 +197,7 @@ export function CollectionsManager({
                     ) : (
                       collections.map((collection) => {
                         const IconComponent = getIconComponent(collection.icon)
-                        const { usd, eur } = getCollectionValue(collection)
-                        const estimatedValueLabel = formatEstimatedValue(usd, eur)
+                        const estimatedValueLabel = collectionValues.get(collection.id) ?? null
                         return (
                           <motion.div
                             key={collection.id}

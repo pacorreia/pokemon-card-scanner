@@ -1,4 +1,4 @@
-import { type RefObject } from 'react'
+import { type RefObject, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
@@ -102,7 +102,10 @@ export function CatalogView({
   onToggleSelectionMode,
   onScan,
 }: CatalogViewProps) {
-  const estimatedValueLabel = formatEstimatedValue(collectionValueUsd, collectionValueEur)
+  const estimatedValueLabel = useMemo(
+    () => formatEstimatedValue(collectionValueUsd, collectionValueEur),
+    [collectionValueUsd, collectionValueEur],
+  )
   return (
     <div className={`flex-1 flex flex-col min-h-0 ${isSelectionMode && selectedCardIds.size > 0 ? 'pt-16' : ''}`}>
       {/* ── Sticky catalog header ──────────────────────────────────────── */}
