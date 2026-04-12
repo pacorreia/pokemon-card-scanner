@@ -18,7 +18,7 @@ function getNationalDexSortValue(card: Pick<PokemonCard, 'pokedexNumber'>): numb
 
 type PriceSortEntry = { getValue: (card: PokemonCard) => number; dir: 'asc' | 'desc' }
 
-const PRICE_SORT_MAP: Record<string, PriceSortEntry> = {
+const PRICE_SORT_MAP: Partial<Record<CatalogSortBy, PriceSortEntry>> = {
   'price-tcgplayer-market-asc':  { getValue: c => c.prices?.tcgplayer?.market          ?? -1, dir: 'asc'  },
   'price-tcgplayer-market-desc': { getValue: c => c.prices?.tcgplayer?.market          ?? -1, dir: 'desc' },
   'price-tcgplayer-low-asc':     { getValue: c => c.prices?.tcgplayer?.low             ?? -1, dir: 'asc'  },
@@ -106,10 +106,22 @@ export function useCatalogFilters({ cards, viewMode, selectedCollection }: UseCa
       return [...result].sort((a, b) => {
         const aVal = priceEntry.getValue(a)
         const bVal = priceEntry.getValue(b)
-        if (aVal < 0 && bVal < 0) return a.name.localeCompare(b.name)
+        if (aVal < 0 && bVal < 0) {
+          const nameDiff = a.name.localeCompare(b.name)
+          if (nameDiff !== 0) return nameDiff
+          const setDiff = a.set.localeCompare(b.set)
+          if (setDiff !== 0) return setDiff
+          return b.dateAdded - a.dateAdded
+        }
         if (aVal < 0) return 1
         if (bVal < 0) return -1
-        return priceEntry.dir === 'asc' ? aVal - bVal : bVal - aVal
+        const priceDiff = priceEntry.dir === 'asc' ? aVal - bVal : bVal - aVal
+        if (priceDiff !== 0) return priceDiff
+        const nameDiff = a.name.localeCompare(b.name)
+        if (nameDiff !== 0) return nameDiff
+        const setDiff = a.set.localeCompare(b.set)
+        if (setDiff !== 0) return setDiff
+        return b.dateAdded - a.dateAdded
       })
     }
     return [...result].sort((a, b) => {
