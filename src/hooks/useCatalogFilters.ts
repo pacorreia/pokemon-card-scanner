@@ -16,6 +16,25 @@ function getNationalDexSortValue(card: Pick<PokemonCard, 'pokedexNumber'>): numb
   return card.pokedexNumber
 }
 
+type PriceSortEntry = { getValue: (card: PokemonCard) => number; dir: 'asc' | 'desc' }
+
+const PRICE_SORT_MAP: Record<string, PriceSortEntry> = {
+  'price-tcgplayer-market-asc':  { getValue: c => c.prices?.tcgplayer?.market          ?? -1, dir: 'asc'  },
+  'price-tcgplayer-market-desc': { getValue: c => c.prices?.tcgplayer?.market          ?? -1, dir: 'desc' },
+  'price-tcgplayer-low-asc':     { getValue: c => c.prices?.tcgplayer?.low             ?? -1, dir: 'asc'  },
+  'price-tcgplayer-low-desc':    { getValue: c => c.prices?.tcgplayer?.low             ?? -1, dir: 'desc' },
+  'price-tcgplayer-mid-asc':     { getValue: c => c.prices?.tcgplayer?.mid             ?? -1, dir: 'asc'  },
+  'price-tcgplayer-mid-desc':    { getValue: c => c.prices?.tcgplayer?.mid             ?? -1, dir: 'desc' },
+  'price-tcgplayer-high-asc':    { getValue: c => c.prices?.tcgplayer?.high            ?? -1, dir: 'asc'  },
+  'price-tcgplayer-high-desc':   { getValue: c => c.prices?.tcgplayer?.high            ?? -1, dir: 'desc' },
+  'price-cardmarket-trend-asc':  { getValue: c => c.prices?.cardmarket?.trendPrice     ?? -1, dir: 'asc'  },
+  'price-cardmarket-trend-desc': { getValue: c => c.prices?.cardmarket?.trendPrice     ?? -1, dir: 'desc' },
+  'price-cardmarket-avg-asc':    { getValue: c => c.prices?.cardmarket?.averageSellPrice ?? -1, dir: 'asc'  },
+  'price-cardmarket-avg-desc':   { getValue: c => c.prices?.cardmarket?.averageSellPrice ?? -1, dir: 'desc' },
+  'price-cardmarket-low-asc':    { getValue: c => c.prices?.cardmarket?.lowPrice       ?? -1, dir: 'asc'  },
+  'price-cardmarket-low-desc':   { getValue: c => c.prices?.cardmarket?.lowPrice       ?? -1, dir: 'desc' },
+}
+
 interface UseCatalogFiltersInput {
   cards: PokemonCard[]
   viewMode: ViewMode
@@ -81,6 +100,17 @@ export function useCatalogFilters({ cards, viewMode, selectedCollection }: UseCa
     }
     if (catalogSortBy === 'recent') {
       return [...result].sort((a, b) => b.dateAdded - a.dateAdded)
+    }
+    const priceEntry = PRICE_SORT_MAP[catalogSortBy]
+    if (priceEntry) {
+      return [...result].sort((a, b) => {
+        const aVal = priceEntry.getValue(a)
+        const bVal = priceEntry.getValue(b)
+        if (aVal < 0 && bVal < 0) return a.name.localeCompare(b.name)
+        if (aVal < 0) return 1
+        if (bVal < 0) return -1
+        return priceEntry.dir === 'asc' ? aVal - bVal : bVal - aVal
+      })
     }
     return [...result].sort((a, b) => {
       const dexDiff = getNationalDexSortValue(a) - getNationalDexSortValue(b)

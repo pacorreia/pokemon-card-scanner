@@ -162,14 +162,39 @@ export function CatalogView({
                 />
               </div>
               <CatalogFilterControls
-                sortValue={catalogSortBy}
-                onSortChange={(value) => onSortChange(value as CatalogSortBy)}
+                sortValue={catalogSortBy.startsWith('price-') ? 'price' : catalogSortBy}
+                onSortChange={(value) => {
+                  if (value === 'price') {
+                    onSortChange('price-tcgplayer-market-desc' as CatalogSortBy)
+                  } else {
+                    onSortChange(value as CatalogSortBy)
+                  }
+                }}
                 sortOptions={[
                   { value: 'national-dex', label: 'National Dex' },
                   { value: 'recent',       label: 'Recently Added' },
                   { value: 'name-asc',     label: 'Name A-Z' },
                   { value: 'name-desc',    label: 'Name Z-A' },
+                  { value: 'price',        label: 'Price' },
                 ]}
+                sortSubValue={catalogSortBy.startsWith('price-') ? catalogSortBy : undefined}
+                sortSubOptions={[
+                  { value: 'price-tcgplayer-market-desc', label: 'TCGPlayer Market ↓' },
+                  { value: 'price-tcgplayer-market-asc',  label: 'TCGPlayer Market ↑' },
+                  { value: 'price-tcgplayer-low-desc',    label: 'TCGPlayer Low ↓' },
+                  { value: 'price-tcgplayer-low-asc',     label: 'TCGPlayer Low ↑' },
+                  { value: 'price-tcgplayer-mid-desc',    label: 'TCGPlayer Mid ↓' },
+                  { value: 'price-tcgplayer-mid-asc',     label: 'TCGPlayer Mid ↑' },
+                  { value: 'price-tcgplayer-high-desc',   label: 'TCGPlayer High ↓' },
+                  { value: 'price-tcgplayer-high-asc',    label: 'TCGPlayer High ↑' },
+                  { value: 'price-cardmarket-trend-desc', label: 'CardMarket Trend ↓' },
+                  { value: 'price-cardmarket-trend-asc',  label: 'CardMarket Trend ↑' },
+                  { value: 'price-cardmarket-avg-desc',   label: 'CardMarket Avg Sell ↓' },
+                  { value: 'price-cardmarket-avg-asc',    label: 'CardMarket Avg Sell ↑' },
+                  { value: 'price-cardmarket-low-desc',   label: 'CardMarket Low ↓' },
+                  { value: 'price-cardmarket-low-asc',    label: 'CardMarket Low ↑' },
+                ]}
+                onSortSubChange={(value) => onSortChange(value as CatalogSortBy)}
                 groupByValue={catalogGroupBy}
                 onGroupByChange={(value) => onGroupByChange(value as CatalogGroupBy)}
                 groupOptions={[
