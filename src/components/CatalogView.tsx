@@ -101,7 +101,6 @@ export function CatalogView({
   onToggleSelectionMode,
   onScan,
 }: CatalogViewProps) {
-  const eurSeparator = collectionValueUsd > 0 ? ' / ' : ' • Est. value: '
   return (
     <div className={`flex-1 flex flex-col min-h-0 ${isSelectionMode && selectedCardIds.size > 0 ? 'pt-16' : ''}`}>
       {/* ── Sticky catalog header ──────────────────────────────────────── */}
@@ -124,11 +123,7 @@ export function CatalogView({
               )}
               <p className="text-muted-foreground">
                 {cards.length === 0 ? 'No cards yet' : (
-                  <>
-                    {cards.length} unique {cards.length === 1 ? 'card' : 'cards'} • {totalCards} total
-                    {collectionValueUsd > 0 && <> • Est. value: ${collectionValueUsd.toFixed(2)}</>}
-                    {collectionValueEur > 0 && <>{eurSeparator}{collectionValueEur.toFixed(2)}€</>}
-                  </>
+                  <>{cards.length} unique {cards.length === 1 ? 'card' : 'cards'} • {totalCards} total</>
                 )}
               </p>
               {cards.length > 0 && (
@@ -136,6 +131,16 @@ export function CatalogView({
                   <Badge variant="secondary" className="text-xs">
                     Dex indexed: {cardsWithDexCount}/{cards.length}
                   </Badge>
+                  {collectionValueUsd > 0 && (
+                    <Badge variant="secondary" className="text-xs">
+                      Est. value: ${collectionValueUsd.toFixed(2)}{collectionValueEur > 0 && ` / ${collectionValueEur.toFixed(2)}€`}
+                    </Badge>
+                  )}
+                  {collectionValueUsd === 0 && collectionValueEur > 0 && (
+                    <Badge variant="secondary" className="text-xs">
+                      Est. value: {collectionValueEur.toFixed(2)}€
+                    </Badge>
+                  )}
                 </div>
               )}
             </div>

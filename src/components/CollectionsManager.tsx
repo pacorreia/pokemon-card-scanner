@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Plus, Trash, Pencil, Folder, Star, Heart, Fire, Lightning, Sparkle, Target } from '@phosphor-icons/react'
 import { motion, AnimatePresence } from 'framer-motion'
-import type { CardCollection } from '@/lib/types'
+import type { CardCollection, PokemonCard } from '@/lib/types'
 import { toast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 
@@ -15,6 +15,7 @@ interface CollectionsManagerProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   collections: CardCollection[]
+  cards: PokemonCard[]
   onCreateCollection: (collection: Omit<CardCollection, 'id' | 'dateCreated' | 'dateModified'>) => void
   onUpdateCollection: (id: string, updates: Partial<CardCollection>) => void
   onDeleteCollection: (id: string) => void
@@ -46,6 +47,7 @@ export function CollectionsManager({
   open,
   onOpenChange,
   collections,
+  cards,
   onCreateCollection,
   onUpdateCollection,
   onDeleteCollection,
@@ -59,6 +61,20 @@ export function CollectionsManager({
     color: COLOR_OPTIONS[4].color,
     icon: ICON_OPTIONS[0].name,
   })
+
+  const cardMap = useMemo(() => new Map(cards.map(c => [c.id, c])), [cards])
+
+  const getCollectionValue = (collection: CardCollection) => {
+    let usd = 0
+    let eur = 0
+    for (const cardId of collection.cardIds) {
+      const card = cardMap.get(cardId)
+      if (!card) continue
+      usd += (card.prices?.tcgplayer?.market ?? 0) * card.quantity
+      eur += (card.prices?.cardmarket?.trendPrice ?? 0) * card.quantity
+    }
+    return { usd, eur }
+  }
 
   const handleCreate = () => {
     if (!formData.name.trim()) {
@@ -179,6 +195,7 @@ export function CollectionsManager({
                     ) : (
                       collections.map((collection) => {
                         const IconComponent = getIconComponent(collection.icon)
+                        const { usd, eur } = getCollectionValue(collection)
                         return (
                           <motion.div
                             key={collection.id}
@@ -218,6 +235,13 @@ export function CollectionsManager({
                                   <p className="text-sm text-muted-foreground line-clamp-2">
                                     {collection.description}
                                   </p>
+                                )}
+                                {(usd > 0 || eur > 0) && (
+                                  <div className="mt-2">
+                                    <Badge variant="outline" className="text-xs">
+                                      Est. value:{usd > 0 && ` $${usd.toFixed(2)}`}{usd > 0 && eur > 0 && ' /'}{eur > 0 && ` ${eur.toFixed(2)}€`}
+                                    </Badge>
+                                  </div>
                                 )}
                               </div>
                             </div>
