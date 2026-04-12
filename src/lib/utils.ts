@@ -26,6 +26,6 @@ export function formatEstimatedValue(usd: number, eur: number): string | null {
   if (usd <= 0 && eur <= 0) return null
   const parts: string[] = []
   if (usd > 0) parts.push(`$${usd.toFixed(2)}`)
-  if (eur > 0) parts.push(`${eur.toFixed(2)}€`)
+  if (eur > 0) parts.push(`€${eur.toFixed(2)}`)
   return `Est. value: ${parts.join(' / ')}`
 }
