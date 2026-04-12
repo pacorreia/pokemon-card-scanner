@@ -62,6 +62,9 @@ interface CatalogFilterControlsProps {
   controlsTrailing?: ReactNode
   collapsible?: boolean
   defaultCollapsed?: boolean
+  sortSubValue?: string
+  sortSubOptions?: CatalogSortOption[]
+  onSortSubChange?: (value: string) => void
 }
 
 export function CatalogFilterControls({
@@ -81,6 +84,9 @@ export function CatalogFilterControls({
   controlsTrailing,
   collapsible = true,
   defaultCollapsed = true,
+  sortSubValue,
+  sortSubOptions,
+  onSortSubChange,
 }: CatalogFilterControlsProps) {
   const [isOpen, setIsOpen] = useState(!defaultCollapsed)
   const groupTriggerClass = compact
@@ -130,6 +136,19 @@ export function CatalogFilterControls({
                 </SelectTrigger>
                 <SelectContent>
                   {sortOptions.map(option => (
+                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+
+            {sortSubValue !== undefined && sortSubOptions && sortSubOptions.length > 0 && onSortSubChange && (
+              <Select value={sortSubValue} onValueChange={onSortSubChange}>
+                <SelectTrigger className={groupTriggerClass}>
+                  <SelectValue placeholder="Select price" />
+                </SelectTrigger>
+                <SelectContent>
+                  {sortSubOptions.map(option => (
                     <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
                   ))}
                 </SelectContent>
