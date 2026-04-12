@@ -17,7 +17,6 @@ import { assessImageQuality } from '@/lib/image-processing'
 import {
   analyzeCardImage,
   analyzeMultipleCardsImage,
-  analyzeBestSingleCard,
   draftToPokemonCard,
   isAutoAddEligible,
   fileToDataUrl,

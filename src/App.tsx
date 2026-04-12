@@ -81,6 +81,7 @@ function MainApp() {
     collapsedCatalogGroups: filters.collapsedCatalogGroups,
     appView,
   })
+  const { resetScroll } = virt
 
   // ── Queue restoration on mount ──────────────────────────────────────────
   useEffect(() => {
@@ -98,11 +99,11 @@ function MainApp() {
 
   // ── Reset catalog scroll when filters/sort/groupBy change ────────────────────
   useEffect(() => {
-    if (virt.catalogParentRef.current) virt.catalogParentRef.current.scrollTop = 0
+    resetScroll()
   }, [
     filters.searchQuery, filters.catalogSortBy, filters.catalogGroupBy,
     viewMode, filters.selectedTypes, filters.selectedRarities, filters.selectedSupertypes,
-    virt.catalogParentRef,
+    resetScroll,
   ])
 
   // ── DB manager auto-prompt ────────────────────────────────────────────────

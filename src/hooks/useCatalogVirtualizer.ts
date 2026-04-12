@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react'
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import type { PokemonCard } from '@/lib/types'
 import type { CatalogGroupBy, CatalogVirtualRow } from '@/lib/catalog-types'
@@ -98,10 +98,15 @@ export function useCatalogVirtualizer({
     return () => cancelAnimationFrame(id)
   }, [appView, catalogVirtualRows, catalogCols, catalogGroupBy, catalogRowVirtualizer])
 
+  const resetScroll = useCallback(() => {
+    if (catalogParentRef.current) catalogParentRef.current.scrollTop = 0
+  }, [])
+
   return {
     catalogCols,
     catalogParentRef,
     catalogVirtualRows,
     catalogRowVirtualizer,
+    resetScroll,
   }
 }
