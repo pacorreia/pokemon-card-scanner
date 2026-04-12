@@ -12,6 +12,25 @@ import type { PokemonCard, CardCollection, ViewMode } from '@/lib/types'
 import type { CatalogSortBy, CatalogGroupBy, CatalogVirtualRow } from '@/lib/catalog-types'
 import { formatEstimatedValue } from '@/lib/utils'
 
+const DEFAULT_PRICE_SORT: CatalogSortBy = 'price-tcgplayer-market-desc'
+
+const PRICE_SORT_OPTIONS = [
+  { value: 'price-tcgplayer-market-desc', label: 'TCGPlayer Market ↓' },
+  { value: 'price-tcgplayer-market-asc',  label: 'TCGPlayer Market ↑' },
+  { value: 'price-tcgplayer-low-desc',    label: 'TCGPlayer Low ↓' },
+  { value: 'price-tcgplayer-low-asc',     label: 'TCGPlayer Low ↑' },
+  { value: 'price-tcgplayer-mid-desc',    label: 'TCGPlayer Mid ↓' },
+  { value: 'price-tcgplayer-mid-asc',     label: 'TCGPlayer Mid ↑' },
+  { value: 'price-tcgplayer-high-desc',   label: 'TCGPlayer High ↓' },
+  { value: 'price-tcgplayer-high-asc',    label: 'TCGPlayer High ↑' },
+  { value: 'price-cardmarket-trend-desc', label: 'CardMarket Trend ↓' },
+  { value: 'price-cardmarket-trend-asc',  label: 'CardMarket Trend ↑' },
+  { value: 'price-cardmarket-avg-desc',   label: 'CardMarket Avg Sell ↓' },
+  { value: 'price-cardmarket-avg-asc',    label: 'CardMarket Avg Sell ↑' },
+  { value: 'price-cardmarket-low-desc',   label: 'CardMarket Low ↓' },
+  { value: 'price-cardmarket-low-asc',    label: 'CardMarket Low ↑' },
+]
+
 // Minimal shape we actually use from the virtualizer
 interface VirtualizerHandle {
   getTotalSize: () => number
@@ -167,14 +186,24 @@ export function CatalogView({
                 />
               </div>
               <CatalogFilterControls
-                sortValue={catalogSortBy}
-                onSortChange={(value) => onSortChange(value as CatalogSortBy)}
+                sortValue={catalogSortBy.startsWith('price-') ? 'price' : catalogSortBy}
+                onSortChange={(value) => {
+                  if (value === 'price') {
+                    onSortChange(DEFAULT_PRICE_SORT)
+                  } else {
+                    onSortChange(value as CatalogSortBy)
+                  }
+                }}
                 sortOptions={[
                   { value: 'national-dex', label: 'National Dex' },
                   { value: 'recent',       label: 'Recently Added' },
                   { value: 'name-asc',     label: 'Name A-Z' },
                   { value: 'name-desc',    label: 'Name Z-A' },
+                  { value: 'price',        label: 'Price' },
                 ]}
+                sortSubValue={catalogSortBy.startsWith('price-') ? catalogSortBy : undefined}
+                sortSubOptions={PRICE_SORT_OPTIONS}
+                onSortSubChange={(value) => onSortChange(value as CatalogSortBy)}
                 groupByValue={catalogGroupBy}
                 onGroupByChange={(value) => onGroupByChange(value as CatalogGroupBy)}
                 groupOptions={[
