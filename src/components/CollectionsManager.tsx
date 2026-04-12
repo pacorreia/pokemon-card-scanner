@@ -9,7 +9,7 @@ import { Plus, Trash, Pencil, Folder, Star, Heart, Fire, Lightning, Sparkle, Tar
 import { motion, AnimatePresence } from 'framer-motion'
 import type { CardCollection, PokemonCard } from '@/lib/types'
 import { toast } from '@/lib/toast'
-import { cn } from '@/lib/utils'
+import { cn, formatEstimatedValue } from '@/lib/utils'
 
 interface CollectionsManagerProps {
   open: boolean
@@ -196,6 +196,7 @@ export function CollectionsManager({
                       collections.map((collection) => {
                         const IconComponent = getIconComponent(collection.icon)
                         const { usd, eur } = getCollectionValue(collection)
+                        const estimatedValueLabel = formatEstimatedValue(usd, eur)
                         return (
                           <motion.div
                             key={collection.id}
@@ -236,10 +237,10 @@ export function CollectionsManager({
                                     {collection.description}
                                   </p>
                                 )}
-                                {(usd > 0 || eur > 0) && (
+                                {estimatedValueLabel && (
                                   <div className="mt-2">
                                     <Badge variant="outline" className="text-xs">
-                                      Est. value:{usd > 0 && ` $${usd.toFixed(2)}`}{usd > 0 && eur > 0 && ' /'}{eur > 0 && ` ${eur.toFixed(2)}€`}
+                                      {estimatedValueLabel}
                                     </Badge>
                                   </div>
                                 )}

@@ -10,6 +10,7 @@ import { CatalogFilterControls } from '@/components/shared/CatalogFilterControls
 import type { CatalogFilterSection, CatalogActiveFilterChip } from '@/components/shared/CatalogFilterControls'
 import type { PokemonCard, CardCollection, ViewMode } from '@/lib/types'
 import type { CatalogSortBy, CatalogGroupBy, CatalogVirtualRow } from '@/lib/catalog-types'
+import { formatEstimatedValue } from '@/lib/utils'
 
 // Minimal shape we actually use from the virtualizer
 interface VirtualizerHandle {
@@ -101,6 +102,7 @@ export function CatalogView({
   onToggleSelectionMode,
   onScan,
 }: CatalogViewProps) {
+  const estimatedValueLabel = formatEstimatedValue(collectionValueUsd, collectionValueEur)
   return (
     <div className={`flex-1 flex flex-col min-h-0 ${isSelectionMode && selectedCardIds.size > 0 ? 'pt-16' : ''}`}>
       {/* ── Sticky catalog header ──────────────────────────────────────── */}
@@ -131,14 +133,9 @@ export function CatalogView({
                   <Badge variant="secondary" className="text-xs">
                     Dex indexed: {cardsWithDexCount}/{cards.length}
                   </Badge>
-                  {collectionValueUsd > 0 && (
+                  {estimatedValueLabel && (
                     <Badge variant="secondary" className="text-xs">
-                      Est. value: ${collectionValueUsd.toFixed(2)}{collectionValueEur > 0 && ` / ${collectionValueEur.toFixed(2)}€`}
-                    </Badge>
-                  )}
-                  {collectionValueUsd === 0 && collectionValueEur > 0 && (
-                    <Badge variant="secondary" className="text-xs">
-                      Est. value: {collectionValueEur.toFixed(2)}€
+                      {estimatedValueLabel}
                     </Badge>
                   )}
                 </div>
