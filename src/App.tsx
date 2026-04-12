@@ -201,7 +201,8 @@ function MainApp() {
           filteredCards={filters.filteredCards}
           dataLoading={collection.dataLoading}
           totalCards={filters.totalCards}
-          collectionValue={filters.collectionValue}
+          collectionValueUsd={filters.collectionValueUsd}
+          collectionValueEur={filters.collectionValueEur}
           cardsWithDexCount={filters.cardsWithDexCount}
           duplicateCount={filters.duplicateCount}
           viewMode={viewMode}

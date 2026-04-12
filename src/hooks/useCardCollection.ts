@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { api } from '@/lib/collection-api'
-import { queueApi } from '@/lib/queue-api'
 import { findCard, getCardById, type TCGCard } from '@/lib/tcg-database'
-import { buildPricesFromTcgCard, type ScanQueueItem } from '@/lib/card-analysis'
+import { buildPricesFromTcgCard } from '@/lib/card-analysis'
 import { isUsableImageUrl, pickBestImageUrl } from '@/lib/utils'
 import { toast } from '@/lib/toast'
 import type { PokemonCard, CardCollection } from '@/lib/types'
@@ -46,13 +45,6 @@ export function useCardCollection(isDatabaseLoaded: boolean) {
       setCards(serverCards)
       setCollections(serverCollections)
       setDataLoading(false)
-
-      queueApi.getAll().then((serverQueue: ScanQueueItem[]) => {
-        if (cancelled) return
-        // Queue is managed externally; this is only used for initial restoration.
-        // Callers should merge via the setScanQueue setter.
-        void serverQueue
-      }).catch(() => {})
     }
 
     load().catch(() => { if (!cancelled) setDataLoading(false) })
@@ -202,11 +194,13 @@ export function useCardCollection(isDatabaseLoaded: boolean) {
           }
           const result = await api.updateCard(existing.id, patch)
           localMap.set(key, result)
+          if (result.tcgCardId) tcgIdMap.set(result.tcgCardId, result)
           setCards(prev => prev.map(c => c.id === existing.id ? result : c))
           updated++
         } else {
           const created = await api.addCard(card)
           localMap.set(key, created)
+          if (created.tcgCardId) tcgIdMap.set(created.tcgCardId, created)
           setCards(prev => [...prev, created])
           added++
         }

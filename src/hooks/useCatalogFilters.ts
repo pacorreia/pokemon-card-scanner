@@ -117,8 +117,12 @@ export function useCatalogFilters({ cards, viewMode, selectedCollection }: UseCa
     () => cards.filter(c => typeof c.pokedexNumber === 'number' && c.pokedexNumber > 0).length,
     [cards],
   )
-  const collectionValue   = useMemo(() => cards.reduce((s, c) => {
-    const p = c.prices?.tcgplayer?.market || c.prices?.cardmarket?.trendPrice || 0
+  const collectionValueUsd = useMemo(() => cards.reduce((s, c) => {
+    const p = c.prices?.tcgplayer?.market ?? 0
+    return s + p * c.quantity
+  }, 0), [cards])
+  const collectionValueEur = useMemo(() => cards.reduce((s, c) => {
+    const p = c.prices?.cardmarket?.trendPrice ?? 0
     return s + p * c.quantity
   }, 0), [cards])
 
@@ -186,7 +190,7 @@ export function useCatalogFilters({ cards, viewMode, selectedCollection }: UseCa
     collapsedCatalogGroups,
     filteredCards,
     groupedCatalogCards,
-    duplicateCount, totalCards, cardsWithDexCount, collectionValue,
+    duplicateCount, totalCards, cardsWithDexCount, collectionValueUsd, collectionValueEur,
     activeFiltersCount,
     handleToggleSupertype, handleToggleType, handleToggleRarity, handleClearFilters,
     toggleCatalogGroup,

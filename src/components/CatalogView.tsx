@@ -25,7 +25,8 @@ interface CatalogViewProps {
   dataLoading: boolean
   // stats
   totalCards: number
-  collectionValue: number
+  collectionValueUsd: number
+  collectionValueEur: number
   cardsWithDexCount: number
   duplicateCount: number
   // view mode
@@ -70,7 +71,8 @@ export function CatalogView({
   filteredCards,
   dataLoading,
   totalCards,
-  collectionValue,
+  collectionValueUsd,
+  collectionValueEur,
   cardsWithDexCount,
   duplicateCount,
   viewMode, onViewModeChange,
@@ -99,6 +101,7 @@ export function CatalogView({
   onToggleSelectionMode,
   onScan,
 }: CatalogViewProps) {
+  const eurSeparator = collectionValueUsd > 0 ? ' / ' : ' • Est. value: '
   return (
     <div className={`flex-1 flex flex-col min-h-0 ${isSelectionMode && selectedCardIds.size > 0 ? 'pt-16' : ''}`}>
       {/* ── Sticky catalog header ──────────────────────────────────────── */}
@@ -123,7 +126,8 @@ export function CatalogView({
                 {cards.length === 0 ? 'No cards yet' : (
                   <>
                     {cards.length} unique {cards.length === 1 ? 'card' : 'cards'} • {totalCards} total
-                    {collectionValue > 0 && <> • Est. value: ${collectionValue.toFixed(2)}</>}
+                    {collectionValueUsd > 0 && <> • Est. value: ${collectionValueUsd.toFixed(2)}</>}
+                    {collectionValueEur > 0 && <>{eurSeparator}{collectionValueEur.toFixed(2)}€</>}
                   </>
                 )}
               </p>

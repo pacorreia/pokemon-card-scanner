@@ -747,6 +747,7 @@ export function DatabaseBrowser({ open, onOpenChange, onAddCard, onAddToCollecti
               <DialogContent className="max-w-full w-full h-full p-0 border-0 bg-black/95 flex items-center justify-center">
                 <button
                   onClick={() => setZoomOpen(false)}
+                  aria-label="Close"
                   className="absolute top-4 right-4 z-50 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
                 >
                   <X className="w-6 h-6" weight="bold" />

@@ -1006,7 +1006,7 @@ export function ScanDialog({
               <button
                 onClick={capturePhoto}
                 disabled={!videoReady || isBurstCapturing}
-                className="flex h-18 w-18 items-center justify-center rounded-full border-4 border-white bg-white/20 backdrop-blur-sm disabled:opacity-40 active:scale-95 transition-transform"
+                className="flex h-[4.5rem] w-[4.5rem] items-center justify-center rounded-full border-4 border-white bg-white/20 backdrop-blur-sm disabled:opacity-40 active:scale-95 transition-transform"
                 aria-label="Capture"
                 style={{ height: '4.5rem', width: '4.5rem' }}
               >
