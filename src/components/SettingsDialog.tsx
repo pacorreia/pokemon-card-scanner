@@ -43,13 +43,13 @@ export function SettingsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="flex flex-col max-h-[90vh] sm:max-w-md">
         <DialogTitle>Settings</DialogTitle>
         <DialogDescription>
           Scanning now uses a server-side proxy token. No client-side API key is stored.
         </DialogDescription>
 
-        <div className="space-y-5 py-2">
+        <div className="flex-1 overflow-y-auto space-y-5 py-2 pr-1">
           <div className="space-y-3 rounded-md border border-border p-3">
             <p className="text-sm font-medium">Camera Defaults</p>
             <p className="text-xs text-muted-foreground">

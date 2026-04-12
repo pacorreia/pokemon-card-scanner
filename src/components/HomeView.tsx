@@ -123,32 +123,35 @@ export function HomeView({
   ]
 
   return (
-    <div className="py-4">
-      <div className="mb-8">
+    <div>
+      <div className="mb-4">
         <h1 className="text-4xl font-bold font-display tracking-tight mb-2">PokéDex Scanner</h1>
         <p className="text-muted-foreground">Your Pokémon TCG companion</p>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+      <div
+        className="grid grid-cols-2 sm:grid-cols-3 gap-3"
+        style={{ gridAutoRows: '1fr', height: 'calc(100dvh - 212px)', minHeight: '340px' }}
+      >
         {shortcuts.map((shortcut) => (
           <button
             key={shortcut.label}
             onClick={shortcut.onClick}
-            className={`flex flex-col items-start gap-4 p-5 rounded-2xl border-2 bg-card transition-all group text-left ${shortcut.borderHover} hover:bg-muted/30 hover:shadow-sm ${shortcut.dim ? 'opacity-60' : ''}`}
+            className={`flex flex-col items-start justify-between gap-2 p-4 rounded-2xl border-2 bg-card transition-all group text-left overflow-hidden ${shortcut.borderHover} hover:bg-muted/30 hover:shadow-sm ${shortcut.dim ? 'opacity-60' : ''}`}
           >
-            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-colors ${shortcut.iconBg}`}>
-              <shortcut.Icon className={`w-7 h-7 ${shortcut.iconColor}`} weight="duotone" />
+            <div className={`w-11 h-11 shrink-0 rounded-xl flex items-center justify-center transition-colors ${shortcut.iconBg}`}>
+              <shortcut.Icon className={`w-6 h-6 ${shortcut.iconColor}`} weight="duotone" />
             </div>
-            <div className="min-w-0">
+            <div className="min-w-0 w-full">
               <div className="flex items-center gap-2 flex-wrap">
-                <p className="font-semibold font-display text-base leading-tight">{shortcut.label}</p>
+                <p className="font-semibold font-display text-sm leading-tight">{shortcut.label}</p>
                 {shortcut.badge && (
                   <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-orange-500/50 text-orange-500">
                     {shortcut.badge}
                   </Badge>
                 )}
               </div>
-              <p className="text-sm text-muted-foreground mt-1 leading-tight">{shortcut.description}</p>
+              <p className="text-xs text-muted-foreground mt-0.5 leading-tight line-clamp-2">{shortcut.description}</p>
             </div>
           </button>
         ))}

@@ -9,8 +9,10 @@ import { Plus, Minus, Trash, X, TrendUp, CurrencyDollar, ArrowSquareOut, Magnify
 import { CardDetailPresentation } from '@/components/shared/CardDetailPresentation'
 import { getFriendlySetName } from '@/lib/set-display'
 import { rarityColors, typeColors } from '@/lib/card-colors'
-import { useTCGDatabase, type TCGCard } from '@/lib/tcg-database'
-import type { PokemonCard } from '@/lib/types'
+import { useTCGDatabase, getCardById, type TCGCard } from '@/lib/tcg-database'
+import { buildPricesFromTcgCard } from '@/lib/card-analysis'
+import { api } from '@/lib/collection-api'
+import type { PokemonCard, CardPrices } from '@/lib/types'
 
 interface CardDetailsSheetProps {
   card: PokemonCard | null
@@ -32,13 +34,33 @@ export function CardDetailsSheet({
   openRematch,
 }: CardDetailsSheetProps) {
   const [zoomOpen, setZoomOpen] = useState(false)
+  const [zoomedRematchImage, setZoomedRematchImage] = useState<{ src: string; name: string } | null>(null)
   const [rematchOpen, setRematchOpen] = useState(false)
   const [rematchQuery, setRematchQuery] = useState('')
   const [rematchResults, setRematchResults] = useState<TCGCard[]>([])
   const [rematchSearching, setRematchSearching] = useState(false)
   const [rematchApplied, setRematchApplied] = useState<string | null>(null)
+  const [dbPrices, setDbPrices] = useState<CardPrices | undefined>(undefined)
+  const [pricesLoading, setPricesLoading] = useState(false)
   const rematchInputRef = useRef<HTMLInputElement>(null)
   const { searchCards } = useTCGDatabase()
+
+  // Fetch prices from TCG database when card has no stored prices, then persist silently
+  useEffect(() => {
+    if (!card?.tcgCardId || card.prices) { setDbPrices(undefined); setPricesLoading(false); return }
+    setPricesLoading(true)
+    const cardId = card.id
+    const tcgCardId = card.tcgCardId
+    let cancelled = false
+    getCardById(tcgCardId).then(tcgCard => {
+      if (cancelled) return
+      const fetched = buildPricesFromTcgCard(tcgCard) ?? undefined
+      setDbPrices(fetched)
+      setPricesLoading(false)
+      if (fetched) api.updateCard(cardId, { prices: fetched }).catch(() => {})
+    }).catch(() => { if (!cancelled) { setDbPrices(undefined); setPricesLoading(false) } })
+    return () => { cancelled = true }
+  }, [card?.tcgCardId, card?.prices, card?.id])
 
   // Auto-open rematch panel when triggered from outside
   useEffect(() => {
@@ -177,134 +199,144 @@ export function CardDetailsSheet({
 
               <Separator />
 
-              {(card.prices?.tcgplayer || card.prices?.cardmarket) && (
-                <>
-                  <div>
-                    <h3 className="text-sm font-medium text-muted-foreground mb-3 flex items-center gap-2">
-                      <TrendUp className="w-4 h-4" />
-                      Market Prices
-                    </h3>
-                    <div className="space-y-4">
-                      {card.prices.tcgplayer && (
-                        <div className="p-3 bg-muted/50 rounded-lg space-y-2">
-                          <div className="flex items-center justify-between">
-                            <span className="font-semibold text-sm flex items-center gap-1.5">
-                              <CurrencyDollar className="w-4 h-4" weight="bold" />
-                              TCGPlayer
-                            </span>
-                            {card.prices.tcgplayer.url && (
-                              <a 
-                                href={card.prices.tcgplayer.url} 
-                                target="_blank" 
-                                rel="noopener noreferrer"
-                                className="text-primary hover:underline text-xs flex items-center gap-1"
-                              >
-                                View <ArrowSquareOut className="w-3 h-3" />
-                              </a>
-                            )}
-                          </div>
-                          <div className="grid grid-cols-2 gap-2 text-xs">
-                            {card.prices.tcgplayer.market && (
-                              <div className="flex justify-between">
-                                <span className="text-muted-foreground">Market:</span>
-                                <span className="font-semibold">${card.prices.tcgplayer.market.toFixed(2)}</span>
-                              </div>
-                            )}
-                            {card.prices.tcgplayer.low && (
-                              <div className="flex justify-between">
-                                <span className="text-muted-foreground">Low:</span>
-                                <span className="font-medium">${card.prices.tcgplayer.low.toFixed(2)}</span>
-                              </div>
-                            )}
-                            {card.prices.tcgplayer.mid && (
-                              <div className="flex justify-between">
-                                <span className="text-muted-foreground">Mid:</span>
-                                <span className="font-medium">${card.prices.tcgplayer.mid.toFixed(2)}</span>
-                              </div>
-                            )}
-                            {card.prices.tcgplayer.high && (
-                              <div className="flex justify-between">
-                                <span className="text-muted-foreground">High:</span>
-                                <span className="font-medium">${card.prices.tcgplayer.high.toFixed(2)}</span>
-                              </div>
-                            )}
-                            {card.prices.tcgplayer.holofoil && (
-                              <div className="flex justify-between">
-                                <span className="text-muted-foreground">Holofoil:</span>
-                                <span className="font-medium">${card.prices.tcgplayer.holofoil.toFixed(2)}</span>
-                              </div>
-                            )}
-                            {card.prices.tcgplayer.reverseHolofoil && (
-                              <div className="flex justify-between">
-                                <span className="text-muted-foreground">Reverse:</span>
-                                <span className="font-medium">${card.prices.tcgplayer.reverseHolofoil.toFixed(2)}</span>
-                              </div>
-                            )}
-                          </div>
-                          {card.prices.tcgplayer.updatedAt && (
-                            <div className="text-xs text-muted-foreground pt-1 border-t border-border/50">
-                              Updated: {new Date(card.prices.tcgplayer.updatedAt).toLocaleDateString()}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                      
-                      {card.prices.cardmarket && (
-                        <div className="p-3 bg-muted/50 rounded-lg space-y-2">
-                          <div className="flex items-center justify-between">
-                            <span className="font-semibold text-sm flex items-center gap-1.5">
-                              <CurrencyDollar className="w-4 h-4" weight="bold" />
-                              Cardmarket (€)
-                            </span>
-                            {card.prices.cardmarket.url && (
-                              <a 
-                                href={card.prices.cardmarket.url} 
-                                target="_blank" 
-                                rel="noopener noreferrer"
-                                className="text-primary hover:underline text-xs flex items-center gap-1"
-                              >
-                                View <ArrowSquareOut className="w-3 h-3" />
-                              </a>
-                            )}
-                          </div>
-                          <div className="grid grid-cols-2 gap-2 text-xs">
-                            {card.prices.cardmarket.trendPrice && (
-                              <div className="flex justify-between">
-                                <span className="text-muted-foreground">Trend:</span>
-                                <span className="font-semibold">€{card.prices.cardmarket.trendPrice.toFixed(2)}</span>
-                              </div>
-                            )}
-                            {card.prices.cardmarket.averageSellPrice && (
-                              <div className="flex justify-between">
-                                <span className="text-muted-foreground">Avg Sell:</span>
-                                <span className="font-medium">€{card.prices.cardmarket.averageSellPrice.toFixed(2)}</span>
-                              </div>
-                            )}
-                            {card.prices.cardmarket.lowPrice && (
-                              <div className="flex justify-between">
-                                <span className="text-muted-foreground">Low:</span>
-                                <span className="font-medium">€{card.prices.cardmarket.lowPrice.toFixed(2)}</span>
-                              </div>
-                            )}
-                            {card.prices.cardmarket.avg30 && (
-                              <div className="flex justify-between">
-                                <span className="text-muted-foreground">30d Avg:</span>
-                                <span className="font-medium">€{card.prices.cardmarket.avg30.toFixed(2)}</span>
-                              </div>
-                            )}
-                          </div>
-                          {card.prices.cardmarket.updatedAt && (
-                            <div className="text-xs text-muted-foreground pt-1 border-t border-border/50">
-                              Updated: {new Date(card.prices.cardmarket.updatedAt).toLocaleDateString()}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
+              {(() => {
+                const prices = card.prices ?? dbPrices
+                if (pricesLoading) return (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+                    <ArrowsClockwise className="w-4 h-4 animate-spin" />
+                    Loading prices…
                   </div>
-                  <Separator />
-                </>
-              )}
+                )
+                if (!prices?.tcgplayer && !prices?.cardmarket) return null
+                return (
+                  <>
+                    <div>
+                      <h3 className="text-sm font-medium text-muted-foreground mb-3 flex items-center gap-2">
+                        <TrendUp className="w-4 h-4" />
+                        Market Prices
+                      </h3>
+                      <div className="space-y-4">
+                        {prices.tcgplayer && (
+                          <div className="p-3 bg-muted/50 rounded-lg space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="font-semibold text-sm flex items-center gap-1.5">
+                                <CurrencyDollar className="w-4 h-4" weight="bold" />
+                                TCGPlayer
+                              </span>
+                              {prices.tcgplayer.url && (
+                                <a
+                                  href={prices.tcgplayer.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-primary hover:underline text-xs flex items-center gap-1"
+                                >
+                                  View <ArrowSquareOut className="w-3 h-3" />
+                                </a>
+                              )}
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 text-xs">
+                              {prices.tcgplayer.market && (
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Market:</span>
+                                  <span className="font-semibold">${prices.tcgplayer.market.toFixed(2)}</span>
+                                </div>
+                              )}
+                              {prices.tcgplayer.low && (
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Low:</span>
+                                  <span className="font-medium">${prices.tcgplayer.low.toFixed(2)}</span>
+                                </div>
+                              )}
+                              {prices.tcgplayer.mid && (
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Mid:</span>
+                                  <span className="font-medium">${prices.tcgplayer.mid.toFixed(2)}</span>
+                                </div>
+                              )}
+                              {prices.tcgplayer.high && (
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">High:</span>
+                                  <span className="font-medium">${prices.tcgplayer.high.toFixed(2)}</span>
+                                </div>
+                              )}
+                              {prices.tcgplayer.holofoil && (
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Holofoil:</span>
+                                  <span className="font-medium">${prices.tcgplayer.holofoil.toFixed(2)}</span>
+                                </div>
+                              )}
+                              {prices.tcgplayer.reverseHolofoil && (
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Reverse:</span>
+                                  <span className="font-medium">${prices.tcgplayer.reverseHolofoil.toFixed(2)}</span>
+                                </div>
+                              )}
+                            </div>
+                            {prices.tcgplayer.updatedAt && (
+                              <div className="text-xs text-muted-foreground pt-1 border-t border-border/50">
+                                Updated: {new Date(prices.tcgplayer.updatedAt).toLocaleDateString()}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {prices.cardmarket && (
+                          <div className="p-3 bg-muted/50 rounded-lg space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="font-semibold text-sm flex items-center gap-1.5">
+                                <CurrencyDollar className="w-4 h-4" weight="bold" />
+                                Cardmarket (€)
+                              </span>
+                              {prices.cardmarket.url && (
+                                <a
+                                  href={prices.cardmarket.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-primary hover:underline text-xs flex items-center gap-1"
+                                >
+                                  View <ArrowSquareOut className="w-3 h-3" />
+                                </a>
+                              )}
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 text-xs">
+                              {prices.cardmarket.trendPrice && (
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Trend:</span>
+                                  <span className="font-semibold">€{prices.cardmarket.trendPrice.toFixed(2)}</span>
+                                </div>
+                              )}
+                              {prices.cardmarket.averageSellPrice && (
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Avg Sell:</span>
+                                  <span className="font-medium">€{prices.cardmarket.averageSellPrice.toFixed(2)}</span>
+                                </div>
+                              )}
+                              {prices.cardmarket.lowPrice && (
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Low:</span>
+                                  <span className="font-medium">€{prices.cardmarket.lowPrice.toFixed(2)}</span>
+                                </div>
+                              )}
+                              {prices.cardmarket.avg30 && (
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">30d Avg:</span>
+                                  <span className="font-medium">€{prices.cardmarket.avg30.toFixed(2)}</span>
+                                </div>
+                              )}
+                            </div>
+                            {prices.cardmarket.updatedAt && (
+                              <div className="text-xs text-muted-foreground pt-1 border-t border-border/50">
+                                Updated: {new Date(prices.cardmarket.updatedAt).toLocaleDateString()}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <Separator />
+                  </>
+                )
+              })()}
 
               <div>
                 <h3 className="text-sm font-medium text-muted-foreground mb-3">Quantity</h3>
@@ -387,12 +419,19 @@ export function CardDetailsSheet({
                             }}
                           >
                             {tcgCard.images.small ? (
-                              <img
-                                src={tcgCard.images.small}
-                                alt={tcgCard.name}
-                                className="w-9 h-12 object-contain rounded flex-shrink-0"
-                                loading="lazy"
-                              />
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); setZoomedRematchImage({ src: tcgCard.images.large || tcgCard.images.small!, name: tcgCard.name }) }}
+                                className="w-9 h-12 flex-shrink-0 rounded overflow-hidden hover:ring-2 hover:ring-primary transition-shadow"
+                                aria-label={`Enlarge ${tcgCard.name}`}
+                              >
+                                <img
+                                  src={tcgCard.images.small}
+                                  alt={tcgCard.name}
+                                  className="w-full h-full object-contain"
+                                  loading="lazy"
+                                />
+                              </button>
                             ) : (
                               <div className="w-9 h-12 bg-muted rounded flex-shrink-0" />
                             )}
@@ -466,6 +505,30 @@ export function CardDetailsSheet({
             )}
           </div>
         </div>
+      </DialogContent>
+    </Dialog>
+
+    <Dialog open={!!zoomedRematchImage} onOpenChange={(open) => { if (!open) setZoomedRematchImage(null) }}>
+      <DialogContent className="max-w-full w-full h-full p-0 border-0 bg-black/95 flex items-center justify-center">
+        <button
+          onClick={() => setZoomedRematchImage(null)}
+          aria-label="Close"
+          className="absolute top-4 right-4 z-50 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
+        >
+          <X className="w-6 h-6" weight="bold" />
+        </button>
+        {zoomedRematchImage && (
+          <div className="w-full max-w-sm px-4">
+            <div className="w-full aspect-[2.5/3.5] rounded-lg shadow-2xl relative overflow-hidden">
+              <img
+                src={zoomedRematchImage.src}
+                alt={zoomedRematchImage.name}
+                className="w-full h-full object-contain"
+              />
+            </div>
+            <p className="text-white text-center mt-3 text-sm font-medium">{zoomedRematchImage.name}</p>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   </>

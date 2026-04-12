@@ -33,6 +33,8 @@ const GITHUB_PROXY_BASE = 'https://github.com'
 const MODELS_FETCH_TIMEOUT_MS = Number(process.env.GITHUB_MODELS_TIMEOUT_MS || 90000)
 const MODELS_FETCH_RETRIES = Number(process.env.GITHUB_MODELS_RETRIES || 3)
 const MODELS_FETCH_RETRY_BASE_MS = Number(process.env.GITHUB_MODELS_RETRY_BASE_MS || 1000)
+const PRICE_FETCH_TIMEOUT_MS = Number(process.env.PRICE_FETCH_TIMEOUT_MS || 5000)
+const PRICE_FETCH_RETRY_AFTER_MS = Number(process.env.PRICE_FETCH_RETRY_AFTER_MS || 60 * 60 * 1000) // 1 hour
 const CLIENT_LOG_TOKEN_TTL_MS = Number(process.env.CLIENT_LOG_TOKEN_TTL_MS || 2 * 60 * 1000)
 const CLIENT_LOG_RATE_LIMIT_WINDOW_MS = Number(process.env.CLIENT_LOG_RATE_LIMIT_WINDOW_MS || 60 * 1000)
 const CLIENT_LOG_RATE_LIMIT_MAX = Number(process.env.CLIENT_LOG_RATE_LIMIT_MAX || 300)
@@ -54,6 +56,10 @@ const API_SECRET = process.env.API_SECRET || ''
 const SESSION_SECRET  = process.env.SESSION_SECRET || randomBytes(32).toString('hex')
 const SESSION_TTL_MS  = Number(process.env.SESSION_TTL_MS  || 7 * 24 * 60 * 60 * 1000) // 7 days
 const SESSION_COOKIE  = 'pcs_session'
+
+// In-memory negative cache: maps tcgCardId → timestamp of last failed price fetch.
+// Prevents hammering the upstream API when a card repeatedly has no price data.
+const priceFetchFailedAt = new Map()
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname  = path.dirname(__filename)
@@ -965,7 +971,36 @@ const requestHandler = async (req, res) => {
     // ── TCG card by ID ──────────────────────────────────────────────────────
     const cardByIdMatch = pathname.match(/^\/api\/cards\/(.+)$/)
     if (cardByIdMatch && method === 'GET') {
-      writeJson(res, 200, db.getCardById(decodeURIComponent(cardByIdMatch[1])), req)
+      const tcgId = decodeURIComponent(cardByIdMatch[1])
+      let card = db.getCardById(tcgId)
+      if (card && !card.tcgplayer && !card.cardmarket) {
+        const lastFailed = priceFetchFailedAt.get(tcgId)
+        const skipFetch = lastFailed && (Date.now() - lastFailed < PRICE_FETCH_RETRY_AFTER_MS)
+        if (!skipFetch) {
+          try {
+            const liveRes = await fetch(
+              `https://api.pokemontcg.io/v2/cards/${encodeURIComponent(tcgId)}`,
+              { signal: AbortSignal.timeout(PRICE_FETCH_TIMEOUT_MS) },
+            )
+            if (liveRes.ok) {
+              const { data } = await liveRes.json()
+              if (data?.tcgplayer || data?.cardmarket) {
+                db.updateTcgCardPrices(tcgId, data.tcgplayer, data.cardmarket)
+                card = { ...card, tcgplayer: data.tcgplayer, cardmarket: data.cardmarket }
+                priceFetchFailedAt.delete(tcgId)
+              } else {
+                priceFetchFailedAt.set(tcgId, Date.now())
+              }
+            } else {
+              priceFetchFailedAt.set(tcgId, Date.now())
+            }
+          } catch {
+            // Live price fetch failed — return card without prices
+            priceFetchFailedAt.set(tcgId, Date.now())
+          }
+        }
+      }
+      writeJson(res, 200, card, req)
       return
     }
 

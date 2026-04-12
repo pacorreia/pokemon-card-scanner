@@ -71,6 +71,7 @@ export interface DatabaseMetadata {
   cardCount: number
   setCount: number
   lastUpdated: number | null
+  sizeBytes: number | null
 }
 
 // ── Module-level exports used directly by ScanDialog ────────────────────────
@@ -190,7 +191,7 @@ export function useTCGDatabase() {
                 onProgress?.(data.current, data.total, data.message)
               } else if (data.type === 'done') {
                 source.close()
-                setMetadata({ cardCount: data.cardCount, setCount: data.setCount, lastUpdated: Date.now() })
+                setMetadata({ cardCount: data.cardCount, setCount: data.setCount, lastUpdated: Date.now(), sizeBytes: null })
                 // Refresh sets after download
                 apiFetch<TCGSet[]>('/api/sets').then(s => setSets(s ?? [])).catch(() => {})
                 resolve({ success: true })

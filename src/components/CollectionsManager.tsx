@@ -144,7 +144,7 @@ export function CollectionsManager({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[85vh] p-0 gap-0">
+      <DialogContent className="max-w-2xl max-h-[85vh] p-0 gap-0 flex flex-col">
         <DialogHeader className="px-6 pt-6 pb-4">
           <DialogTitle className="text-2xl font-display">Collections</DialogTitle>
           <DialogDescription>
@@ -152,7 +152,7 @@ export function CollectionsManager({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="px-6 pb-6 flex-1 overflow-hidden flex flex-col gap-4">
+        <div className="px-6 pb-6 flex-1 min-h-0 overflow-y-auto flex flex-col gap-4">
           {!isCreating ? (
             <>
               <Button onClick={() => setIsCreating(true)} className="w-full" size="lg">
