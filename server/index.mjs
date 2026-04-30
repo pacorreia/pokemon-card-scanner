@@ -645,10 +645,9 @@ async function serveStatic(req, res, pathname) {
 // ── Request router ──────────────────────────────────────────────────────────
 
 const requestHandler = async (req, res) => {
-  if (!req.url) { writeJson(res, 400, { error: 'Invalid URL' }, req); return }
-
   applySecurityHeaders(res)
 
+  if (!req.url) { writeJson(res, 400, { error: 'Invalid URL' }, req); return }
   const url      = new URL(req.url, `http://${req.headers.host || 'localhost'}`)
   const pathname = url.pathname
   const method   = req.method
