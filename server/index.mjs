@@ -126,6 +126,27 @@ const downloadState = {
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
+const SECURITY_HEADERS = {
+  'X-Frame-Options': 'SAMEORIGIN',
+  'X-Content-Type-Options': 'nosniff',
+  'X-XSS-Protection': '1; mode=block',
+  'Referrer-Policy': 'strict-origin-when-cross-origin',
+  'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://images.pokemontcg.io https://placehold.co; connect-src 'self'; media-src 'self'; frame-ancestors 'self'; form-action 'self'",
+  'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
+  'Permissions-Policy': 'camera=(self), microphone=(), geolocation=(), payment=(), usb=()',
+  'Cross-Origin-Opener-Policy': 'same-origin',
+}
+
+/**
+ * Applies security headers to a response using setHeader so they are included
+ * regardless of which writeHead / writeJson path eventually sends the response.
+ */
+function applySecurityHeaders(res) {
+  for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
+    res.setHeader(name, value)
+  }
+}
+
 /**
  * Returns CORS response headers when the request origin matches ALLOWED_ORIGIN.
  * Returns an empty object (no CORS headers) for same-origin or unrecognised origins.
@@ -625,6 +646,8 @@ async function serveStatic(req, res, pathname) {
 
 const requestHandler = async (req, res) => {
   if (!req.url) { writeJson(res, 400, { error: 'Invalid URL' }, req); return }
+
+  applySecurityHeaders(res)
 
   const url      = new URL(req.url, `http://${req.headers.host || 'localhost'}`)
   const pathname = url.pathname
