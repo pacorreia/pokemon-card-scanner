@@ -48,7 +48,7 @@ pokemon-card-scanner/
 │   ├── lib/                 # API client, TCG database helpers
 │   └── App.tsx              # Root component
 ├── tests/                   # Unit tests (Vitest)
-├── docs/                    # This documentation (Zensical)
+├── docs/                    # Documentation source
 ├── Dockerfile               # Multi-stage Docker build
 ├── zensical.toml            # Documentation configuration
 └── vite.config.ts           # Vite + Vitest configuration
