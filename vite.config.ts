@@ -35,10 +35,11 @@ export default defineConfig({
       'tests/server/**/*.test.js',
       'tests/server/**/*.test.mjs',
     ],
+    setupFiles: ['tests/setup/canvas-polyfill.ts'],
     coverage: {
       provider: 'v8',
       include: ['src/lib/**', 'src/hooks/**', 'server/ai-transformers.mjs'],
-      exclude: ['src/lib/image-processing.ts', 'src/lib/tcg-database.ts', 'src/lib/queue-api.ts', 'src/lib/api-fetch.ts'],
+      exclude: ['src/lib/tcg-database.ts', 'src/lib/queue-api.ts', 'src/lib/api-fetch.ts'],
     },
   },
 });
