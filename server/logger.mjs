@@ -7,7 +7,7 @@ const LEVEL_VALUES = {
   error: 40,
 }
 
-function normalizeLevel(level) {
+export function normalizeLevel(level) {
   if (!level) return 'info'
   const normalized = String(level).trim().toLowerCase()
   return Object.prototype.hasOwnProperty.call(LEVEL_VALUES, normalized) ? normalized : 'info'

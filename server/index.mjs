@@ -26,6 +26,15 @@ import * as db from './db.mjs'
 import { runDownload } from './download.mjs'
 import { logger } from './logger.mjs'
 import { transformAnthropicRequest, transformAnthropicResponse } from './ai-transformers.mjs'
+import {
+  parseCookies,
+  getClientAddress,
+  isSecureRequest,
+  isSameOriginBrowserRequest,
+  isRetriableStatus,
+  isRetriableNetworkError,
+  normalizeClientLogEntry,
+} from './utils.mjs'
 
 const PORT              = Number(process.env.PORT || 8787)
 const HTTPS_PORT        = Number(process.env.HTTPS_PORT || 8443)
@@ -265,12 +274,6 @@ function writeJson(res, statusCode, payload, req = null, extraHeaders = {}) {
 
 const clientLogRateWindows = new Map()
 
-function getClientAddress(req) {
-  const forwarded = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()
-  if (forwarded) return forwarded
-  return String(req.socket?.remoteAddress || 'unknown')
-}
-
 function isClientLogRateLimited(req) {
   const key = getClientAddress(req)
   const now = Date.now()
@@ -284,46 +287,6 @@ function isClientLogRateLimited(req) {
   state.count += 1
   if (state.count <= CLIENT_LOG_RATE_LIMIT_MAX) return false
   return true
-}
-
-function parseCookies(req) {
-  const header = String(req.headers.cookie || '')
-  if (!header) return {}
-  const cookies = {}
-  for (const part of header.split(';')) {
-    const [rawKey, ...rawValueParts] = part.trim().split('=')
-    if (!rawKey) continue
-    const rawValue = rawValueParts.join('=')
-    try {
-      cookies[rawKey] = decodeURIComponent(rawValue || '')
-    } catch {
-      cookies[rawKey] = rawValue || ''
-    }
-  }
-  return cookies
-}
-
-function isSecureRequest(req) {
-  const forwardedProto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase()
-  if (forwardedProto) return forwardedProto === 'https'
-  return Boolean(req.socket?.encrypted)
-}
-
-function isSameOriginBrowserRequest(req) {
-  const origin = String(req.headers.origin || '').trim()
-  const host = String(req.headers.host || '').trim().toLowerCase()
-  const secFetchSite = String(req.headers['sec-fetch-site'] || '').trim().toLowerCase()
-
-  if (!origin || !host) return false
-  if (secFetchSite && secFetchSite !== 'same-origin') return false
-
-  try {
-    const originUrl = new URL(origin)
-    if (!['http:', 'https:'].includes(originUrl.protocol)) return false
-    return originUrl.host.toLowerCase() === host
-  } catch {
-    return false
-  }
 }
 
 function signClientLogToken(payload) {
@@ -372,42 +335,6 @@ function buildClientLogCookie(token, req) {
   ]
   if (isSecureRequest(req)) attrs.push('Secure')
   return attrs.join('; ')
-}
-
-const CLIENT_LOG_LEVELS = new Set(['debug', 'verbose', 'info', 'warning', 'error'])
-
-function normalizeClientLogEntry(entry) {
-  if (!entry || typeof entry !== 'object') return null
-  const level = String(entry.level || '').toLowerCase()
-  if (!CLIENT_LOG_LEVELS.has(level)) return null
-
-  const scopeRaw = typeof entry.scope === 'string' ? entry.scope.trim() : ''
-  const scope = scopeRaw ? scopeRaw.slice(0, 96) : 'browser'
-
-  const messageRaw = typeof entry.message === 'string' ? entry.message : String(entry.message ?? '')
-  const message = messageRaw.trim().slice(0, 4000)
-  if (!message) return null
-
-  const timestampRaw = typeof entry.timestamp === 'string' ? entry.timestamp : ''
-  const timestamp = timestampRaw && !Number.isNaN(Date.parse(timestampRaw))
-    ? timestampRaw
-    : new Date().toISOString()
-
-  let meta = null
-  if (entry.meta !== undefined) {
-    try {
-      const serialized = JSON.stringify(entry.meta)
-      if (serialized && serialized.length <= 2048) {
-        meta = entry.meta
-      } else if (serialized) {
-        meta = { truncated: `${serialized.slice(0, 2048)}...` }
-      }
-    } catch {
-      meta = { truncated: String(entry.meta).slice(0, 2048) }
-    }
-  }
-
-  return { level, scope, message, timestamp, meta }
 }
 
 function writeClientLogToServerConsole(log, req) {
@@ -517,18 +444,6 @@ function readBody(req, maxBytes = Number(process.env.MAX_JSON_BODY_BYTES || 64 *
 
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms))
-}
-
-function isRetriableStatus(status) {
-  return status === 408 || status === 429 || status === 500 || status === 502 || status === 503 || status === 504
-}
-
-function isRetriableNetworkError(error) {
-  if (!error) return false
-  const code = error?.cause?.code || error?.code
-  if (code && ['ETIMEDOUT', 'ECONNRESET', 'EAI_AGAIN', 'ENOTFOUND'].includes(code)) return true
-  const message = String(error?.message || '').toLowerCase()
-  return message.includes('fetch failed') || message.includes('timeout')
 }
 
 async function fetchAIWithRetry(body) {
