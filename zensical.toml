@@ -8,7 +8,7 @@ site_name = "PokéDex Scanner"
 site_description = "AI-powered Pokémon TCG card scanner and collection manager"
 site_author = "Paulo Correia"
 site_url = "https://pacorreia.github.io/pokemon-card-scanner"
-copyright = "Copyright &copy; 2026 Paulo Correia"
+copyright = "Copyright &copy; 2026 GitHub, Inc."
 
 # ----------------------------------------------------------------------------
 # Navigation
