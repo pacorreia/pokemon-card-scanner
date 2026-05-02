@@ -41,7 +41,7 @@ describe('imageDataUrlHash', () => {
   let blurryDataUrl: string
 
   beforeAll(async () => {
-    sharpDataUrl  = await loadAsDataUrl('sharp.jpg')
+    sharpDataUrl = await loadAsDataUrl('sharp.jpg')
     blurryDataUrl = await loadAsDataUrl('blurry.jpg')
   })
 

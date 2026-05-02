@@ -35,7 +35,12 @@ export function transformAnthropicRequest(body) {
           if (item.type === 'image_url') {
             const url = item.image_url?.url ?? ''
             if (url.startsWith('data:')) {
-              const [prefix, data] = url.split(',')
+              const commaIdx = url.indexOf(',')
+              if (commaIdx === -1) {
+                return { type: 'image', source: { type: 'url', url } }
+              }
+              const prefix = url.slice(0, commaIdx)
+              const data = url.slice(commaIdx + 1)
               const mediaType = prefix.split(':')[1]?.split(';')[0] ?? 'image/jpeg'
               return { type: 'image', source: { type: 'base64', media_type: mediaType, data } }
             }

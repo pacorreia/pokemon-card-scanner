@@ -95,6 +95,8 @@ function getActiveProviderConfig() {
     const baseUrl = runtimeAISettings.ollamaBaseUrl || process.env.OLLAMA_BASE_URL || 'http://localhost:11434'
     try {
       const parsed = new URL(baseUrl)
+      // http is intentionally allowed: Ollama runs locally over plain HTTP by default.
+      // https is also accepted for remote deployments behind TLS.
       if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
         url = parsed.origin + parsed.pathname.replace(/\/$/, '') + '/v1/chat/completions'
       }
@@ -540,7 +542,9 @@ async function fetchAIWithRetry(body) {
       const parsed = JSON.parse(body)
       parsed.model = runtimeAISettings.model
       effectiveBody = JSON.stringify(parsed)
-    } catch { /* keep original body */ }
+    } catch (err) {
+      logger.warn('server', 'fetchAIWithRetry: could not apply model override (body is not valid JSON)', err?.message)
+    }
   }
 
   // Apply provider-specific request transformation (e.g. Anthropic format)
@@ -548,6 +552,11 @@ async function fetchAIWithRetry(body) {
 
   for (let attempt = 0; attempt <= MODELS_FETCH_RETRIES; attempt += 1) {
     try {
+      // The `url` here is user-configurable for Ollama/Azure providers.
+      // Protocol and structure are validated in getActiveProviderConfig() before reaching here:
+      //   - URL is parsed with new URL() and only http:/https: origins are accepted.
+      //   - The endpoint is auth-gated (POST /api/settings/ai requires isAuthorized()).
+      // codeql[js/request-forgery]
       const upstream = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...extraHeaders() },

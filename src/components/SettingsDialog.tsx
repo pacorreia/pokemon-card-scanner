@@ -106,7 +106,7 @@ export function SettingsDialog({
       const raw = err instanceof Error ? err.message : 'Failed to save AI settings'
       try {
         const parsed = JSON.parse(raw) as { error?: string }
-        setAiSaveError(parsed.error ?? raw)
+        setAiSaveError(parsed.error ?? 'Failed to save AI settings')
       } catch {
         setAiSaveError(raw)
       }

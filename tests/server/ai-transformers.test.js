@@ -99,6 +99,23 @@ describe('transformAnthropicRequest', () => {
     })
   })
 
+  it('treats a malformed data: URL without a comma as a url-type image block', () => {
+    const malformed = 'data:image/jpeg'
+    const result = transformAnthropicRequest({
+      model: 'claude-3',
+      messages: [
+        {
+          role: 'user',
+          content: [{ type: 'image_url', image_url: { url: malformed } }],
+        },
+      ],
+    })
+    expect(result.messages[0].content[0]).toEqual({
+      type: 'image',
+      source: { type: 'url', url: malformed },
+    })
+  })
+
   it('leaves non-image_url content blocks unchanged', () => {
     const textBlock = { type: 'text', text: 'Describe this.' }
     const result = transformAnthropicRequest({
