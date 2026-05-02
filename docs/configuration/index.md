@@ -19,7 +19,7 @@ PokéDex Scanner is configured entirely through environment variables. There are
 
 ## Configuration files
 
-- **`.env`** — Copy from `.env.example` for local development. Variables in this file are picked up by the Node.js server at runtime.
+- **`.env`** — Copy from `.env.example` for local development. Load these variables into your shell or startup command before launching the Node.js server; they are not read automatically by `node server/index.mjs`.
 - **`.env.example`** — A fully-commented template listing every available variable with explanations.
 
 ## Sections
