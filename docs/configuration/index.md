@@ -8,7 +8,7 @@ PokéDex Scanner is configured entirely through environment variables. There are
 |---|---|---|
 | `AI_PROVIDER` | `github` | Which AI provider to use for card recognition |
 | `GITHUB_MODELS_TOKEN` | *(required when `AI_PROVIDER=github`)* | GitHub Personal Access Token |
-| `VITE_CARD_ANALYSIS_MODEL` | *(provider default)* | Override the model used for card analysis |
+| `VITE_CARD_ANALYSIS_MODEL` | *(provider default)* | Override the model used for card analysis. **Build-time only** (Vite `import.meta.env`) — has no effect on a prebuilt Docker image. Use the Settings UI or `POST /api/settings/ai` for runtime overrides. |
 | `PORT` | `8787` | HTTP port for the Node.js server |
 | `HTTPS_PORT` | `8443` | HTTPS port for the Node.js server |
 | `HTTPS_ENABLED` | `true` | Set to `false` to disable HTTPS |

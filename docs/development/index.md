@@ -16,6 +16,8 @@ cd pokemon-card-scanner
 npm install
 cp .env.example .env
 # Edit .env and set GITHUB_MODELS_TOKEN (or another provider key)
+# Then export the variables into your shell — the server does not auto-load .env:
+export $(grep -v '^#' .env | xargs)
 ```
 
 ## Running locally
@@ -90,7 +92,7 @@ The documentation site is built with [MkDocs Material](https://squidfunk.github.
 ### Install doc dependencies
 
 ```bash
-pip install -r requirements.txt
+pip install zensical
 ```
 
 ### Preview locally
