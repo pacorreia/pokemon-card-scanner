@@ -57,7 +57,7 @@ graph TB
         end
 
         subgraph server["Node.js Server"]
-            api["REST API<br/>• /api/scan<br/>• /api/db<br/>• /api/collections"]
+            api["REST API<br/>• /api/ai/chat<br/>• /api/db<br/>• /api/collections"]
             aiProxy["AI Proxy<br/>• GitHub Models<br/>• OpenAI / Groq<br/>• Ollama / Azure / Anthropic"]
             db[("SQLite Database<br/>(pokedex.db)")]
         end

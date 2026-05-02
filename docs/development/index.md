@@ -65,7 +65,7 @@ npm run test:watch
 npm run test:coverage
 ```
 
-Tests use [Vitest](https://vitest.dev/) with `jsdom` / `node` environments. Coverage is provided by the v8 provider.
+Tests use [Vitest](https://vitest.dev/) with the `node` environment. Coverage is provided by the v8 provider.
 
 ## Linting
 

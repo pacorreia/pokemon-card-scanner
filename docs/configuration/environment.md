@@ -22,14 +22,21 @@ Full reference for every environment variable recognised by the PokéDex Scanner
 |---|---|---|
 | `PORT` | `8787` | HTTP port the Node.js server listens on |
 | `HTTPS_PORT` | `8443` | HTTPS port; a self-signed certificate is generated automatically |
+| `HTTPS_ENABLED` | `true` | Set to `false` to disable HTTPS entirely (HTTP only) |
+| `HOST` | `0.0.0.0` | Bind address for both HTTP and HTTPS servers |
 | `NODE_ENV` | `development` | Set to `production` for production deployments |
 | `DATA_DIR` | `./data` (dev) / `/data` (Docker) | Directory where `pokedex.db` (SQLite) is stored |
+| `TLS_DIR` | `<DATA_DIR>/tls` | Directory where TLS certificate files are stored or generated |
+| `TLS_KEY_PATH` | `<TLS_DIR>/server.key` | Path to a custom TLS private key (PEM). If absent, a self-signed key is generated. |
+| `TLS_CERT_PATH` | `<TLS_DIR>/server.crt` | Path to a custom TLS certificate (PEM). If absent, a self-signed cert is generated. |
 
 ## Security
 
 | Variable | Default | Description |
 |---|---|---|
 | `API_SECRET` | *(empty)* | When set, all `POST`/`PUT`/`DELETE` requests and `GET /api/db/export` require a valid session cookie obtained via `POST /api/auth/login`. Leave empty for local / trusted-network deployments. |
+| `SESSION_SECRET` | *(random, ephemeral)* | Secret used to sign session tokens. Set a stable value in production so sessions survive server restarts. |
+| `SESSION_TTL_MS` | `604800000` (7 days) | Session token lifetime in milliseconds. |
 | `ALLOWED_ORIGIN` | *(empty)* | Allowed CORS origin. Set to the frontend origin (e.g. `http://localhost:5173`) only when the frontend and API run on different origins (typical during `npm run dev:full`). Leave empty for same-origin deployments. |
 
 !!! warning "Keep secrets out of version control"
