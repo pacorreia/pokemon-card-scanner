@@ -117,9 +117,10 @@ function getActiveProviderConfig() {
     if (azureUrl) {
       try {
         const parsed = new URL(azureUrl)
-        if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-          // Reconstruct from trusted parsed components (origin + path + query) to eliminate any SSRF taint.
-          // Azure OpenAI endpoints commonly include ?api-version=... which must be preserved.
+        // Azure OpenAI only supports HTTPS; reject plain-HTTP URLs.
+        // Reconstruct from trusted parsed components (origin + path + query) to eliminate SSRF taint.
+        // Azure OpenAI endpoints commonly include ?api-version=... which must be preserved.
+        if (parsed.protocol === 'https:') {
           url = parsed.origin + parsed.pathname + parsed.search
         }
       } catch { /* keep cfg.url */ }
@@ -482,16 +483,17 @@ async function fetchAIWithRetry(body) {
   for (let attempt = 0; attempt <= MODELS_FETCH_RETRIES; attempt += 1) {
     try {
       // The `url` here is user-configurable for Ollama/Azure providers.
-      // Protocol and structure are validated in getActiveProviderConfig() before reaching here:
-      //   - URL is parsed with new URL() and only http:/https: origins are accepted.
-      //   - The endpoint is auth-gated (POST /api/settings/ai requires isAuthorized()).
-      // codeql[js/request-forgery]
+      // Both paths parse the supplied value with new URL() and reconstruct the target URL
+      // from trusted components (origin + pathname + search), enforcing http/https protocol
+      // only (Ollama) or https-only (Azure). The settings endpoint itself is admin-gated
+      // (POST /api/settings/ai requires isAuthorized()), so the effective attack surface is
+      // limited to an authenticated administrator deliberately pointing to a different host.
       const upstream = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...extraHeaders() },
         body: requestBody,
         signal: AbortSignal.timeout(MODELS_FETCH_TIMEOUT_MS),
-      })
+      }) // codeql[js/request-forgery]
 
       if (!upstream.ok && isRetriableStatus(upstream.status) && attempt < MODELS_FETCH_RETRIES) {
         const backoffMs = MODELS_FETCH_RETRY_BASE_MS * (2 ** attempt)
