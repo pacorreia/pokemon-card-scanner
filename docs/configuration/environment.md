@@ -1,6 +1,8 @@
 # Environment Variables
 
-Full reference for every environment variable recognised by the PokéDex Scanner server. Copy `.env.example` to `.env` and fill in the values you need.
+Full reference for every environment variable recognised by the PokéDex Scanner server.
+
+If you want to keep local settings in a file, you can copy `.env.example` to `.env` and fill in the values you need. However, the current `npm run dev:server` startup does **not** automatically load `.env`, so creating that file alone is not enough. Make sure those variables are exported/sourced into your shell before starting the server, or use a startup method that explicitly loads `.env`.
 
 ## AI provider
 
