@@ -118,7 +118,9 @@ function getActiveProviderConfig() {
       try {
         const parsed = new URL(azureUrl)
         if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-          url = parsed.href
+          // Reconstruct from trusted parsed components (origin + path + query) to eliminate any SSRF taint.
+          // Azure OpenAI endpoints commonly include ?api-version=... which must be preserved.
+          url = parsed.origin + parsed.pathname + parsed.search
         }
       } catch { /* keep cfg.url */ }
     }
