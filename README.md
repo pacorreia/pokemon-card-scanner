@@ -59,7 +59,7 @@ Switch providers by setting `AI_PROVIDER` before starting the server:
 | **Azure OpenAI** | `azure` | `AZURE_OPENAI_URL`, `AZURE_OPENAI_API_KEY` |
 | **Anthropic Claude** | `anthropic` | `ANTHROPIC_API_KEY` |
 
-Override the model with `VITE_CARD_ANALYSIS_MODEL=<model>`. See [`.env.example`](.env.example) for all options, or the [AI Providers docs](https://pacorreia.github.io/pokemon-card-scanner/configuration/ai-providers/) for examples.
+Override the model with `VITE_CARD_ANALYSIS_MODEL=<model>` for local development or when rebuilding the frontend. In the published Docker image, the frontend is already built, so changing `VITE_` environment variables at container runtime will not affect `import.meta.env`; use the Settings UI (or `/api/settings/ai`) for production/runtime overrides instead. See [`.env.example`](.env.example) for all options, or the [AI Providers docs](https://pacorreia.github.io/pokemon-card-scanner/configuration/ai-providers/) for examples.
 
 ## Building for production
 
