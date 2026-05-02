@@ -29,10 +29,15 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
+    include: [
+      'tests/src/**/*.test.ts',
+      'tests/src/**/*.test.tsx',
+      'tests/server/**/*.test.js',
+      'tests/server/**/*.test.mjs',
+    ],
     coverage: {
       provider: 'v8',
-      include: ['src/lib/**', 'src/hooks/**'],
+      include: ['src/lib/**', 'src/hooks/**', 'server/ai-transformers.mjs'],
       exclude: ['src/lib/image-processing.ts', 'src/lib/tcg-database.ts', 'src/lib/queue-api.ts', 'src/lib/api-fetch.ts'],
     },
   },

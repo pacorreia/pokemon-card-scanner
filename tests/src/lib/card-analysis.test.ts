@@ -8,7 +8,7 @@ import {
   buildPricesFromTcgCard,
   AUTO_ADD_CONFIDENCE_THRESHOLD,
   type ScannedCardDraft,
-} from './card-analysis'
+} from '@/lib/card-analysis'
 
 // ── isAutoAddEligible ──────────────────────────────────────────────────────────
 

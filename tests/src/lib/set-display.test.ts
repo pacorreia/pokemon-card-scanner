@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { getFriendlySetName } from './set-display'
+import { getFriendlySetName } from '@/lib/set-display'
 
 describe('getFriendlySetName', () => {
   it('returns "Unknown Set" when name is undefined', () => {

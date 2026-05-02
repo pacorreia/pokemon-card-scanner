@@ -103,7 +103,13 @@ export function SettingsDialog({
       setAiApiKey('')  // clear after save; it's now stored on the server
       setAiSaveSuccess(true)
     } catch (err) {
-      setAiSaveError(err instanceof Error ? err.message : 'Failed to save AI settings')
+      const raw = err instanceof Error ? err.message : 'Failed to save AI settings'
+      try {
+        const parsed = JSON.parse(raw) as { error?: string }
+        setAiSaveError(parsed.error ?? raw)
+      } catch {
+        setAiSaveError(raw)
+      }
     } finally {
       setAiSaving(false)
     }

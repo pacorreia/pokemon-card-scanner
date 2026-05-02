@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isUsableImageUrl, pickBestImageUrl, formatEstimatedValue } from './utils'
+import { isUsableImageUrl, pickBestImageUrl, formatEstimatedValue } from '@/lib/utils'
 
 describe('isUsableImageUrl', () => {
   it('returns true for https URLs', () => {
