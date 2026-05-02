@@ -1,0 +1,89 @@
+# ============================================================================
+# PokéDex Scanner — Zensical Documentation Configuration
+# ============================================================================
+
+[project]
+
+site_name = "PokéDex Scanner"
+site_description = "AI-powered Pokémon TCG card scanner and collection manager"
+site_author = "Paulo Correia"
+site_url = "https://pacorreia.github.io/pokemon-card-scanner"
+copyright = "Copyright &copy; 2026 Paulo Correia"
+
+# ----------------------------------------------------------------------------
+# Navigation
+# ----------------------------------------------------------------------------
+nav = [
+  { "Home" = [
+    { "Home" = "index.md" },
+  ]},
+  { "Getting Started" = [
+    { "Introduction" = "getting-started/index.md" },
+    { "Quick Start" = "getting-started/quick-start.md" },
+    { "Installation" = "getting-started/installation.md" },
+    { "Requirements" = "getting-started/requirements.md" },
+  ]},
+  { "Configuration" = [
+    { "Overview" = "configuration/index.md" },
+    { "AI Providers" = "configuration/ai-providers.md" },
+    { "Environment Variables" = "configuration/environment.md" },
+  ]},
+  { "Guides" = [
+    { "Docker Deployment" = "guides/docker.md" },
+  ]},
+  { "Development" = [
+    { "Overview" = "development/index.md" },
+  ]},
+]
+
+# ----------------------------------------------------------------------------
+# Repository
+# ----------------------------------------------------------------------------
+repo_url = "https://github.com/pacorreia/pokemon-card-scanner"
+repo_name = "pacorreia/pokemon-card-scanner"
+
+# ----------------------------------------------------------------------------
+# Theme
+# ----------------------------------------------------------------------------
+[project.theme]
+language = "en"
+
+features = [
+  "navigation.instant",
+  "navigation.tracking",
+  "navigation.tabs",
+  "navigation.tabs.sticky",
+  "navigation.sections",
+  "navigation.expand",
+  "navigation.path",
+  "search.highlight",
+  "search.suggest",
+  "search.share",
+  "content.tabs.link",
+  "content.code.copy",
+  "content.code.select",
+]
+
+# ----------------------------------------------------------------------------
+# Color palettes — Light / Dark mode toggle
+# ----------------------------------------------------------------------------
+[[project.theme.palette]]
+scheme = "default"
+primary = "deep purple"
+accent = "yellow"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+scheme = "slate"
+primary = "deep purple"
+accent = "yellow"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to light mode"
+
+# ----------------------------------------------------------------------------
+# Social links
+# ----------------------------------------------------------------------------
+[[project.extra.social]]
+icon = "fontawesome/brands/github"
+link = "https://github.com/pacorreia/pokemon-card-scanner"
