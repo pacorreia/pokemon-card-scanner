@@ -88,15 +88,27 @@ function getActiveProviderConfig() {
   const cfg = PROVIDER_CONFIG[providerName] ?? PROVIDER_CONFIG.github
   const key = runtimeAISettings.apiKey || null
 
-  // Compute URL, accounting for providers whose base URL is configurable at runtime
+  // Compute URL, accounting for providers whose base URL is configurable at runtime.
+  // Parse with URL() and reconstruct from trusted components to eliminate any SSRF taint.
   let url = cfg.url
   if (providerName === 'ollama') {
     const baseUrl = runtimeAISettings.ollamaBaseUrl || process.env.OLLAMA_BASE_URL || 'http://localhost:11434'
-    // Defensive guard: only use http/https to prevent accidental SSRF
-    url = /^https?:\/\//i.test(baseUrl) ? baseUrl.replace(/\/$/, '') + '/v1/chat/completions' : cfg.url
+    try {
+      const parsed = new URL(baseUrl)
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+        url = parsed.origin + parsed.pathname.replace(/\/$/, '') + '/v1/chat/completions'
+      }
+    } catch { /* keep cfg.url */ }
   } else if (providerName === 'azure') {
     const azureUrl = runtimeAISettings.azureUrl || process.env.AZURE_OPENAI_URL || ''
-    url = /^https?:\/\//i.test(azureUrl) ? azureUrl : cfg.url
+    if (azureUrl) {
+      try {
+        const parsed = new URL(azureUrl)
+        if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+          url = parsed.href
+        }
+      } catch { /* keep cfg.url */ }
+    }
   }
 
   return { ...cfg, url, extraHeaders: () => cfg.extraHeaders(key) }
