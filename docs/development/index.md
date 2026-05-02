@@ -48,9 +48,9 @@ pokemon-card-scanner/
 │   ├── lib/                 # API client, TCG database helpers
 │   └── App.tsx              # Root component
 ├── tests/                   # Unit tests (Vitest)
-├── docs/                    # This documentation (MkDocs)
+├── docs/                    # This documentation (Zensical)
 ├── Dockerfile               # Multi-stage Docker build
-├── mkdocs.yml               # MkDocs configuration
+├── zensical.toml            # Documentation configuration
 └── vite.config.ts           # Vite + Vitest configuration
 ```
 
@@ -87,7 +87,7 @@ Output is written to `dist/`. The Node.js server in `server/index.mjs` serves th
 
 ## Working on the documentation
 
-The documentation site is built with [MkDocs Material](https://squidfunk.github.io/mkdocs-material/).
+The documentation site is built with [Zensical](https://zensical.dev/).
 
 ### Install doc dependencies
 
@@ -98,7 +98,7 @@ pip install zensical
 ### Preview locally
 
 ```bash
-mkdocs serve
+zensical serve
 ```
 
 Open <http://127.0.0.1:8000>.
@@ -106,7 +106,7 @@ Open <http://127.0.0.1:8000>.
 ### Build the docs site
 
 ```bash
-mkdocs build
+zensical build
 ```
 
 Output is written to `site/`.
@@ -120,7 +120,7 @@ Documentation is deployed automatically to the `gh-pages` branch via the [`deplo
 | Workflow | Trigger | Description |
 |---|---|---|
 | `ci.yml` | Push / PR to `main` | Lint, test, build, push Docker image |
-| `deploy-docs.yml` | Push to `main` (docs changes) | Build and deploy MkDocs site to `gh-pages` |
+| `deploy-docs.yml` | Push to `main` (docs changes) | Build and deploy docs site to `gh-pages` |
 
 ## Contributing
 
