@@ -100,17 +100,17 @@ function transformAnthropicResponse(text) {
 const PROVIDER_CONFIG = {
   github: {
     url: 'https://models.github.ai/inference/chat/completions',
-    extraHeaders: () => ({ Authorization: `Bearer ${process.env.GITHUB_MODELS_TOKEN || ''}` }),
+    extraHeaders: (key) => ({ Authorization: `Bearer ${key || process.env.GITHUB_MODELS_TOKEN || ''}` }),
     tokenEnvVar: 'GITHUB_MODELS_TOKEN',
   },
   openai: {
     url: 'https://api.openai.com/v1/chat/completions',
-    extraHeaders: () => ({ Authorization: `Bearer ${process.env.OPENAI_API_KEY || ''}` }),
+    extraHeaders: (key) => ({ Authorization: `Bearer ${key || process.env.OPENAI_API_KEY || ''}` }),
     tokenEnvVar: 'OPENAI_API_KEY',
   },
   groq: {
     url: 'https://api.groq.com/openai/v1/chat/completions',
-    extraHeaders: () => ({ Authorization: `Bearer ${process.env.GROQ_API_KEY || ''}` }),
+    extraHeaders: (key) => ({ Authorization: `Bearer ${key || process.env.GROQ_API_KEY || ''}` }),
     tokenEnvVar: 'GROQ_API_KEY',
   },
   ollama: {
@@ -120,13 +120,13 @@ const PROVIDER_CONFIG = {
   },
   azure: {
     url: process.env.AZURE_OPENAI_URL || '',
-    extraHeaders: () => ({ Authorization: `Bearer ${process.env.AZURE_OPENAI_API_KEY || ''}` }),
+    extraHeaders: (key) => ({ Authorization: `Bearer ${key || process.env.AZURE_OPENAI_API_KEY || ''}` }),
     tokenEnvVar: 'AZURE_OPENAI_API_KEY',
   },
   anthropic: {
     url: 'https://api.anthropic.com/v1/messages',
-    extraHeaders: () => ({
-      'x-api-key': process.env.ANTHROPIC_API_KEY || '',
+    extraHeaders: (key) => ({
+      'x-api-key': key || process.env.ANTHROPIC_API_KEY || '',
       'anthropic-version': '2023-06-01',
     }),
     tokenEnvVar: 'ANTHROPIC_API_KEY',
@@ -135,7 +135,35 @@ const PROVIDER_CONFIG = {
   },
 }
 
-const activeProvider = PROVIDER_CONFIG[AI_PROVIDER] ?? PROVIDER_CONFIG.github
+// ── Runtime AI settings ─────────────────────────────────────────────────────
+// Overrides env-var defaults without requiring a server restart.
+// All fields are null to indicate "use the env-var default".
+let runtimeAISettings = {
+  provider: null,       // string | null — overrides AI_PROVIDER env var
+  model: null,          // string | null — overrides the model field in the request body
+  apiKey: null,         // string | null — overrides the provider's token env var
+  ollamaBaseUrl: null,  // string | null — overrides OLLAMA_BASE_URL env var
+  azureUrl: null,       // string | null — overrides AZURE_OPENAI_URL env var
+}
+
+function getActiveProviderConfig() {
+  const providerName = runtimeAISettings.provider ?? AI_PROVIDER
+  const cfg = PROVIDER_CONFIG[providerName] ?? PROVIDER_CONFIG.github
+  const key = runtimeAISettings.apiKey || null
+
+  // Compute URL, accounting for providers whose base URL is configurable at runtime
+  let url = cfg.url
+  if (providerName === 'ollama') {
+    const baseUrl = runtimeAISettings.ollamaBaseUrl || process.env.OLLAMA_BASE_URL || 'http://localhost:11434'
+    // Defensive guard: only use http/https to prevent accidental SSRF
+    url = /^https?:\/\//i.test(baseUrl) ? baseUrl.replace(/\/$/, '') + '/v1/chat/completions' : cfg.url
+  } else if (providerName === 'azure') {
+    const azureUrl = runtimeAISettings.azureUrl || process.env.AZURE_OPENAI_URL || ''
+    url = /^https?:\/\//i.test(azureUrl) ? azureUrl : cfg.url
+  }
+
+  return { ...cfg, url, extraHeaders: () => cfg.extraHeaders(key) }
+}
 const MODELS_FETCH_TIMEOUT_MS = Number(process.env.GITHUB_MODELS_TIMEOUT_MS || 90000)
 const MODELS_FETCH_RETRIES = Number(process.env.GITHUB_MODELS_RETRIES || 3)
 const MODELS_FETCH_RETRY_BASE_MS = Number(process.env.GITHUB_MODELS_RETRY_BASE_MS || 1000)
@@ -551,11 +579,22 @@ function isRetriableNetworkError(error) {
 }
 
 async function fetchAIWithRetry(body) {
-  const { url, extraHeaders, transformRequest, transformResponse } = activeProvider
+  const providerConfig = getActiveProviderConfig()
+  const { url, extraHeaders, transformRequest, transformResponse } = providerConfig
   let lastError = null
 
+  // Apply runtime model override if set
+  let effectiveBody = body
+  if (runtimeAISettings.model) {
+    try {
+      const parsed = JSON.parse(body)
+      parsed.model = runtimeAISettings.model
+      effectiveBody = JSON.stringify(parsed)
+    } catch { /* keep original body */ }
+  }
+
   // Apply provider-specific request transformation (e.g. Anthropic format)
-  const requestBody = transformRequest ? JSON.stringify(transformRequest(JSON.parse(body))) : body
+  const requestBody = transformRequest ? JSON.stringify(transformRequest(JSON.parse(effectiveBody))) : effectiveBody
 
   for (let attempt = 0; attempt <= MODELS_FETCH_RETRIES; attempt += 1) {
     try {
@@ -878,15 +917,91 @@ const requestHandler = async (req, res) => {
       return
     }
 
+    // ── AI settings ─────────────────────────────────────────────────────────
+    if (pathname === '/api/settings/ai' && method === 'GET') {
+      const providerName = runtimeAISettings.provider ?? AI_PROVIDER
+      const cfg = PROVIDER_CONFIG[providerName] ?? PROVIDER_CONFIG.github
+      const apiKeySet = Boolean(runtimeAISettings.apiKey || (cfg.tokenEnvVar && process.env[cfg.tokenEnvVar]))
+      writeJson(res, 200, {
+        provider:      runtimeAISettings.provider ?? AI_PROVIDER,
+        model:         runtimeAISettings.model ?? null,
+        apiKeySet,
+        ollamaBaseUrl: runtimeAISettings.ollamaBaseUrl ?? null,
+        azureUrl:      runtimeAISettings.azureUrl ?? null,
+      }, req)
+      return
+    }
+
+    if (pathname === '/api/settings/ai' && method === 'POST') {
+      if (!isAuthorized(req)) { writeJson(res, 401, { error: 'Unauthorized' }, req); return }
+      let body
+      try { body = await readJsonBody(req, 4096) } catch { writeJson(res, 400, { error: 'Invalid JSON' }, req); return }
+
+      const allowedProviders = Object.keys(PROVIDER_CONFIG)
+      if (body.provider !== undefined) {
+        if (body.provider !== null && !allowedProviders.includes(body.provider)) {
+          writeJson(res, 400, { error: `Invalid provider. Allowed: ${allowedProviders.join(', ')}` }, req)
+          return
+        }
+        runtimeAISettings.provider = body.provider || null
+      }
+      if (body.model !== undefined) runtimeAISettings.model = body.model || null
+      if (body.apiKey !== undefined) runtimeAISettings.apiKey = body.apiKey || null
+
+      // Validate and store URL overrides — must be http/https to prevent SSRF
+      if (body.ollamaBaseUrl !== undefined) {
+        const raw = body.ollamaBaseUrl || null
+        if (raw !== null) {
+          try {
+            const parsed = new URL(raw)
+            if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('bad scheme')
+          } catch {
+            writeJson(res, 400, { error: 'ollamaBaseUrl must be a valid http/https URL' }, req)
+            return
+          }
+        }
+        runtimeAISettings.ollamaBaseUrl = raw
+      }
+      if (body.azureUrl !== undefined) {
+        const raw = body.azureUrl || null
+        if (raw !== null) {
+          try {
+            const parsed = new URL(raw)
+            if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('bad scheme')
+          } catch {
+            writeJson(res, 400, { error: 'azureUrl must be a valid http/https URL' }, req)
+            return
+          }
+        }
+        runtimeAISettings.azureUrl = raw
+      }
+
+      const providerName = runtimeAISettings.provider ?? AI_PROVIDER
+      const cfg = PROVIDER_CONFIG[providerName] ?? PROVIDER_CONFIG.github
+      const apiKeySet = Boolean(runtimeAISettings.apiKey || (cfg.tokenEnvVar && process.env[cfg.tokenEnvVar]))
+      logger.info('server', `AI settings updated: provider=${runtimeAISettings.provider ?? AI_PROVIDER} model=${runtimeAISettings.model ?? '(default)'}`)
+      writeJson(res, 200, {
+        ok: true,
+        provider:      runtimeAISettings.provider ?? AI_PROVIDER,
+        model:         runtimeAISettings.model ?? null,
+        apiKeySet,
+        ollamaBaseUrl: runtimeAISettings.ollamaBaseUrl ?? null,
+        azureUrl:      runtimeAISettings.azureUrl ?? null,
+      }, req)
+      return
+    }
+
     // ── AI chat proxy ───────────────────────────────────────────────────────
     if ((pathname === '/api/ai/chat' || pathname === '/api/github-models') && method === 'POST') {
       if (!isAuthorized(req)) { writeJson(res, 401, { error: 'Unauthorized' }, req); return }
 
       // Token validation: skip for ollama (no auth required)
-      if (activeProvider.tokenEnvVar !== null) {
-        const token = process.env[activeProvider.tokenEnvVar]
-        if (!token) {
-          writeJson(res, 500, { error: `${activeProvider.tokenEnvVar} not set on server.` }, req)
+      const providerCfg = getActiveProviderConfig()
+      if (providerCfg.tokenEnvVar !== null) {
+        const envToken = process.env[providerCfg.tokenEnvVar]
+        const hasToken = Boolean(runtimeAISettings.apiKey || envToken)
+        if (!hasToken) {
+          writeJson(res, 500, { error: `${providerCfg.tokenEnvVar} not set on server.` }, req)
           return
         }
       }
