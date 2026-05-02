@@ -31,33 +31,107 @@ const HTTPS_PORT        = Number(process.env.HTTPS_PORT || 8443)
 const HTTPS_ENABLED     = process.env.HTTPS_ENABLED !== 'false'
 const GITHUB_PROXY_BASE = 'https://github.com'
 
-const AI_PROVIDER = process.env.AI_PROVIDER || 'github' // 'github' | 'openai' | 'groq' | 'ollama' | 'azure'
+const AI_PROVIDER = process.env.AI_PROVIDER || 'github' // 'github' | 'openai' | 'groq' | 'ollama' | 'azure' | 'anthropic'
+
+// ── Anthropic request/response transformers ─────────────────────────────────
+// Anthropic's /v1/messages API differs from the OpenAI chat/completions format
+// in three ways: auth headers, request shape, and response shape. These
+// transformers bridge the gap so the rest of the code stays provider-agnostic.
+
+function transformAnthropicRequest(body) {
+  const { messages, model, max_tokens, temperature, top_p } = body
+
+  // Split system-role messages into the top-level `system` field
+  let systemPrompt = ''
+  const filteredMessages = []
+  for (const msg of messages) {
+    if (msg.role === 'system') {
+      const text = typeof msg.content === 'string' ? msg.content : ''
+      systemPrompt += (systemPrompt ? '\n' : '') + text
+    } else {
+      // Convert OpenAI image_url content blocks to Anthropic image blocks
+      const content = Array.isArray(msg.content)
+        ? msg.content.map(item => {
+          if (item.type === 'image_url') {
+            const url = item.image_url?.url ?? ''
+            if (url.startsWith('data:')) {
+              const [prefix, data] = url.split(',')
+              const mediaType = prefix.split(':')[1]?.split(';')[0] ?? 'image/jpeg'
+              return { type: 'image', source: { type: 'base64', media_type: mediaType, data } }
+            }
+            return { type: 'image', source: { type: 'url', url } }
+          }
+          return item
+        })
+        : msg.content
+      filteredMessages.push({ role: msg.role, content })
+    }
+  }
+
+  const result = { model, max_tokens: max_tokens || 1024, messages: filteredMessages }
+  if (systemPrompt) result.system = systemPrompt
+  if (temperature !== undefined) result.temperature = temperature
+  if (top_p !== undefined) result.top_p = top_p
+  // Anthropic does not support `response_format` — omit it intentionally
+  return result
+}
+
+function transformAnthropicResponse(text) {
+  let data
+  try { data = JSON.parse(text) } catch { return text }
+
+  // Surface Anthropic API-level errors in OpenAI error shape
+  if (data.type === 'error') {
+    return JSON.stringify({ error: { message: data.error?.message || 'Anthropic API error' } })
+  }
+
+  const content = data.content?.[0]?.text ?? ''
+  const usage = data.usage
+    ? {
+      prompt_tokens: data.usage.input_tokens,
+      completion_tokens: data.usage.output_tokens,
+      total_tokens: (data.usage.input_tokens || 0) + (data.usage.output_tokens || 0),
+    }
+    : undefined
+
+  return JSON.stringify({ choices: [{ message: { role: 'assistant', content } }], usage })
+}
 
 const PROVIDER_CONFIG = {
   github: {
     url: 'https://models.github.ai/inference/chat/completions',
-    authHeader: () => `Bearer ${process.env.GITHUB_MODELS_TOKEN || ''}`,
+    extraHeaders: () => ({ Authorization: `Bearer ${process.env.GITHUB_MODELS_TOKEN || ''}` }),
     tokenEnvVar: 'GITHUB_MODELS_TOKEN',
   },
   openai: {
     url: 'https://api.openai.com/v1/chat/completions',
-    authHeader: () => `Bearer ${process.env.OPENAI_API_KEY || ''}`,
+    extraHeaders: () => ({ Authorization: `Bearer ${process.env.OPENAI_API_KEY || ''}` }),
     tokenEnvVar: 'OPENAI_API_KEY',
   },
   groq: {
     url: 'https://api.groq.com/openai/v1/chat/completions',
-    authHeader: () => `Bearer ${process.env.GROQ_API_KEY || ''}`,
+    extraHeaders: () => ({ Authorization: `Bearer ${process.env.GROQ_API_KEY || ''}` }),
     tokenEnvVar: 'GROQ_API_KEY',
   },
   ollama: {
     url: (process.env.OLLAMA_BASE_URL || 'http://localhost:11434') + '/v1/chat/completions',
-    authHeader: () => '',
+    extraHeaders: () => ({}),
     tokenEnvVar: null, // no token required
   },
   azure: {
     url: process.env.AZURE_OPENAI_URL || '',
-    authHeader: () => `Bearer ${process.env.AZURE_OPENAI_API_KEY || ''}`,
+    extraHeaders: () => ({ Authorization: `Bearer ${process.env.AZURE_OPENAI_API_KEY || ''}` }),
     tokenEnvVar: 'AZURE_OPENAI_API_KEY',
+  },
+  anthropic: {
+    url: 'https://api.anthropic.com/v1/messages',
+    extraHeaders: () => ({
+      'x-api-key': process.env.ANTHROPIC_API_KEY || '',
+      'anthropic-version': '2023-06-01',
+    }),
+    tokenEnvVar: 'ANTHROPIC_API_KEY',
+    transformRequest: transformAnthropicRequest,
+    transformResponse: transformAnthropicResponse,
   },
 }
 
@@ -477,18 +551,18 @@ function isRetriableNetworkError(error) {
 }
 
 async function fetchAIWithRetry(body) {
-  const { url, authHeader } = activeProvider
+  const { url, extraHeaders, transformRequest, transformResponse } = activeProvider
   let lastError = null
+
+  // Apply provider-specific request transformation (e.g. Anthropic format)
+  const requestBody = transformRequest ? JSON.stringify(transformRequest(JSON.parse(body))) : body
 
   for (let attempt = 0; attempt <= MODELS_FETCH_RETRIES; attempt += 1) {
     try {
-      const headers = { 'Content-Type': 'application/json' }
-      const auth = authHeader()
-      if (auth) headers['Authorization'] = auth
       const upstream = await fetch(url, {
         method: 'POST',
-        headers,
-        body,
+        headers: { 'Content-Type': 'application/json', ...extraHeaders() },
+        body: requestBody,
         signal: AbortSignal.timeout(MODELS_FETCH_TIMEOUT_MS),
       })
 
@@ -496,6 +570,18 @@ async function fetchAIWithRetry(body) {
         const backoffMs = MODELS_FETCH_RETRY_BASE_MS * (2 ** attempt)
         await delay(backoffMs)
         continue
+      }
+
+      // Apply provider-specific response transformation (e.g. Anthropic → OpenAI shape)
+      if (transformResponse) {
+        const rawText = await upstream.text()
+        const transformedText = transformResponse(rawText)
+        return {
+          status: upstream.status,
+          ok: upstream.ok,
+          text: () => Promise.resolve(transformedText),
+          headers: { get: () => 'application/json; charset=utf-8' },
+        }
       }
 
       return upstream

@@ -67,8 +67,9 @@ By default the app uses [GitHub Models](https://models.github.ai). You can switc
 | **Groq** | `groq` | `GROQ_API_KEY` | `meta-llama/llama-4-scout-17b-16e-instruct` |
 | **Ollama** (local) | `ollama` | *(none)* | `llava` |
 | **Azure OpenAI** | `azure` | `AZURE_OPENAI_URL`, `AZURE_OPENAI_API_KEY` | *(provider-specific)* |
+| **Anthropic Claude** | `anthropic` | `ANTHROPIC_API_KEY` | `claude-opus-4-5` |
 
-All supported providers use the OpenAI-compatible `chat/completions` API with vision (`image_url`) support. Anthropic is **not** supported because it uses a different API format.
+GitHub Models, OpenAI, Groq, Ollama, and Azure OpenAI all use the OpenAI-compatible `chat/completions` API natively. Anthropic uses a different API format (`/v1/messages`) — the server transparently translates the request and response shapes, so no changes are needed on the client.
 
 ### Example: switching to OpenAI
 
@@ -85,6 +86,15 @@ npm run dev:server
 export AI_PROVIDER=ollama
 export OLLAMA_BASE_URL=http://localhost:11434
 export VITE_CARD_ANALYSIS_MODEL=llava
+npm run dev:server
+```
+
+### Example: switching to Anthropic Claude
+
+```bash
+export AI_PROVIDER=anthropic
+export ANTHROPIC_API_KEY=sk-ant-...
+export VITE_CARD_ANALYSIS_MODEL=claude-opus-4-5
 npm run dev:server
 ```
 
