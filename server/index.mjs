@@ -3,7 +3,8 @@
  *
  * Unified production server:
  *   - Serves the Vite-built frontend from ../dist/
- *   - Proxies /api/github-models  → GitHub Models AI API
+ *   - Proxies /api/ai/chat        → AI provider (GitHub Models by default)
+ *   - Proxies /api/github-models  → deprecated alias for /api/ai/chat
  *   - Proxies /github-oauth/*     → GitHub device-flow OAuth
  *   - Manages the SQLite TCG database at DATA_DIR/pokedex.db
  *   - Exposes REST API for the user's card collection & named collections
@@ -28,8 +29,39 @@ import { logger } from './logger.mjs'
 const PORT              = Number(process.env.PORT || 8787)
 const HTTPS_PORT        = Number(process.env.HTTPS_PORT || 8443)
 const HTTPS_ENABLED     = process.env.HTTPS_ENABLED !== 'false'
-const GITHUB_MODELS_URL = 'https://models.github.ai/inference/chat/completions'
 const GITHUB_PROXY_BASE = 'https://github.com'
+
+const AI_PROVIDER = process.env.AI_PROVIDER || 'github' // 'github' | 'openai' | 'groq' | 'ollama' | 'azure'
+
+const PROVIDER_CONFIG = {
+  github: {
+    url: 'https://models.github.ai/inference/chat/completions',
+    authHeader: () => `Bearer ${process.env.GITHUB_MODELS_TOKEN || ''}`,
+    tokenEnvVar: 'GITHUB_MODELS_TOKEN',
+  },
+  openai: {
+    url: 'https://api.openai.com/v1/chat/completions',
+    authHeader: () => `Bearer ${process.env.OPENAI_API_KEY || ''}`,
+    tokenEnvVar: 'OPENAI_API_KEY',
+  },
+  groq: {
+    url: 'https://api.groq.com/openai/v1/chat/completions',
+    authHeader: () => `Bearer ${process.env.GROQ_API_KEY || ''}`,
+    tokenEnvVar: 'GROQ_API_KEY',
+  },
+  ollama: {
+    url: (process.env.OLLAMA_BASE_URL || 'http://localhost:11434') + '/v1/chat/completions',
+    authHeader: () => '',
+    tokenEnvVar: null, // no token required
+  },
+  azure: {
+    url: process.env.AZURE_OPENAI_URL || '',
+    authHeader: () => `Bearer ${process.env.AZURE_OPENAI_API_KEY || ''}`,
+    tokenEnvVar: 'AZURE_OPENAI_API_KEY',
+  },
+}
+
+const activeProvider = PROVIDER_CONFIG[AI_PROVIDER] ?? PROVIDER_CONFIG.github
 const MODELS_FETCH_TIMEOUT_MS = Number(process.env.GITHUB_MODELS_TIMEOUT_MS || 90000)
 const MODELS_FETCH_RETRIES = Number(process.env.GITHUB_MODELS_RETRIES || 3)
 const MODELS_FETCH_RETRY_BASE_MS = Number(process.env.GITHUB_MODELS_RETRY_BASE_MS || 1000)
@@ -444,14 +476,18 @@ function isRetriableNetworkError(error) {
   return message.includes('fetch failed') || message.includes('timeout')
 }
 
-async function fetchGithubModelsWithRetry(body, token) {
+async function fetchAIWithRetry(body) {
+  const { url, authHeader } = activeProvider
   let lastError = null
 
   for (let attempt = 0; attempt <= MODELS_FETCH_RETRIES; attempt += 1) {
     try {
-      const upstream = await fetch(GITHUB_MODELS_URL, {
+      const headers = { 'Content-Type': 'application/json' }
+      const auth = authHeader()
+      if (auth) headers['Authorization'] = auth
+      const upstream = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        headers,
         body,
         signal: AbortSignal.timeout(MODELS_FETCH_TIMEOUT_MS),
       })
@@ -756,20 +792,25 @@ const requestHandler = async (req, res) => {
       return
     }
 
-    // ── GitHub Models proxy ─────────────────────────────────────────────────
-    if (pathname === '/api/github-models' && method === 'POST') {
+    // ── AI chat proxy ───────────────────────────────────────────────────────
+    if ((pathname === '/api/ai/chat' || pathname === '/api/github-models') && method === 'POST') {
       if (!isAuthorized(req)) { writeJson(res, 401, { error: 'Unauthorized' }, req); return }
-      const token = process.env.GITHUB_MODELS_TOKEN
-      if (!token) {
-        writeJson(res, 500, { error: 'GITHUB_MODELS_TOKEN not set on server.' }, req)
-        return
+
+      // Token validation: skip for ollama (no auth required)
+      if (activeProvider.tokenEnvVar !== null) {
+        const token = process.env[activeProvider.tokenEnvVar]
+        if (!token) {
+          writeJson(res, 500, { error: `${activeProvider.tokenEnvVar} not set on server.` }, req)
+          return
+        }
       }
+
       let body
       try { body = await readBody(req); JSON.parse(body) }
       catch { writeJson(res, 400, { error: 'Invalid JSON body' }, req); return }
 
       try {
-        const upstream = await fetchGithubModelsWithRetry(body, token)
+        const upstream = await fetchAIWithRetry(body)
         const text = await upstream.text()
         res.writeHead(upstream.status, {
           'Content-Type': upstream.headers.get('content-type') || 'application/json; charset=utf-8',
@@ -777,7 +818,7 @@ const requestHandler = async (req, res) => {
         })
         res.end(text)
       } catch (error) {
-        logger.error('server', 'GitHub Models upstream error:', error)
+        logger.error('server', 'AI upstream error:', error)
         writeJson(res, 502, { error: 'Upstream AI service unavailable. Please retry.' }, req)
       }
       return
@@ -1118,6 +1159,7 @@ const httpServer = createHttpServer(requestHandler)
 httpServer.listen(PORT, HOST, () => {
   logger.info('app', `HTTP server listening on http://${HOST}:${PORT}`)
   logger.info('app', `Database: ${db.DB_PATH}`)
+  logger.info('server', `AI provider: ${AI_PROVIDER}`)
 })
 
 // Run queue cleanup once at startup then every hour

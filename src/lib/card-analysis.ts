@@ -12,7 +12,7 @@ import {
 import { type TCGCard } from '@/lib/tcg-database'
 import type { PokemonCard } from '@/lib/types'
 
-const SCAN_PROXY_URL = '/api/github-models'
+const SCAN_PROXY_URL = '/api/ai/chat'
 const CARD_ANALYSIS_MODEL = import.meta.env.VITE_CARD_ANALYSIS_MODEL || 'meta/llama-4-maverick-17b-128e-instruct-fp8'
 
 export const RARITIES = ['Common', 'Uncommon', 'Rare', 'Holo Rare', 'Ultra Rare', 'Secret Rare'] as const

@@ -56,6 +56,40 @@ Click **Download** and wait for it to complete — this is stored by the backend
 GITHUB_MODELS_TOKEN="<your_github_pat>" npm run dev:full
 ```
 
+## AI Provider Configuration
+
+By default the app uses [GitHub Models](https://models.github.ai). You can switch to a different provider by setting the `AI_PROVIDER` environment variable before starting the server.
+
+| Provider | `AI_PROVIDER` value | Required env var | Example model |
+|---|---|---|---|
+| **GitHub Models** (default) | `github` | `GITHUB_MODELS_TOKEN` | `meta/llama-4-maverick-17b-128e-instruct-fp8` |
+| **OpenAI** | `openai` | `OPENAI_API_KEY` | `gpt-4o` |
+| **Groq** | `groq` | `GROQ_API_KEY` | `meta-llama/llama-4-scout-17b-16e-instruct` |
+| **Ollama** (local) | `ollama` | *(none)* | `llava` |
+| **Azure OpenAI** | `azure` | `AZURE_OPENAI_URL`, `AZURE_OPENAI_API_KEY` | *(provider-specific)* |
+
+All supported providers use the OpenAI-compatible `chat/completions` API with vision (`image_url`) support. Anthropic is **not** supported because it uses a different API format.
+
+### Example: switching to OpenAI
+
+```bash
+export AI_PROVIDER=openai
+export OPENAI_API_KEY=sk-...
+export VITE_CARD_ANALYSIS_MODEL=gpt-4o
+npm run dev:server
+```
+
+### Example: switching to Ollama (local, no key needed)
+
+```bash
+export AI_PROVIDER=ollama
+export OLLAMA_BASE_URL=http://localhost:11434
+export VITE_CARD_ANALYSIS_MODEL=llava
+npm run dev:server
+```
+
+See `.env.example` for a full list of environment variables.
+
 ## Building for production
 
 ```bash

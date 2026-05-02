@@ -33,6 +33,8 @@ RUN mkdir -p /data
 EXPOSE 8787 8443
 
 # Required at runtime:
-#   - GITHUB_MODELS_TOKEN: token used by server-side GitHub Models proxy
+#   - AI_PROVIDER: which AI provider to use (default: github)
+#   - GITHUB_MODELS_TOKEN: required when AI_PROVIDER=github (default)
+#   - See .env.example for other provider-specific env vars
 # HTTPS is enabled by default with a generated self-signed certificate.
 CMD ["node", "--experimental-sqlite", "--disable-warning=ExperimentalWarning", "server/index.mjs"]
