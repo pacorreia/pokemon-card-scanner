@@ -20,8 +20,8 @@ type AISettings = {
   provider: string
   model: string | null
   apiKeySet: boolean
-  ollamaBaseUrl: string | null
-  azureUrl: string | null
+  ollamaBaseUrl: string | null  // read-only — reflects OLLAMA_BASE_URL env var
+  azureUrl: string | null       // read-only — reflects AZURE_OPENAI_URL env var
 }
 
 const PROVIDERS = [
@@ -45,8 +45,6 @@ export function SettingsDialog({
   const [aiProvider, setAiProvider] = useState('github')
   const [aiModel, setAiModel] = useState('')
   const [aiApiKey, setAiApiKey] = useState('')
-  const [aiOllamaBaseUrl, setAiOllamaBaseUrl] = useState('')
-  const [aiAzureUrl, setAiAzureUrl] = useState('')
   const [aiSaving, setAiSaving] = useState(false)
   const [aiSaveError, setAiSaveError] = useState<string | null>(null)
   const [aiSaveSuccess, setAiSaveSuccess] = useState(false)
@@ -75,8 +73,6 @@ export function SettingsDialog({
         setAiProvider(data.provider)
         setAiModel(data.model ?? '')
         setAiApiKey('')  // never pre-fill the key; show placeholder when already set
-        setAiOllamaBaseUrl(data.ollamaBaseUrl ?? '')
-        setAiAzureUrl(data.azureUrl ?? '')
         setAiSaveError(null)
         setAiSaveSuccess(false)
       })
@@ -92,11 +88,9 @@ export function SettingsDialog({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          provider:      aiProvider || null,
-          model:         aiModel.trim() || null,
-          apiKey:        aiApiKey.trim() || null,
-          ollamaBaseUrl: aiOllamaBaseUrl.trim() || null,
-          azureUrl:      aiAzureUrl.trim() || null,
+          provider: aiProvider || null,
+          model:    aiModel.trim() || null,
+          apiKey:   aiApiKey.trim() || null,
         }),
       })
       setAiSettings(updated)
@@ -245,24 +239,28 @@ export function SettingsDialog({
             {showOllamaUrl && (
               <div className="space-y-2">
                 <Label className="text-xs text-muted-foreground">Ollama Base URL</Label>
-                <Input
-                  type="text"
-                  placeholder="http://localhost:11434"
-                  value={aiOllamaBaseUrl}
-                  onChange={e => setAiOllamaBaseUrl(e.target.value)}
-                />
+                <p className="text-xs font-mono px-2 py-1 rounded bg-muted text-muted-foreground">
+                  {aiSettings?.ollamaBaseUrl ?? 'http://localhost:11434'}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Set via <code className="font-mono">OLLAMA_BASE_URL</code> environment variable.
+                </p>
               </div>
             )}
 
             {showAzureUrl && (
               <div className="space-y-2">
                 <Label className="text-xs text-muted-foreground">Azure OpenAI URL</Label>
-                <Input
-                  type="text"
-                  placeholder="https://your-resource.openai.azure.com/openai/deployments/..."
-                  value={aiAzureUrl}
-                  onChange={e => setAiAzureUrl(e.target.value)}
-                />
+                {aiSettings?.azureUrl ? (
+                  <p className="text-xs font-mono px-2 py-1 rounded bg-muted text-muted-foreground break-all">
+                    {aiSettings.azureUrl}
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted-foreground italic">Not configured</p>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Set via <code className="font-mono">AZURE_OPENAI_URL</code> environment variable.
+                </p>
               </div>
             )}
 

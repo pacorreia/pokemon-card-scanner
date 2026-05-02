@@ -86,11 +86,12 @@ const PROVIDER_CONFIG = {
 // Overrides env-var defaults without requiring a server restart.
 // All fields are null to indicate "use the env-var default".
 let runtimeAISettings = {
-  provider: null,       // string | null — overrides AI_PROVIDER env var
-  model: null,          // string | null — overrides the model field in the request body
-  apiKeys: {},          // { [providerName]: string } — per-provider key overrides
-  ollamaBaseUrl: null,  // string | null — overrides OLLAMA_BASE_URL env var
-  azureUrl: null,       // string | null — overrides AZURE_OPENAI_URL env var
+  provider: null,  // string | null — overrides AI_PROVIDER env var
+  model: null,     // string | null — overrides the model field in the request body
+  apiKeys: {},     // { [providerName]: string } — per-provider key overrides
+  // Note: provider URLs (OLLAMA_BASE_URL, AZURE_OPENAI_URL) are intentionally NOT
+  // stored here.  Accepting URLs from the request body would create an SSRF vector;
+  // operators must configure those via environment variables instead.
 }
 
 function getActiveProviderConfig() {
@@ -98,28 +99,25 @@ function getActiveProviderConfig() {
   const cfg = PROVIDER_CONFIG[providerName] ?? PROVIDER_CONFIG.github
   const key = runtimeAISettings.apiKeys[providerName] || null
 
-  // Compute URL, accounting for providers whose base URL is configurable at runtime.
-  // Parse with URL() and reconstruct from trusted components to eliminate any SSRF taint.
+  // Compute URL for configurable providers (Ollama, Azure).
+  // Use environment variables only — never request-body values — to eliminate SSRF taint.
   let url = cfg.url
   if (providerName === 'ollama') {
-    const baseUrl = runtimeAISettings.ollamaBaseUrl || process.env.OLLAMA_BASE_URL || 'http://localhost:11434'
+    const baseUrl = process.env.OLLAMA_BASE_URL || 'http://localhost:11434'
     try {
       const parsed = new URL(baseUrl)
       // http is intentionally allowed: Ollama runs locally over plain HTTP by default.
-      // Only use http for localhost/private-network Ollama instances; prefer https for remote.
-      // https is also accepted for remote deployments behind TLS.
       if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
         url = parsed.origin + parsed.pathname.replace(/\/$/, '') + '/v1/chat/completions'
       }
     } catch { /* keep cfg.url */ }
   } else if (providerName === 'azure') {
-    const azureUrl = runtimeAISettings.azureUrl || process.env.AZURE_OPENAI_URL || ''
+    const azureUrl = process.env.AZURE_OPENAI_URL || ''
     if (azureUrl) {
       try {
         const parsed = new URL(azureUrl)
-        // Azure OpenAI only supports HTTPS; reject plain-HTTP URLs.
-        // Reconstruct from trusted parsed components (origin + path + query) to eliminate SSRF taint.
-        // Azure OpenAI endpoints commonly include ?api-version=... which must be preserved.
+        // Azure OpenAI only supports HTTPS.
+        // Preserve ?api-version=... query parameters required by Azure endpoints.
         if (parsed.protocol === 'https:') {
           url = parsed.origin + parsed.pathname + parsed.search
         }
@@ -482,18 +480,12 @@ async function fetchAIWithRetry(body) {
 
   for (let attempt = 0; attempt <= MODELS_FETCH_RETRIES; attempt += 1) {
     try {
-      // The `url` here is user-configurable for Ollama/Azure providers.
-      // Both paths parse the supplied value with new URL() and reconstruct the target URL
-      // from trusted components (origin + pathname + search), enforcing http/https protocol
-      // only (Ollama) or https-only (Azure). The settings endpoint itself is admin-gated
-      // (POST /api/settings/ai requires isAuthorized()), so the effective attack surface is
-      // limited to an authenticated administrator deliberately pointing to a different host.
       const upstream = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...extraHeaders() },
         body: requestBody,
         signal: AbortSignal.timeout(MODELS_FETCH_TIMEOUT_MS),
-      }) // codeql[js/request-forgery]
+      })
 
       if (!upstream.ok && isRetriableStatus(upstream.status) && attempt < MODELS_FETCH_RETRIES) {
         const backoffMs = MODELS_FETCH_RETRY_BASE_MS * (2 ** attempt)
@@ -817,8 +809,8 @@ const requestHandler = async (req, res) => {
         provider:      runtimeAISettings.provider ?? AI_PROVIDER,
         model:         runtimeAISettings.model ?? null,
         apiKeySet,
-        ollamaBaseUrl: runtimeAISettings.ollamaBaseUrl ?? null,
-        azureUrl:      runtimeAISettings.azureUrl ?? null,
+        ollamaBaseUrl: process.env.OLLAMA_BASE_URL ?? null,
+        azureUrl:      process.env.AZURE_OPENAI_URL ?? null,
       }, req)
       return
     }
@@ -853,34 +845,6 @@ const requestHandler = async (req, res) => {
         }
       }
 
-      // Validate and store URL overrides — must be http/https to prevent SSRF
-      if (body.ollamaBaseUrl !== undefined) {
-        const raw = body.ollamaBaseUrl || null
-        if (raw !== null) {
-          try {
-            const parsed = new URL(raw)
-            if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('bad scheme')
-          } catch {
-            writeJson(res, 400, { error: 'ollamaBaseUrl must be a valid http/https URL' }, req)
-            return
-          }
-        }
-        runtimeAISettings.ollamaBaseUrl = raw
-      }
-      if (body.azureUrl !== undefined) {
-        const raw = body.azureUrl || null
-        if (raw !== null) {
-          try {
-            const parsed = new URL(raw)
-            if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('bad scheme')
-          } catch {
-            writeJson(res, 400, { error: 'azureUrl must be a valid http/https URL' }, req)
-            return
-          }
-        }
-        runtimeAISettings.azureUrl = raw
-      }
-
       const providerName = runtimeAISettings.provider ?? AI_PROVIDER
       const cfg = PROVIDER_CONFIG[providerName] ?? PROVIDER_CONFIG.github
       const apiKeySet = Boolean(runtimeAISettings.apiKeys[providerName] || (cfg.tokenEnvVar && process.env[cfg.tokenEnvVar]))
@@ -890,8 +854,8 @@ const requestHandler = async (req, res) => {
         provider:      runtimeAISettings.provider ?? AI_PROVIDER,
         model:         runtimeAISettings.model ?? null,
         apiKeySet,
-        ollamaBaseUrl: runtimeAISettings.ollamaBaseUrl ?? null,
-        azureUrl:      runtimeAISettings.azureUrl ?? null,
+        ollamaBaseUrl: process.env.OLLAMA_BASE_URL ?? null,
+        azureUrl:      process.env.AZURE_OPENAI_URL ?? null,
       }, req)
       return
     }
