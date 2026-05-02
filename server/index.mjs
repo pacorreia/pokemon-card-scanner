@@ -66,7 +66,8 @@ const PROVIDER_CONFIG = {
   },
   azure: {
     url: process.env.AZURE_OPENAI_URL || '',
-    extraHeaders: (key) => ({ Authorization: `Bearer ${key || process.env.AZURE_OPENAI_API_KEY || ''}` }),
+    // Azure OpenAI requires the api-key header, NOT Authorization: Bearer
+    extraHeaders: (key) => ({ 'api-key': key || process.env.AZURE_OPENAI_API_KEY || '' }),
     tokenEnvVar: 'AZURE_OPENAI_API_KEY',
   },
   anthropic: {
@@ -87,7 +88,7 @@ const PROVIDER_CONFIG = {
 let runtimeAISettings = {
   provider: null,       // string | null — overrides AI_PROVIDER env var
   model: null,          // string | null — overrides the model field in the request body
-  apiKey: null,         // string | null — overrides the provider's token env var
+  apiKeys: {},          // { [providerName]: string } — per-provider key overrides
   ollamaBaseUrl: null,  // string | null — overrides OLLAMA_BASE_URL env var
   azureUrl: null,       // string | null — overrides AZURE_OPENAI_URL env var
 }
@@ -95,7 +96,7 @@ let runtimeAISettings = {
 function getActiveProviderConfig() {
   const providerName = runtimeAISettings.provider ?? AI_PROVIDER
   const cfg = PROVIDER_CONFIG[providerName] ?? PROVIDER_CONFIG.github
-  const key = runtimeAISettings.apiKey || null
+  const key = runtimeAISettings.apiKeys[providerName] || null
 
   // Compute URL, accounting for providers whose base URL is configurable at runtime.
   // Parse with URL() and reconstruct from trusted components to eliminate any SSRF taint.
@@ -451,12 +452,22 @@ async function fetchAIWithRetry(body) {
   const { url, extraHeaders, transformRequest, transformResponse } = providerConfig
   let lastError = null
 
-  // Apply runtime model override if set
+  // Apply runtime model override (or strip the client-supplied model for non-github providers).
+  // The client always sends VITE_CARD_ANALYSIS_MODEL which is a GitHub Models default.  When the
+  // active provider is not 'github' and the admin hasn't set a model override, forward no model so
+  // the provider can apply its own default instead of receiving a GitHub-specific model name.
   let effectiveBody = body
-  if (runtimeAISettings.model) {
+  const activeProvider = runtimeAISettings.provider ?? AI_PROVIDER
+  if (runtimeAISettings.model || activeProvider !== 'github') {
     try {
       const parsed = JSON.parse(body)
-      parsed.model = runtimeAISettings.model
+      if (runtimeAISettings.model) {
+        parsed.model = runtimeAISettings.model
+      } else {
+        // Non-github provider with no override: remove the client-supplied model so the
+        // provider uses its own default rather than rejecting a GitHub-specific model name.
+        delete parsed.model
+      }
       effectiveBody = JSON.stringify(parsed)
     } catch (err) {
       logger.warn('server', 'fetchAIWithRetry: could not apply model override (body is not valid JSON)', err?.message)
@@ -794,9 +805,10 @@ const requestHandler = async (req, res) => {
 
     // ── AI settings ─────────────────────────────────────────────────────────
     if (pathname === '/api/settings/ai' && method === 'GET') {
+      if (!isAuthorized(req)) { writeJson(res, 401, { error: 'Unauthorized' }, req); return }
       const providerName = runtimeAISettings.provider ?? AI_PROVIDER
       const cfg = PROVIDER_CONFIG[providerName] ?? PROVIDER_CONFIG.github
-      const apiKeySet = Boolean(runtimeAISettings.apiKey || (cfg.tokenEnvVar && process.env[cfg.tokenEnvVar]))
+      const apiKeySet = Boolean(runtimeAISettings.apiKeys[providerName] || (cfg.tokenEnvVar && process.env[cfg.tokenEnvVar]))
       writeJson(res, 200, {
         provider:      runtimeAISettings.provider ?? AI_PROVIDER,
         model:         runtimeAISettings.model ?? null,
@@ -825,7 +837,17 @@ const requestHandler = async (req, res) => {
         runtimeAISettings.provider = body.provider || null
       }
       if (body.model !== undefined) runtimeAISettings.model = body.model || null
-      if (body.apiKey !== undefined) runtimeAISettings.apiKey = body.apiKey || null
+      // apiKey is stored per-provider so switching providers never leaks one provider's key to another.
+      // The request may optionally include `provider` in the same call; resolve the target provider name
+      // after the provider field has already been applied above.
+      if (body.apiKey !== undefined) {
+        const targetProvider = runtimeAISettings.provider ?? AI_PROVIDER
+        if (body.apiKey) {
+          runtimeAISettings.apiKeys[targetProvider] = body.apiKey
+        } else {
+          delete runtimeAISettings.apiKeys[targetProvider]
+        }
+      }
 
       // Validate and store URL overrides — must be http/https to prevent SSRF
       if (body.ollamaBaseUrl !== undefined) {
@@ -857,7 +879,7 @@ const requestHandler = async (req, res) => {
 
       const providerName = runtimeAISettings.provider ?? AI_PROVIDER
       const cfg = PROVIDER_CONFIG[providerName] ?? PROVIDER_CONFIG.github
-      const apiKeySet = Boolean(runtimeAISettings.apiKey || (cfg.tokenEnvVar && process.env[cfg.tokenEnvVar]))
+      const apiKeySet = Boolean(runtimeAISettings.apiKeys[providerName] || (cfg.tokenEnvVar && process.env[cfg.tokenEnvVar]))
       logger.info('server', `AI settings updated: provider=${runtimeAISettings.provider ?? AI_PROVIDER} model=${runtimeAISettings.model ?? '(default)'}`)
       writeJson(res, 200, {
         ok: true,
