@@ -164,6 +164,7 @@ function getActiveProviderConfig() {
 
   return { ...cfg, url, extraHeaders: () => cfg.extraHeaders(key) }
 }
+
 const MODELS_FETCH_TIMEOUT_MS = Number(process.env.GITHUB_MODELS_TIMEOUT_MS || 90000)
 const MODELS_FETCH_RETRIES = Number(process.env.GITHUB_MODELS_RETRIES || 3)
 const MODELS_FETCH_RETRY_BASE_MS = Number(process.env.GITHUB_MODELS_RETRY_BASE_MS || 1000)
@@ -936,6 +937,10 @@ const requestHandler = async (req, res) => {
       if (!isAuthorized(req)) { writeJson(res, 401, { error: 'Unauthorized' }, req); return }
       let body
       try { body = await readJsonBody(req, 4096) } catch { writeJson(res, 400, { error: 'Invalid JSON' }, req); return }
+      if (!body || typeof body !== 'object' || Array.isArray(body)) {
+        writeJson(res, 400, { error: 'Request body must be a JSON object' }, req)
+        return
+      }
 
       const allowedProviders = Object.keys(PROVIDER_CONFIG)
       if (body.provider !== undefined) {
