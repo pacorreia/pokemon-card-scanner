@@ -23,7 +23,7 @@ sequenceDiagram
     participant DB as Card Database
 
     User->>Frontend: Capture / upload card image
-    Frontend->>Server: POST /api/scan (image)
+    Frontend->>Server: POST /api/ai/chat (image)
     Server->>AI: Analyse image (vision model)
     AI-->>Server: Card name, set, number
     Server->>DB: Look up card metadata & artwork
