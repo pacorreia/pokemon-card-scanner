@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { rarityColors, typeColors } from './card-colors'
+import { rarityColors, typeColors } from '@/lib/card-colors'
 
 describe('rarityColors', () => {
   const expectedRarities = ['Common', 'Uncommon', 'Rare', 'Holo Rare', 'Ultra Rare', 'Secret Rare']

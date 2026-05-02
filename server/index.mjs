@@ -3,7 +3,8 @@
  *
  * Unified production server:
  *   - Serves the Vite-built frontend from ../dist/
- *   - Proxies /api/github-models  → GitHub Models AI API
+ *   - Proxies /api/ai/chat        → AI provider (GitHub Models by default)
+ *   - Proxies /api/github-models  → deprecated alias for /api/ai/chat
  *   - Proxies /github-oauth/*     → GitHub device-flow OAuth
  *   - Manages the SQLite TCG database at DATA_DIR/pokedex.db
  *   - Exposes REST API for the user's card collection & named collections
@@ -24,12 +25,109 @@ import selfsigned from 'selfsigned'
 import * as db from './db.mjs'
 import { runDownload } from './download.mjs'
 import { logger } from './logger.mjs'
+import { transformAnthropicRequest, transformAnthropicResponse } from './ai-transformers.mjs'
+import {
+  parseCookies,
+  getClientAddress,
+  isSecureRequest,
+  isSameOriginBrowserRequest,
+  isRetriableStatus,
+  isRetriableNetworkError,
+  normalizeClientLogEntry,
+} from './utils.mjs'
 
 const PORT              = Number(process.env.PORT || 8787)
 const HTTPS_PORT        = Number(process.env.HTTPS_PORT || 8443)
 const HTTPS_ENABLED     = process.env.HTTPS_ENABLED !== 'false'
-const GITHUB_MODELS_URL = 'https://models.github.ai/inference/chat/completions'
 const GITHUB_PROXY_BASE = 'https://github.com'
+
+const AI_PROVIDER = process.env.AI_PROVIDER || 'github' // 'github' | 'openai' | 'groq' | 'ollama' | 'azure' | 'anthropic'
+
+const PROVIDER_CONFIG = {
+  github: {
+    url: 'https://models.github.ai/inference/chat/completions',
+    extraHeaders: (key) => ({ Authorization: `Bearer ${key || process.env.GITHUB_MODELS_TOKEN || ''}` }),
+    tokenEnvVar: 'GITHUB_MODELS_TOKEN',
+  },
+  openai: {
+    url: 'https://api.openai.com/v1/chat/completions',
+    extraHeaders: (key) => ({ Authorization: `Bearer ${key || process.env.OPENAI_API_KEY || ''}` }),
+    tokenEnvVar: 'OPENAI_API_KEY',
+  },
+  groq: {
+    url: 'https://api.groq.com/openai/v1/chat/completions',
+    extraHeaders: (key) => ({ Authorization: `Bearer ${key || process.env.GROQ_API_KEY || ''}` }),
+    tokenEnvVar: 'GROQ_API_KEY',
+  },
+  ollama: {
+    url: (process.env.OLLAMA_BASE_URL || 'http://localhost:11434') + '/v1/chat/completions',
+    extraHeaders: () => ({}),
+    tokenEnvVar: null, // no token required
+  },
+  azure: {
+    url: process.env.AZURE_OPENAI_URL || '',
+    // Azure OpenAI requires the api-key header, NOT Authorization: Bearer
+    extraHeaders: (key) => ({ 'api-key': key || process.env.AZURE_OPENAI_API_KEY || '' }),
+    tokenEnvVar: 'AZURE_OPENAI_API_KEY',
+  },
+  anthropic: {
+    url: 'https://api.anthropic.com/v1/messages',
+    extraHeaders: (key) => ({
+      'x-api-key': key || process.env.ANTHROPIC_API_KEY || '',
+      'anthropic-version': '2023-06-01',
+    }),
+    tokenEnvVar: 'ANTHROPIC_API_KEY',
+    transformRequest: transformAnthropicRequest,
+    transformResponse: transformAnthropicResponse,
+  },
+}
+
+// ── Runtime AI settings ─────────────────────────────────────────────────────
+// Overrides env-var defaults without requiring a server restart.
+// All fields are null to indicate "use the env-var default".
+let runtimeAISettings = {
+  provider: null,  // string | null — overrides AI_PROVIDER env var
+  model: null,     // string | null — overrides the model field in the request body
+  apiKeys: {},     // { [providerName]: string } — per-provider key overrides
+  // Note: provider URLs (OLLAMA_BASE_URL, AZURE_OPENAI_URL) are intentionally NOT
+  // stored here.  Accepting URLs from the request body would create an SSRF vector;
+  // operators must configure those via environment variables instead.
+}
+
+function getActiveProviderConfig() {
+  const providerName = runtimeAISettings.provider ?? AI_PROVIDER
+  const cfg = PROVIDER_CONFIG[providerName] ?? PROVIDER_CONFIG.github
+  const key = runtimeAISettings.apiKeys[providerName] || null
+
+  // Compute URL for configurable providers (Ollama, Azure).
+  // Use environment variables only — never request-body values — to eliminate SSRF taint.
+  let url = cfg.url
+  if (providerName === 'ollama') {
+    const baseUrl = process.env.OLLAMA_BASE_URL || 'http://localhost:11434'
+    try {
+      const parsed = new URL(baseUrl)
+      // http is intentionally allowed: Ollama runs locally over plain HTTP by default.
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+        url = parsed.origin + parsed.pathname.replace(/\/$/, '') + '/v1/chat/completions'
+      }
+    } catch { /* keep cfg.url */ }
+  } else if (providerName === 'azure') {
+    const azureUrl = process.env.AZURE_OPENAI_URL || ''
+    if (azureUrl) {
+      try {
+        const parsed = new URL(azureUrl)
+        // Azure OpenAI only supports HTTPS.
+        // Preserve ?api-version=... query parameters required by Azure endpoints.
+        if (parsed.protocol === 'https:') {
+          url = parsed.origin + parsed.pathname + parsed.search
+        }
+      } catch { /* keep cfg.url */ }
+    }
+  }
+
+  return { ...cfg, url, extraHeaders: () => cfg.extraHeaders(key) }
+}
+
 const MODELS_FETCH_TIMEOUT_MS = Number(process.env.GITHUB_MODELS_TIMEOUT_MS || 90000)
 const MODELS_FETCH_RETRIES = Number(process.env.GITHUB_MODELS_RETRIES || 3)
 const MODELS_FETCH_RETRY_BASE_MS = Number(process.env.GITHUB_MODELS_RETRY_BASE_MS || 1000)
@@ -178,12 +276,6 @@ function writeJson(res, statusCode, payload, req = null, extraHeaders = {}) {
 
 const clientLogRateWindows = new Map()
 
-function getClientAddress(req) {
-  const forwarded = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()
-  if (forwarded) return forwarded
-  return String(req.socket?.remoteAddress || 'unknown')
-}
-
 function isClientLogRateLimited(req) {
   const key = getClientAddress(req)
   const now = Date.now()
@@ -197,46 +289,6 @@ function isClientLogRateLimited(req) {
   state.count += 1
   if (state.count <= CLIENT_LOG_RATE_LIMIT_MAX) return false
   return true
-}
-
-function parseCookies(req) {
-  const header = String(req.headers.cookie || '')
-  if (!header) return {}
-  const cookies = {}
-  for (const part of header.split(';')) {
-    const [rawKey, ...rawValueParts] = part.trim().split('=')
-    if (!rawKey) continue
-    const rawValue = rawValueParts.join('=')
-    try {
-      cookies[rawKey] = decodeURIComponent(rawValue || '')
-    } catch {
-      cookies[rawKey] = rawValue || ''
-    }
-  }
-  return cookies
-}
-
-function isSecureRequest(req) {
-  const forwardedProto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase()
-  if (forwardedProto) return forwardedProto === 'https'
-  return Boolean(req.socket?.encrypted)
-}
-
-function isSameOriginBrowserRequest(req) {
-  const origin = String(req.headers.origin || '').trim()
-  const host = String(req.headers.host || '').trim().toLowerCase()
-  const secFetchSite = String(req.headers['sec-fetch-site'] || '').trim().toLowerCase()
-
-  if (!origin || !host) return false
-  if (secFetchSite && secFetchSite !== 'same-origin') return false
-
-  try {
-    const originUrl = new URL(origin)
-    if (!['http:', 'https:'].includes(originUrl.protocol)) return false
-    return originUrl.host.toLowerCase() === host
-  } catch {
-    return false
-  }
 }
 
 function signClientLogToken(payload) {
@@ -285,42 +337,6 @@ function buildClientLogCookie(token, req) {
   ]
   if (isSecureRequest(req)) attrs.push('Secure')
   return attrs.join('; ')
-}
-
-const CLIENT_LOG_LEVELS = new Set(['debug', 'verbose', 'info', 'warning', 'error'])
-
-function normalizeClientLogEntry(entry) {
-  if (!entry || typeof entry !== 'object') return null
-  const level = String(entry.level || '').toLowerCase()
-  if (!CLIENT_LOG_LEVELS.has(level)) return null
-
-  const scopeRaw = typeof entry.scope === 'string' ? entry.scope.trim() : ''
-  const scope = scopeRaw ? scopeRaw.slice(0, 96) : 'browser'
-
-  const messageRaw = typeof entry.message === 'string' ? entry.message : String(entry.message ?? '')
-  const message = messageRaw.trim().slice(0, 4000)
-  if (!message) return null
-
-  const timestampRaw = typeof entry.timestamp === 'string' ? entry.timestamp : ''
-  const timestamp = timestampRaw && !Number.isNaN(Date.parse(timestampRaw))
-    ? timestampRaw
-    : new Date().toISOString()
-
-  let meta = null
-  if (entry.meta !== undefined) {
-    try {
-      const serialized = JSON.stringify(entry.meta)
-      if (serialized && serialized.length <= 2048) {
-        meta = entry.meta
-      } else if (serialized) {
-        meta = { truncated: `${serialized.slice(0, 2048)}...` }
-      }
-    } catch {
-      meta = { truncated: String(entry.meta).slice(0, 2048) }
-    }
-  }
-
-  return { level, scope, message, timestamp, meta }
 }
 
 function writeClientLogToServerConsole(log, req) {
@@ -432,27 +448,42 @@ function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
-function isRetriableStatus(status) {
-  return status === 408 || status === 429 || status === 500 || status === 502 || status === 503 || status === 504
-}
-
-function isRetriableNetworkError(error) {
-  if (!error) return false
-  const code = error?.cause?.code || error?.code
-  if (code && ['ETIMEDOUT', 'ECONNRESET', 'EAI_AGAIN', 'ENOTFOUND'].includes(code)) return true
-  const message = String(error?.message || '').toLowerCase()
-  return message.includes('fetch failed') || message.includes('timeout')
-}
-
-async function fetchGithubModelsWithRetry(body, token) {
+async function fetchAIWithRetry(body) {
+  const providerConfig = getActiveProviderConfig()
+  const { url, extraHeaders, transformRequest, transformResponse } = providerConfig
   let lastError = null
+
+  // Apply runtime model override (or strip the client-supplied model for non-github providers).
+  // The client always sends VITE_CARD_ANALYSIS_MODEL which is a GitHub Models default.  When the
+  // active provider is not 'github' and the admin hasn't set a model override, forward no model so
+  // the provider can apply its own default instead of receiving a GitHub-specific model name.
+  let effectiveBody = body
+  const activeProvider = runtimeAISettings.provider ?? AI_PROVIDER
+  if (runtimeAISettings.model || activeProvider !== 'github') {
+    try {
+      const parsed = JSON.parse(body)
+      if (runtimeAISettings.model) {
+        parsed.model = runtimeAISettings.model
+      } else {
+        // Non-github provider with no override: remove the client-supplied model so the
+        // provider uses its own default rather than rejecting a GitHub-specific model name.
+        delete parsed.model
+      }
+      effectiveBody = JSON.stringify(parsed)
+    } catch (err) {
+      logger.warn('server', 'fetchAIWithRetry: could not apply model override (body is not valid JSON)', err?.message)
+    }
+  }
+
+  // Apply provider-specific request transformation (e.g. Anthropic format)
+  const requestBody = transformRequest ? JSON.stringify(transformRequest(JSON.parse(effectiveBody))) : effectiveBody
 
   for (let attempt = 0; attempt <= MODELS_FETCH_RETRIES; attempt += 1) {
     try {
-      const upstream = await fetch(GITHUB_MODELS_URL, {
+      const upstream = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body,
+        headers: { 'Content-Type': 'application/json', ...extraHeaders() },
+        body: requestBody,
         signal: AbortSignal.timeout(MODELS_FETCH_TIMEOUT_MS),
       })
 
@@ -460,6 +491,18 @@ async function fetchGithubModelsWithRetry(body, token) {
         const backoffMs = MODELS_FETCH_RETRY_BASE_MS * (2 ** attempt)
         await delay(backoffMs)
         continue
+      }
+
+      // Apply provider-specific response transformation (e.g. Anthropic → OpenAI shape)
+      if (transformResponse) {
+        const rawText = await upstream.text()
+        const transformedText = transformResponse(rawText)
+        return {
+          status: upstream.status,
+          ok: upstream.ok,
+          text: () => Promise.resolve(transformedText),
+          headers: { get: () => 'application/json; charset=utf-8' },
+        }
       }
 
       return upstream
@@ -756,20 +799,88 @@ const requestHandler = async (req, res) => {
       return
     }
 
-    // ── GitHub Models proxy ─────────────────────────────────────────────────
-    if (pathname === '/api/github-models' && method === 'POST') {
+    // ── AI settings ─────────────────────────────────────────────────────────
+    if (pathname === '/api/settings/ai' && method === 'GET') {
       if (!isAuthorized(req)) { writeJson(res, 401, { error: 'Unauthorized' }, req); return }
-      const token = process.env.GITHUB_MODELS_TOKEN
-      if (!token) {
-        writeJson(res, 500, { error: 'GITHUB_MODELS_TOKEN not set on server.' }, req)
+      const providerName = runtimeAISettings.provider ?? AI_PROVIDER
+      const cfg = PROVIDER_CONFIG[providerName] ?? PROVIDER_CONFIG.github
+      const apiKeySet = Boolean(runtimeAISettings.apiKeys[providerName] || (cfg.tokenEnvVar && process.env[cfg.tokenEnvVar]))
+      writeJson(res, 200, {
+        provider:      runtimeAISettings.provider ?? AI_PROVIDER,
+        model:         runtimeAISettings.model ?? null,
+        apiKeySet,
+        ollamaBaseUrl: process.env.OLLAMA_BASE_URL ?? null,
+        azureUrl:      process.env.AZURE_OPENAI_URL ?? null,
+      }, req)
+      return
+    }
+
+    if (pathname === '/api/settings/ai' && method === 'POST') {
+      if (!isAuthorized(req)) { writeJson(res, 401, { error: 'Unauthorized' }, req); return }
+      let body
+      try { body = await readJsonBody(req, 4096) } catch { writeJson(res, 400, { error: 'Invalid JSON' }, req); return }
+      if (!body || typeof body !== 'object' || Array.isArray(body)) {
+        writeJson(res, 400, { error: 'Request body must be a JSON object' }, req)
         return
       }
+
+      const allowedProviders = Object.keys(PROVIDER_CONFIG)
+      if (body.provider !== undefined) {
+        if (body.provider !== null && !allowedProviders.includes(body.provider)) {
+          writeJson(res, 400, { error: `Invalid provider. Allowed: ${allowedProviders.join(', ')}` }, req)
+          return
+        }
+        runtimeAISettings.provider = body.provider || null
+      }
+      if (body.model !== undefined) runtimeAISettings.model = body.model || null
+      // apiKey is stored per-provider so switching providers never leaks one provider's key to another.
+      // The request may optionally include `provider` in the same call; resolve the target provider name
+      // after the provider field has already been applied above.
+      if (body.apiKey !== undefined) {
+        const targetProvider = runtimeAISettings.provider ?? AI_PROVIDER
+        if (body.apiKey) {
+          runtimeAISettings.apiKeys[targetProvider] = body.apiKey
+        } else {
+          delete runtimeAISettings.apiKeys[targetProvider]
+        }
+      }
+
+      const providerName = runtimeAISettings.provider ?? AI_PROVIDER
+      const cfg = PROVIDER_CONFIG[providerName] ?? PROVIDER_CONFIG.github
+      const apiKeySet = Boolean(runtimeAISettings.apiKeys[providerName] || (cfg.tokenEnvVar && process.env[cfg.tokenEnvVar]))
+      logger.info('server', `AI settings updated: provider=${runtimeAISettings.provider ?? AI_PROVIDER} model=${runtimeAISettings.model ?? '(default)'}`)
+      writeJson(res, 200, {
+        ok: true,
+        provider:      runtimeAISettings.provider ?? AI_PROVIDER,
+        model:         runtimeAISettings.model ?? null,
+        apiKeySet,
+        ollamaBaseUrl: process.env.OLLAMA_BASE_URL ?? null,
+        azureUrl:      process.env.AZURE_OPENAI_URL ?? null,
+      }, req)
+      return
+    }
+
+    // ── AI chat proxy ───────────────────────────────────────────────────────
+    if ((pathname === '/api/ai/chat' || pathname === '/api/github-models') && method === 'POST') {
+      if (!isAuthorized(req)) { writeJson(res, 401, { error: 'Unauthorized' }, req); return }
+
+      // Token validation: skip for ollama (no auth required)
+      const providerCfg = getActiveProviderConfig()
+      if (providerCfg.tokenEnvVar !== null) {
+        const envToken = process.env[providerCfg.tokenEnvVar]
+        const hasToken = Boolean(runtimeAISettings.apiKey || envToken)
+        if (!hasToken) {
+          writeJson(res, 500, { error: `${providerCfg.tokenEnvVar} not set on server.` }, req)
+          return
+        }
+      }
+
       let body
       try { body = await readBody(req); JSON.parse(body) }
       catch { writeJson(res, 400, { error: 'Invalid JSON body' }, req); return }
 
       try {
-        const upstream = await fetchGithubModelsWithRetry(body, token)
+        const upstream = await fetchAIWithRetry(body)
         const text = await upstream.text()
         res.writeHead(upstream.status, {
           'Content-Type': upstream.headers.get('content-type') || 'application/json; charset=utf-8',
@@ -777,7 +888,7 @@ const requestHandler = async (req, res) => {
         })
         res.end(text)
       } catch (error) {
-        logger.error('server', 'GitHub Models upstream error:', error)
+        logger.error('server', 'AI upstream error:', error)
         writeJson(res, 502, { error: 'Upstream AI service unavailable. Please retry.' }, req)
       }
       return
@@ -1118,6 +1229,7 @@ const httpServer = createHttpServer(requestHandler)
 httpServer.listen(PORT, HOST, () => {
   logger.info('app', `HTTP server listening on http://${HOST}:${PORT}`)
   logger.info('app', `Database: ${db.DB_PATH}`)
+  logger.info('server', `AI provider: ${AI_PROVIDER}`)
 })
 
 // Run queue cleanup once at startup then every hour

@@ -12,7 +12,7 @@ import {
 import { type TCGCard } from '@/lib/tcg-database'
 import type { PokemonCard } from '@/lib/types'
 
-const SCAN_PROXY_URL = '/api/github-models'
+const SCAN_PROXY_URL = '/api/ai/chat'
 const CARD_ANALYSIS_MODEL = import.meta.env.VITE_CARD_ANALYSIS_MODEL || 'meta/llama-4-maverick-17b-128e-instruct-fp8'
 
 export const RARITIES = ['Common', 'Uncommon', 'Rare', 'Holo Rare', 'Ultra Rare', 'Secret Rare'] as const
@@ -238,9 +238,10 @@ export function resizeDataUrlForInference(
   })
 }
 
-// ── Internal helpers ──────────────────────────────────────────────────────────
+// ── Internal helpers (also exported for unit testing) ─────────────────────────
 
-function resolveListValue(value: string | undefined, allowed: readonly string[], aliases: Record<string, string>): string | undefined {
+/** @internal Resolves a raw string value to a canonical list entry, with alias support. */
+export function resolveListValue(value: string | undefined, allowed: readonly string[], aliases: Record<string, string>): string | undefined {
   const normalized = value?.trim().toLowerCase()
   if (!normalized) return undefined
   const aliased = aliases[normalized]
@@ -248,7 +249,8 @@ function resolveListValue(value: string | undefined, allowed: readonly string[],
   return allowed.find(v => v.toLowerCase() === normalized)
 }
 
-function clampConfidence(value: unknown, fallback: number): number {
+/** @internal Clamps a confidence value to [0, 1], returning `fallback` for non-numbers. */
+export function clampConfidence(value: unknown, fallback: number): number {
   if (typeof value !== 'number' || Number.isNaN(value)) return fallback
   return Math.max(0, Math.min(1, value))
 }
@@ -258,7 +260,8 @@ function clampNormalizedBoxValue(value: unknown): number {
   return Math.max(0, Math.min(1000, value))
 }
 
-function normalizeBoundingBox(value: unknown): BoundingBox | undefined {
+/** @internal Validates and normalises a bounding box object; returns undefined for invalid inputs. */
+export function normalizeBoundingBox(value: unknown): BoundingBox | undefined {
   if (!value || typeof value !== 'object') return undefined
   const candidate = value as Partial<BoundingBox>
   const x = clampNormalizedBoxValue(candidate.x)
@@ -273,7 +276,8 @@ function normalizeSearchValue(value: string | undefined): string {
   return (value ?? '').trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ')
 }
 
-function parsePrintedTotal(cardNumber: string | undefined): number | null {
+/** @internal Extracts the denominator (set size) from a printed card number like "25/102". */
+export function parsePrintedTotal(cardNumber: string | undefined): number | null {
   if (!cardNumber) return null
   const parts = cardNumber.split('/')
   if (parts.length < 2) return null
@@ -282,7 +286,8 @@ function parsePrintedTotal(cardNumber: string | undefined): number | null {
   return Number(rawTotal)
 }
 
-function parseCardNumberNumerator(cardNumber: string | undefined): string {
+/** @internal Extracts and normalises the numerator of a printed card number. */
+export function parseCardNumberNumerator(cardNumber: string | undefined): string {
   if (!cardNumber) return ''
   const numerator = cardNumber.split('/')[0]?.trim() || ''
   if (!numerator) return ''
@@ -291,7 +296,8 @@ function parseCardNumberNumerator(cardNumber: string | undefined): string {
   return numerator.toUpperCase()
 }
 
-function isPlaceholderValue(value: string | undefined): boolean {
+/** @internal Returns true when the value is a recognised placeholder (e.g. "unknown", "n/a", "?"). */
+export function isPlaceholderValue(value: string | undefined): boolean {
   if (!value) return true
   const v = value.trim().toLowerCase()
   return v === '' || v === '?' || v === '??' || v === 'unknown' || v === 'unknown set' ||
@@ -305,7 +311,8 @@ function isNameCompatible(candidateName: string, rawName: string): boolean {
   return c === r || c.includes(r) || r.includes(c)
 }
 
-function normalizeEvolutionStage(value: string | undefined): 'basic' | 'stage1' | 'stage2' | '' {
+/** @internal Normalises a free-text evolution stage string to a canonical value. */
+export function normalizeEvolutionStage(value: string | undefined): 'basic' | 'stage1' | 'stage2' | '' {
   const normalized = normalizeSearchValue(value)
   if (!normalized) return ''
   if (normalized.includes('basic')) return 'basic'

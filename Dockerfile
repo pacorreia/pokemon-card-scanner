@@ -3,6 +3,12 @@ FROM node:22-alpine AS builder
 
 WORKDIR /app
 
+# Install system packages required to compile native Node add-ons used in devDependencies.
+# The 'canvas' package (used for image-processing tests) requires these libraries to build from
+# source because Alpine uses musl libc and no prebuilt musl binaries are published to npm.
+RUN apk add --no-cache python3 make g++ pkgconfig \
+    cairo-dev pango-dev libjpeg-turbo-dev giflib-dev pixman-dev
+
 COPY package.json package-lock.json ./
 RUN npm config set fetch-retries 5 \
 	&& npm config set fetch-retry-factor 2 \
@@ -33,6 +39,8 @@ RUN mkdir -p /data
 EXPOSE 8787 8443
 
 # Required at runtime:
-#   - GITHUB_MODELS_TOKEN: token used by server-side GitHub Models proxy
+#   - AI_PROVIDER: which AI provider to use (default: github)
+#   - GITHUB_MODELS_TOKEN: required when AI_PROVIDER=github (default)
+#   - See .env.example for other provider-specific env vars
 # HTTPS is enabled by default with a generated self-signed certificate.
 CMD ["node", "--experimental-sqlite", "--disable-warning=ExperimentalWarning", "server/index.mjs"]
