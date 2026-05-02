@@ -16,7 +16,7 @@ If you want to keep local settings in a file, you can copy `.env.example` to `.e
 | `AZURE_OPENAI_URL` | — | Full Azure OpenAI deployment URL |
 | `AZURE_OPENAI_API_KEY` | — | API key for Azure OpenAI |
 | `ANTHROPIC_API_KEY` | — | API key for Anthropic Claude |
-| `VITE_CARD_ANALYSIS_MODEL` | *(provider default)* | Override the model name used for card image analysis |
+| `VITE_CARD_ANALYSIS_MODEL` | *(provider default)* | Override the model name used for card image analysis in the frontend bundle. Because this is a Vite `import.meta.env` variable, it is applied at frontend build time, not read dynamically by the Node.js server at runtime. Changing it in a running Docker container will not take effect unless you rebuild the frontend image/assets. To change models in production without rebuilding, use the runtime AI settings override in the UI or `POST /api/settings/ai`. |
 
 ## Server
 
