@@ -38,7 +38,7 @@ await mkdir(OUT_DIR, { recursive: true })
   const tileSize = 4
   for (let y = 0; y < CARD_H; y += tileSize) {
     for (let x = 0; x < CARD_W; x += tileSize) {
-      ctx.fillStyle = ((x / tileSize + y / tileSize) % 2 === 0) ? '#1a1a2e' : '#e8e8f0'
+      ctx.fillStyle = ((Math.floor(x / tileSize) + Math.floor(y / tileSize)) % 2 === 0) ? '#1a1a2e' : '#e8e8f0'
       ctx.fillRect(x, y, tileSize, tileSize)
     }
   }

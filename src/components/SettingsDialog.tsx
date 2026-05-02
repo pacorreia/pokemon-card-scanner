@@ -72,7 +72,7 @@ export function SettingsDialog({
       .then(res => res.ok ? res.json() as Promise<AISettings> : Promise.reject(res))
       .then(data => {
         setAiSettings(data)
-        setAiProvider(data.provider ?? 'github')
+        setAiProvider(data.provider)
         setAiModel(data.model ?? '')
         setAiApiKey('')  // never pre-fill the key; show placeholder when already set
         setAiOllamaBaseUrl(data.ollamaBaseUrl ?? '')

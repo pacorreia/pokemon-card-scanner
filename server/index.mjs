@@ -96,6 +96,7 @@ function getActiveProviderConfig() {
     try {
       const parsed = new URL(baseUrl)
       // http is intentionally allowed: Ollama runs locally over plain HTTP by default.
+      // Only use http for localhost/private-network Ollama instances; prefer https for remote.
       // https is also accepted for remote deployments behind TLS.
       if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
         url = parsed.origin + parsed.pathname.replace(/\/$/, '') + '/v1/chat/completions'

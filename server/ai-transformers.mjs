@@ -41,8 +41,14 @@ export function transformAnthropicRequest(body) {
               }
               const prefix = url.slice(0, commaIdx)
               const data = url.slice(commaIdx + 1)
-              const mediaType = prefix.split(':')[1]?.split(';')[0] ?? 'image/jpeg'
-              return { type: 'image', source: { type: 'base64', media_type: mediaType, data } }
+              const isBase64 = prefix.includes(';base64')
+              const mediaType = prefix.split(':')[1]?.split(';')[0] || 'image/jpeg'
+              // Only emit a base64 block when the data URL uses base64 encoding.
+              // Non-base64 data URLs are passed as a url-type block instead.
+              if (isBase64) {
+                return { type: 'image', source: { type: 'base64', media_type: mediaType, data } }
+              }
+              return { type: 'image', source: { type: 'url', url } }
             }
             return { type: 'image', source: { type: 'url', url } }
           }

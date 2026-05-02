@@ -116,6 +116,40 @@ describe('transformAnthropicRequest', () => {
     })
   })
 
+  it('treats a non-base64 data URL (no ;base64) as a url-type image block', () => {
+    const urlEncoded = 'data:image/png,Hello%20World'
+    const result = transformAnthropicRequest({
+      model: 'claude-3',
+      messages: [
+        {
+          role: 'user',
+          content: [{ type: 'image_url', image_url: { url: urlEncoded } }],
+        },
+      ],
+    })
+    expect(result.messages[0].content[0]).toEqual({
+      type: 'image',
+      source: { type: 'url', url: urlEncoded },
+    })
+  })
+
+  it('uses image/jpeg as media_type fallback for data: URLs with empty type', () => {
+    const noType = 'data:;base64,abc123'
+    const result = transformAnthropicRequest({
+      model: 'claude-3',
+      messages: [
+        {
+          role: 'user',
+          content: [{ type: 'image_url', image_url: { url: noType } }],
+        },
+      ],
+    })
+    expect(result.messages[0].content[0]).toEqual({
+      type: 'image',
+      source: { type: 'base64', media_type: 'image/jpeg', data: 'abc123' },
+    })
+  })
+
   it('leaves non-image_url content blocks unchanged', () => {
     const textBlock = { type: 'text', text: 'Describe this.' }
     const result = transformAnthropicRequest({
