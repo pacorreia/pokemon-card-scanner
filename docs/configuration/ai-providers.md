@@ -23,7 +23,9 @@ PokéDex Scanner supports multiple AI providers for card image recognition. All 
 | Ollama | `llava` |
 | Anthropic | `claude-opus-4-5` |
 
-Override with `VITE_CARD_ANALYSIS_MODEL=<model-name>`.
+Override with `VITE_CARD_ANALYSIS_MODEL=<model-name>` when running the frontend in local dev or when rebuilding it.
+
+`VITE_CARD_ANALYSIS_MODEL` is a Vite frontend environment variable, so it is read at build/dev-server startup time. For Docker/production deployments with a prebuilt frontend, changing this value requires rebuilding the frontend. To change the model at runtime instead, use the Settings UI or `POST /api/settings/ai`.
 
 ## Configuration examples
 
