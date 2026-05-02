@@ -1,112 +1,85 @@
 # PokéDex Scanner
 
-A web app for scanning and managing your Pokémon TCG card collection, powered by AI image recognition via GitHub Models.
+[![CI](https://github.com/pacorreia/pokemon-card-scanner/actions/workflows/ci.yml/badge.svg)](https://github.com/pacorreia/pokemon-card-scanner/actions/workflows/ci.yml)
+[![Docs](https://github.com/pacorreia/pokemon-card-scanner/actions/workflows/deploy-docs.yml/badge.svg)](https://pacorreia.github.io/pokemon-card-scanner)
+[![License](https://img.shields.io/github/license/pacorreia/pokemon-card-scanner)](LICENSE)
+[![Node.js](https://img.shields.io/badge/Node.js-22.x-339933?logo=node.js)](https://nodejs.org/)
+
+An AI-powered web application for scanning and managing your Pokémon TCG card collection. Point your camera at a card — the app identifies it automatically using your choice of AI provider, looks it up in a local card database, and adds it to your collection.
+
+📖 **[Full documentation →](https://pacorreia.github.io/pokemon-card-scanner)**
 
 ## Features
 
-- 📷 **Scan cards** with your camera or by uploading an image — AI identifies the card automatically
-- ✍️ **Manual entry** for cards you want to add without scanning
+- 📷 **AI card scanning** — camera or image upload; supports GitHub Models, OpenAI, Groq, Ollama, Azure OpenAI, and Anthropic Claude
+- ✍️ **Manual entry** for cards you prefer to add without scanning
 - 📦 **Collection management** — organise cards into named collections
 - 🔍 **Search & filter** by name, set, type, and rarity
-- 📊 **Duplicate tracking** and estimated collection value
+- 📊 **Duplicate tracking** and estimated collection value (EUR)
 - 💾 **Import / export** your collection as JSON
-- 🗄️ **Offline database** — downloads the full Pokémon TCG card database locally for accurate lookups and artwork
+- 🗄️ **Offline database** — full Pokémon TCG card database downloaded locally (SQLite)
+- 🔐 **Optional API protection** — shared-secret session cookie auth
 
-## Setup
-
-### 1. Clone and install
+## Quick Start
 
 ```bash
 git clone https://github.com/pacorreia/pokemon-card-scanner.git
 cd pokemon-card-scanner
 npm install
-```
-
-### 2. Get a GitHub Personal Access Token
-
-The app uses [GitHub Models](https://models.github.ai) (`openai/gpt-4o`) to analyse card images.  
-You need a GitHub PAT — **no extra scopes are required**.
-
-1. Go to <https://github.com/settings/tokens/new?description=Pokemon+Card+Scanner&scopes=>
-2. Click **Generate token** and copy it.
-
-### 3. Start the API proxy (server-side token)
-
-```bash
-export GITHUB_MODELS_TOKEN="<your_github_pat>"
-npm run dev:server
-```
-
-### 4. Start the frontend
-
-```bash
-npm run dev
-```
-
-Open <http://localhost:5173> in your browser.
-
-### 5. Download the card database
-
-On first launch the app will prompt you to download the Pokémon TCG database (card artwork, set info, and pricing).  
-Click **Download** and wait for it to complete — this is stored by the backend in a SQLite database at `DATA_DIR/pokedex.db`, so the backend must be running to use it. The download persists on the server filesystem and typically only needs to be done once per data directory; back up `DATA_DIR/pokedex.db` if you want to preserve it.
-
-### Optional: run both frontend + backend in one command
-
-```bash
 GITHUB_MODELS_TOKEN="<your_github_pat>" npm run dev:full
 ```
 
-## AI Provider Configuration
+Open <http://localhost:5173>. On first launch, download the card database when prompted.
 
-By default the app uses [GitHub Models](https://models.github.ai). You can switch to a different provider by setting the `AI_PROVIDER` environment variable before starting the server.
+> **Get a free GitHub PAT** (no extra scopes needed): <https://github.com/settings/tokens/new?description=Pokemon+Card+Scanner&scopes=>
 
-| Provider | `AI_PROVIDER` value | Required env var | Example model |
-|---|---|---|---|
-| **GitHub Models** (default) | `github` | `GITHUB_MODELS_TOKEN` | `meta/llama-4-maverick-17b-128e-instruct-fp8` |
-| **OpenAI** | `openai` | `OPENAI_API_KEY` | `gpt-4o` |
-| **Groq** | `groq` | `GROQ_API_KEY` | `meta-llama/llama-4-scout-17b-16e-instruct` |
-| **Ollama** (local) | `ollama` | *(none)* | `llava` |
-| **Azure OpenAI** | `azure` | `AZURE_OPENAI_URL`, `AZURE_OPENAI_API_KEY` | *(provider-specific)* |
-| **Anthropic Claude** | `anthropic` | `ANTHROPIC_API_KEY` | `claude-opus-4-5` |
-
-GitHub Models, OpenAI, Groq, Ollama, and Azure OpenAI all use the OpenAI-compatible `chat/completions` API natively. Anthropic uses a different API format (`/v1/messages`) — the server transparently translates the request and response shapes, so no changes are needed on the client.
-
-### Example: switching to OpenAI
+## Docker
 
 ```bash
-export AI_PROVIDER=openai
-export OPENAI_API_KEY=sk-...
-export VITE_CARD_ANALYSIS_MODEL=gpt-4o
-npm run dev:server
+docker run -d \
+  --name pokedex-scanner \
+  -e GITHUB_MODELS_TOKEN="<your_github_pat>" \
+  -v pokedex-data:/data \
+  -p 8787:8787 \
+  ghcr.io/pacorreia/pokemon-card-scanner:latest
 ```
 
-### Example: switching to Ollama (local, no key needed)
+Open <http://localhost:8787>.
 
-```bash
-export AI_PROVIDER=ollama
-export OLLAMA_BASE_URL=http://localhost:11434
-export VITE_CARD_ANALYSIS_MODEL=llava
-npm run dev:server
-```
+## AI Providers
 
-### Example: switching to Anthropic Claude
+Switch providers by setting `AI_PROVIDER` before starting the server:
 
-```bash
-export AI_PROVIDER=anthropic
-export ANTHROPIC_API_KEY=sk-ant-...
-export VITE_CARD_ANALYSIS_MODEL=claude-opus-4-5
-npm run dev:server
-```
+| Provider | `AI_PROVIDER` | Required env var |
+|---|---|---|
+| **GitHub Models** (default) | `github` | `GITHUB_MODELS_TOKEN` |
+| **OpenAI** | `openai` | `OPENAI_API_KEY` |
+| **Groq** | `groq` | `GROQ_API_KEY` |
+| **Ollama** (local) | `ollama` | *(none)* |
+| **Azure OpenAI** | `azure` | `AZURE_OPENAI_URL`, `AZURE_OPENAI_API_KEY` |
+| **Anthropic Claude** | `anthropic` | `ANTHROPIC_API_KEY` |
 
-See `.env.example` for a full list of environment variables.
+Override the model with `VITE_CARD_ANALYSIS_MODEL=<model>`. See [`.env.example`](.env.example) for all options, or the [AI Providers docs](https://pacorreia.github.io/pokemon-card-scanner/configuration/ai-providers/) for examples.
 
 ## Building for production
 
 ```bash
 npm run build
+# Static output → dist/
+
+NODE_ENV=production GITHUB_MODELS_TOKEN="..." \
+  node --experimental-sqlite --disable-warning=ExperimentalWarning server/index.mjs
 ```
 
-Static output is written to `dist/`.
+## Documentation
+
+Full documentation is available at **<https://pacorreia.github.io/pokemon-card-scanner>**, including:
+
+- [Getting Started](https://pacorreia.github.io/pokemon-card-scanner/getting-started/)
+- [Installation](https://pacorreia.github.io/pokemon-card-scanner/getting-started/installation/)
+- [AI Providers](https://pacorreia.github.io/pokemon-card-scanner/configuration/ai-providers/)
+- [Docker Deployment](https://pacorreia.github.io/pokemon-card-scanner/guides/docker/)
+- [Development Guide](https://pacorreia.github.io/pokemon-card-scanner/development/)
 
 ## License
 
