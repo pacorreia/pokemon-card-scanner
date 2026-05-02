@@ -24,9 +24,13 @@ npm install
 # Copy the example env file
 cp .env.example .env
 # Edit .env and set at minimum: GITHUB_MODELS_TOKEN (or another provider key)
+# Note: the npm scripts do not load .env automatically, so load it into your shell first
+set -a
+. ./.env
+set +a
 
 # Start both frontend and API server
-GITHUB_MODELS_TOKEN="ghp_..." npm run dev:full
+npm run dev:full
 ```
 
 Open <http://localhost:5173>.
