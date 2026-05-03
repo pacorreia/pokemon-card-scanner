@@ -26,7 +26,7 @@ An AI-powered web application for scanning and managing your Pokémon TCG card c
 git clone https://github.com/pacorreia/pokemon-card-scanner.git
 cd pokemon-card-scanner
 npm install
-# Using the default GitHub Models provider — swap AI_PROVIDER + token for any other provider
+# Using the default GitHub Models provider — swap AI_PROVIDER + provider-specific env vars for any other provider
 AI_PROVIDER=github GITHUB_MODELS_TOKEN="<your_github_pat>" npm run dev:full
 ```
 

@@ -40,13 +40,13 @@ EXPOSE 8787 8443
 
 # Required at runtime:
 #   - AI_PROVIDER: which AI provider to use (default: github)
-#   - Provider token matching AI_PROVIDER — e.g.:
-#       GITHUB_MODELS_TOKEN (when AI_PROVIDER=github)
-#       OPENAI_API_KEY      (when AI_PROVIDER=openai)
-#       GROQ_API_KEY        (when AI_PROVIDER=groq)
-#       ANTHROPIC_API_KEY   (when AI_PROVIDER=anthropic)
+#   - Provider-specific env vars matching AI_PROVIDER — e.g.:
+#       GITHUB_MODELS_TOKEN              (when AI_PROVIDER=github)
+#       OPENAI_API_KEY                   (when AI_PROVIDER=openai)
+#       GROQ_API_KEY                     (when AI_PROVIDER=groq)
+#       ANTHROPIC_API_KEY                (when AI_PROVIDER=anthropic)
 #       AZURE_OPENAI_URL + AZURE_OPENAI_API_KEY (when AI_PROVIDER=azure)
-#       No token needed     (when AI_PROVIDER=ollama)
+#       OLLAMA_BASE_URL                  (when AI_PROVIDER=ollama, no token needed)
 #   - See .env.example for all provider-specific env vars
 # HTTPS is enabled by default with a generated self-signed certificate.
 CMD ["node", "--experimental-sqlite", "--disable-warning=ExperimentalWarning", "server/index.mjs"]

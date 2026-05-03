@@ -15,7 +15,7 @@ git clone https://github.com/pacorreia/pokemon-card-scanner.git
 cd pokemon-card-scanner
 npm install
 cp .env.example .env
-# Edit .env: set AI_PROVIDER and the matching provider token (e.g. GITHUB_MODELS_TOKEN for the default github provider)
+# Edit .env: set AI_PROVIDER and the required provider-specific variables (e.g. GITHUB_MODELS_TOKEN for the default github provider)
 # Then export the variables into your shell — the server does not auto-load .env:
 export $(grep -v '^#' .env | xargs)
 ```

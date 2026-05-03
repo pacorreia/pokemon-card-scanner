@@ -80,7 +80,7 @@ Images are hosted in the [GitHub Container Registry](https://github.com/pacorrei
 
 ## Environment variables
 
-See [Environment Variables](../configuration/environment.md) for the full list. At minimum, set `AI_PROVIDER` and the matching provider token. See [AI Providers](../configuration/ai-providers.md) for all supported providers and their required variables.
+See [Environment Variables](../configuration/environment.md) for the full list. At minimum, set `AI_PROVIDER` and the required provider-specific variables. See [AI Providers](../configuration/ai-providers.md) for all supported providers and their required variables.
 
 ## Building the image locally
 

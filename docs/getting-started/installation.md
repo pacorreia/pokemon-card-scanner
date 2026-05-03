@@ -23,7 +23,7 @@ npm install
 
 # Copy the example env file
 cp .env.example .env
-# Edit .env and set AI_PROVIDER plus the matching provider token (e.g. GITHUB_MODELS_TOKEN for the default github provider)
+# Edit .env and set AI_PROVIDER plus the required provider-specific variables (e.g. GITHUB_MODELS_TOKEN for the default github provider)
 # Note: the npm scripts do not load .env automatically, so load it into your shell first
 set -a
 . ./.env

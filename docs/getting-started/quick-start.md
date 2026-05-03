@@ -16,10 +16,12 @@ cd pokemon-card-scanner
 npm install
 ```
 
-## 2. Set your AI token
+## 2. Set your AI provider
 
 ```bash
-export GITHUB_MODELS_TOKEN="ghp_..."   # GitHub Models (default)
+# GitHub Models (default) — no extra scopes needed
+export AI_PROVIDER=github
+export GITHUB_MODELS_TOKEN="ghp_..."
 ```
 
 See [AI Providers](../configuration/ai-providers.md) if you want to use OpenAI, Groq, Ollama, or another backend instead.
