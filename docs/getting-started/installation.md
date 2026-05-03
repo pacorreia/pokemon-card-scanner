@@ -23,7 +23,7 @@ npm install
 
 # Copy the example env file
 cp .env.example .env
-# Edit .env and set at minimum: GITHUB_MODELS_TOKEN (or another provider key)
+# Edit .env and set AI_PROVIDER plus the required provider-specific variables (e.g. GITHUB_MODELS_TOKEN for the default github provider)
 # Note: the npm scripts do not load .env automatically, so load it into your shell first
 set -a
 . ./.env
@@ -51,8 +51,10 @@ Open <http://localhost:5173>.
 ### Single container (quick)
 
 ```bash
+# Using the default GitHub Models provider
 docker run -d \
   --name pokedex-scanner \
+  -e AI_PROVIDER=github \
   -e GITHUB_MODELS_TOKEN="ghp_..." \
   -v pokedex-data:/data \
   -p 8787:8787 \
@@ -73,6 +75,7 @@ services:
     image: ghcr.io/pacorreia/pokemon-card-scanner:latest
     restart: unless-stopped
     environment:
+      AI_PROVIDER: github
       GITHUB_MODELS_TOKEN: "${GITHUB_MODELS_TOKEN}"
     volumes:
       - pokedex-data:/data
@@ -104,7 +107,9 @@ npm run build
 Static files are written to `dist/`. Start the production server:
 
 ```bash
+# Example using the default GitHub Models provider
 NODE_ENV=production \
+AI_PROVIDER=github \
 GITHUB_MODELS_TOKEN="ghp_..." \
 node --experimental-sqlite --disable-warning=ExperimentalWarning server/index.mjs
 ```

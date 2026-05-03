@@ -81,17 +81,23 @@ graph TB
     git clone https://github.com/pacorreia/pokemon-card-scanner.git
     cd pokemon-card-scanner
     npm install
+    # Using the default GitHub Models provider
+    export AI_PROVIDER=github
     export GITHUB_MODELS_TOKEN="<your_github_pat>"
     npm run dev:full
     ```
 
     Open <http://localhost:5173> in your browser.
 
+    See [AI Providers](configuration/ai-providers.md) to use OpenAI, Groq, Ollama, or another backend.
+
 === "Docker"
 
     ```bash
+    # Using the default GitHub Models provider
     docker run -d \
       --name pokedex-scanner \
+      -e AI_PROVIDER=github \
       -e GITHUB_MODELS_TOKEN="<your_github_pat>" \
       -v pokedex-data:/data \
       -p 8787:8787 \
@@ -99,6 +105,8 @@ graph TB
     ```
 
     Open <http://localhost:8787> in your browser.
+
+    See [AI Providers](configuration/ai-providers.md) to use a different AI backend.
 
 ## Download the Card Database
 
