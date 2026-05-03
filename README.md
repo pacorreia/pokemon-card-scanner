@@ -26,18 +26,22 @@ An AI-powered web application for scanning and managing your Pokémon TCG card c
 git clone https://github.com/pacorreia/pokemon-card-scanner.git
 cd pokemon-card-scanner
 npm install
-GITHUB_MODELS_TOKEN="<your_github_pat>" npm run dev:full
+# Using the default GitHub Models provider — swap AI_PROVIDER + token for any other provider
+AI_PROVIDER=github GITHUB_MODELS_TOKEN="<your_github_pat>" npm run dev:full
 ```
 
 Open <http://localhost:5173>. On first launch, download the card database when prompted.
 
-> **Get a free GitHub PAT** (no extra scopes needed): <https://github.com/settings/tokens/new?description=Pokemon+Card+Scanner&scopes=>
+> **Get a free GitHub PAT** (no extra scopes needed): <https://github.com/settings/tokens/new?description=Pokemon+Card+Scanner&scopes=>  
+> See [AI Providers](#ai-providers) to use OpenAI, Groq, Ollama, or another backend instead.
 
 ## Docker
 
 ```bash
+# Using the default GitHub Models provider
 docker run -d \
   --name pokedex-scanner \
+  -e AI_PROVIDER=github \
   -e GITHUB_MODELS_TOKEN="<your_github_pat>" \
   -v pokedex-data:/data \
   -p 8787:8787 \
@@ -67,7 +71,8 @@ Override the model with `VITE_CARD_ANALYSIS_MODEL=<model>` for local development
 npm run build
 # Static output → dist/
 
-NODE_ENV=production GITHUB_MODELS_TOKEN="..." \
+# Example using the default GitHub Models provider
+NODE_ENV=production AI_PROVIDER=github GITHUB_MODELS_TOKEN="..." \
   node --experimental-sqlite --disable-warning=ExperimentalWarning server/index.mjs
 ```
 

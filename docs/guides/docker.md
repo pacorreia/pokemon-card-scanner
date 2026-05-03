@@ -5,8 +5,10 @@ PokéDex Scanner ships as a multi-stage Docker image. The final runtime image is
 ## Quick start
 
 ```bash
+# Using the default GitHub Models provider
 docker run -d \
   --name pokedex-scanner \
+  -e AI_PROVIDER=github \
   -e GITHUB_MODELS_TOKEN="ghp_..." \
   -v pokedex-data:/data \
   -p 8787:8787 \
@@ -78,7 +80,7 @@ Images are hosted in the [GitHub Container Registry](https://github.com/pacorrei
 
 ## Environment variables
 
-See [Environment Variables](../configuration/environment.md) for the full list. At minimum, set the AI provider token (`GITHUB_MODELS_TOKEN` for the default GitHub Models provider).
+See [Environment Variables](../configuration/environment.md) for the full list. At minimum, set `AI_PROVIDER` and the matching provider token. See [AI Providers](../configuration/ai-providers.md) for all supported providers and their required variables.
 
 ## Building the image locally
 
@@ -86,8 +88,10 @@ See [Environment Variables](../configuration/environment.md) for the full list. 
 git clone https://github.com/pacorreia/pokemon-card-scanner.git
 cd pokemon-card-scanner
 docker build -t pokedex-scanner .
+# Using the default GitHub Models provider
 docker run -d \
   --name pokedex-scanner \
+  -e AI_PROVIDER=github \
   -e GITHUB_MODELS_TOKEN="ghp_..." \
   -v pokedex-data:/data \
   -p 8787:8787 \
