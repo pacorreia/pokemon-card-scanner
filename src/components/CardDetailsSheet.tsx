@@ -41,7 +41,7 @@ export function CardDetailsSheet({
   const [dbPrices, setDbPrices] = useState<CardPrices | undefined>(undefined)
   const [pricesLoading, setPricesLoading] = useState(false)
   const [fullTcgCard, setFullTcgCard] = useState<TCGCard | null>(null)
-  const [evoPreview, setEvoPreview] = useState<TCGCard | null>(null)
+  const [evoCard, setEvoCard] = useState<TCGCard | null>(null)
 
   // Fetch full TCGCard for prices (when missing) and evolution chain
   useEffect(() => {
@@ -66,7 +66,7 @@ export function CardDetailsSheet({
   // Auto-open rematch panel when triggered from outside; reset when sheet closes
   useEffect(() => {
     if (open && openRematch) openRematchPanel()
-    if (!open) setRematchOpen(false)
+    if (!open) { setRematchOpen(false); setEvoCard(null) }
   }, [open, openRematch]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const openRematchPanel = () => {
@@ -116,7 +116,7 @@ export function CardDetailsSheet({
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="h-[85vh] max-h-[85vh] min-h-0 flex flex-col p-0 w-full max-w-2xl gap-0">
           <DialogHeader className="px-4 pt-4 pb-2 shrink-0">
-            <DialogTitle className="font-display text-2xl">{card.name}</DialogTitle>
+            <DialogTitle className="font-display text-2xl">{evoCard?.name ?? card.name}</DialogTitle>
           </DialogHeader>
 
           <div className="relative flex-1 min-h-0">
@@ -124,7 +124,80 @@ export function CardDetailsSheet({
               className="absolute inset-0 overflow-y-auto overscroll-contain"
               style={{ touchAction: 'pan-y', WebkitOverflowScrolling: 'touch' }}
             >
-              {rematchOpen ? (
+              {evoCard ? (
+                <div className="px-4 pb-6 pt-2 space-y-4">
+                  <Button variant="outline" size="sm" className="font-display font-semibold" onClick={() => setEvoCard(null)}>
+                    ← Back to Card Details
+                  </Button>
+                  <div className="flex justify-center">
+                    <div className="w-48 aspect-[2.5/3.5] rounded-lg overflow-hidden shadow-2xl bg-gradient-to-br from-blue-400 via-purple-400 to-pink-400 relative">
+                      {(evoCard.images?.large || evoCard.images?.small) ? (
+                        <img
+                          src={evoCard.images.large || evoCard.images.small}
+                          alt={evoCard.name}
+                          className="w-full h-full object-cover absolute inset-0"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center p-4 text-white text-center font-bold font-display">{evoCard.name}</div>
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-medium text-muted-foreground mb-2">Details</h3>
+                    <div className="space-y-3">
+                      {evoCard.supertype && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm">Supertype</span>
+                          <span className="font-medium">{evoCard.supertype}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm">Set</span>
+                        <span className="font-medium">{evoCard.set?.name}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm">Card Number</span>
+                        <span className="font-medium">#{evoCard.number}{evoCard.set?.total ? `/${evoCard.set.total}` : ''}</span>
+                      </div>
+                      {evoCard.rarity && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm">Rarity</span>
+                          <span className="font-medium">{evoCard.rarity}</span>
+                        </div>
+                      )}
+                      {evoCard.types && evoCard.types.length > 0 && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm">Type</span>
+                          <span className="font-medium">{evoCard.types.join(', ')}</span>
+                        </div>
+                      )}
+                      {evoCard.hp && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm">HP</span>
+                          <span className="font-medium">{evoCard.hp}</span>
+                        </div>
+                      )}
+                      {evoCard.evolvesFrom && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm">Evolves From</span>
+                          <span className="font-medium">{evoCard.evolvesFrom}</span>
+                        </div>
+                      )}
+                      {evoCard.artist && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm">Artist</span>
+                          <span className="font-medium">{evoCard.artist}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm">TCG Card ID</span>
+                        <span className="font-mono text-xs text-muted-foreground">{evoCard.id}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : rematchOpen ? (
                 <div className="px-4 pb-6 pt-2">
                   <CardReviewPanel
                     cards={rematchCards}
@@ -232,7 +305,7 @@ export function CardDetailsSheet({
               {fullTcgCard && (
                 <EvolutionChain
                   card={fullTcgCard}
-                  onCardClick={(c) => setEvoPreview(c)}
+                  onCardClick={(c) => setEvoCard(c)}
                 />
               )}
 
@@ -462,63 +535,6 @@ export function CardDetailsSheet({
             )}
           </div>
         </div>
-      </DialogContent>
-    </Dialog>
-
-    {/* Evolution card preview */}
-    <Dialog open={!!evoPreview} onOpenChange={(o) => { if (!o) setEvoPreview(null) }}>
-      <DialogContent className="max-w-sm w-full gap-0 p-0 overflow-hidden">
-        {evoPreview && (
-          <>
-            <div className="w-full aspect-[2.5/3.5] bg-gradient-to-br from-blue-400 via-purple-400 to-pink-400 relative">
-              {(evoPreview.images?.large || evoPreview.images?.small) ? (
-                <img
-                  src={evoPreview.images.large || evoPreview.images.small}
-                  alt={evoPreview.name}
-                  className="w-full h-full object-contain absolute inset-0"
-                  loading="lazy"
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center">
-                  <span className="text-white text-xl font-bold font-display">{evoPreview.name}</span>
-                </div>
-              )}
-            </div>
-            <div className="p-4 space-y-2">
-              <DialogHeader>
-                <DialogTitle className="font-display text-xl">{evoPreview.name}</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-1.5 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Set</span>
-                  <span className="font-medium">{evoPreview.set?.name}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Number</span>
-                  <span className="font-medium">#{evoPreview.number}</span>
-                </div>
-                {evoPreview.rarity && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Rarity</span>
-                    <span className="font-medium">{evoPreview.rarity}</span>
-                  </div>
-                )}
-                {evoPreview.types && evoPreview.types.length > 0 && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Type</span>
-                    <span className="font-medium">{evoPreview.types.join(', ')}</span>
-                  </div>
-                )}
-                {evoPreview.artist && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Artist</span>
-                    <span className="font-medium">{evoPreview.artist}</span>
-                  </div>
-                )}
-              </div>
-            </div>
-          </>
-        )}
       </DialogContent>
     </Dialog>
 
