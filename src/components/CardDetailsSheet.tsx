@@ -53,12 +53,15 @@ export function CardDetailsSheet({
     getCardById(tcgCardId).then(tcgCard => {
       if (cancelled) return
       setFullTcgCard(tcgCard)
+      const patch: Partial<PokemonCard> = {}
       if (!card.prices) {
         const fetched = buildPricesFromTcgCard(tcgCard) ?? undefined
         setDbPrices(fetched)
         setPricesLoading(false)
-        if (fetched) api.updateCard(cardId, { prices: fetched }).catch(() => {})
+        if (fetched) patch.prices = fetched
       }
+      if (!card.artist && tcgCard?.artist) patch.artist = tcgCard.artist
+      if (Object.keys(patch).length > 0) api.updateCard(cardId, patch).catch(() => {})
     }).catch(() => { if (!cancelled) { setPricesLoading(false) } })
     return () => { cancelled = true }
   }, [card?.tcgCardId, card?.prices, card?.id, open]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -287,10 +290,10 @@ export function CardDetailsSheet({
                       {new Date(card.dateAdded).toLocaleDateString()}
                     </span>
                   </div>
-                  {card.artist && (
+                  {(card.artist || fullTcgCard?.artist) && (
                     <div className="flex justify-between items-center">
                       <span className="text-sm">Artist</span>
-                      <span className="font-medium">{card.artist}</span>
+                      <span className="font-medium">{card.artist || fullTcgCard?.artist}</span>
                     </div>
                   )}
                   {card.tcgCardId && (
