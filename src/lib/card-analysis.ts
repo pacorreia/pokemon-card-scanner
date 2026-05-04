@@ -569,6 +569,7 @@ function buildDraftCard(
     rarity,
     type,
     supertype: tcgCard?.supertype,
+    artist: tcgCard?.artist,
     imageUrl,
     largeImageUrl,
     prices: buildPricesFromTcgCard(tcgCard),

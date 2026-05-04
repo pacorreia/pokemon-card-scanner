@@ -132,6 +132,14 @@ export async function searchCards(query: string, limit = 10): Promise<TCGCard[]>
   return cards
 }
 
+export async function findCardsEvolvingFrom(name: string): Promise<TCGCard[]> {
+  try {
+    return await apiFetch<TCGCard[]>(`/api/cards/evolves-from?name=${encodeURIComponent(name)}`)
+  } catch {
+    return []
+  }
+}
+
 // ── useTCGDatabase hook ──────────────────────────────────────────────────────
 
 export function useTCGDatabase() {

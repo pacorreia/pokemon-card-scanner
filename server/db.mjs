@@ -513,6 +513,12 @@ export function updateTcgCardPrices(id, tcgplayer, cardmarket) {
   db.prepare('UPDATE tcg_cards SET data = ? WHERE id = ?').run(JSON.stringify(card), id)
 }
 
+export function findCardsEvolvingFrom(name) {
+  return db.prepare(
+    `SELECT data FROM tcg_cards WHERE json_extract(data, '$.evolvesFrom') = ? ORDER BY name`
+  ).all(name).map(r => JSON.parse(r.data))
+}
+
 export function getAllSets() {
   return db.prepare('SELECT data FROM tcg_sets ORDER BY name').all().map(r => JSON.parse(r.data))
 }
@@ -608,15 +614,16 @@ export function addToCollection(card) {
     return { ...merged, id: existing.id }
   }
 
+  const cardId = card.id || crypto.randomUUID()
   db.prepare('INSERT OR REPLACE INTO collection_cards (id, name, date_added, pokedex_number, data) VALUES (?, ?, ?, ?, ?)')
     .run(
-      card.id,
+      cardId,
       card.name ?? '',
       card.dateAdded ?? Date.now(),
       pokedexNumber,
-      JSON.stringify({ ...card, pokedexNumber: pokedexNumber ?? undefined, collectionIds: undefined }),
+      JSON.stringify({ ...card, id: cardId, pokedexNumber: pokedexNumber ?? undefined, collectionIds: undefined }),
     )
-  return card
+  return { ...card, id: cardId }
 }
 
 export function updateCollectionCard(id, updates) {

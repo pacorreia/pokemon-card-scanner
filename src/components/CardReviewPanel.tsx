@@ -12,7 +12,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
-import { CheckCircle, MagnifyingGlass, Trash } from '@phosphor-icons/react'
+import { Dialog, DialogContent } from '@/components/ui/dialog'
+import { CheckCircle, MagnifyingGlass, Trash, X } from '@phosphor-icons/react'
 import { toast } from '@/lib/toast'
 import { useTCGDatabase, type TCGCard } from '@/lib/tcg-database'
 import {
@@ -28,7 +29,13 @@ export interface CardReviewPanelProps {
   cards: ScannedCardDraft[]
   onCardsChange: Dispatch<SetStateAction<ScannedCardDraft[]>>
   onConfirm: () => void
-  /** Optional note shown under "Scanned Cards" heading. */
+  /** Override the confirm button label. Default: "Add N Cards to Collection" */
+  confirmLabel?: string
+  /** Override the left column heading. Default: "Scanned Cards" */
+  scannedCardsTitle?: string
+  /** Hide checkboxes and remove buttons (for single-card re-match mode). */
+  hideCardControls?: boolean
+  /** Optional note shown under the scanned cards heading. */
   scannedCardsNote?: string
   /** max-h value for the scrollable card lists. Defaults to '58vh'. */
   listMaxHeight?: string
@@ -40,6 +47,9 @@ export function CardReviewPanel({
   cards,
   onCardsChange,
   onConfirm,
+  confirmLabel,
+  scannedCardsTitle = 'Scanned Cards',
+  hideCardControls = false,
   scannedCardsNote,
   listMaxHeight = '58vh',
   bottomActions,
@@ -80,6 +90,8 @@ export function CardReviewPanel({
   }, [activeIndex, reviewQuery, searchCards])
 
   const applyMatch = useCallback((index: number, match: TCGCard) => {
+    const current = cards[index]
+    if (current?.tcgCardId === match.id) return
     onCardsChange(prev => prev.map((card, i) => {
       if (i !== index) return card
       return {
@@ -101,7 +113,7 @@ export function CardReviewPanel({
       }
     }))
     toast.success('Card match updated')
-  }, [onCardsChange])
+  }, [onCardsChange, cards])
 
   const removeCard = useCallback((index: number) => {
     onCardsChange(prev => prev.filter((_, i) => i !== index))
@@ -114,7 +126,10 @@ export function CardReviewPanel({
   const activeCard = activeIndex !== null ? cards[activeIndex] : null
   const selectedCount = cards.filter(c => c.selected).length
 
+  const [zoomedImage, setZoomedImage] = useState<{ src: string; name: string } | null>(null)
+
   return (
+    <>
     <div className="flex flex-col gap-4">
       <p className="text-xs text-muted-foreground">
         Review scanned cards on the left and match them against database cards on the right.
@@ -129,7 +144,7 @@ export function CardReviewPanel({
           {/* ── Scanned cards column ──────────────────────────────────── */}
           <div className="rounded-xl border border-border bg-muted/10">
             <div className="border-b border-border px-4 py-3">
-              <h3 className="font-display text-base font-semibold">Scanned Cards</h3>
+              <h3 className="font-display text-base font-semibold">{scannedCardsTitle}</h3>
               {scannedCardsNote && (
                 <p className="text-xs text-muted-foreground">{scannedCardsNote}</p>
               )}
@@ -140,12 +155,14 @@ export function CardReviewPanel({
                   key={i}
                   className={`flex items-start gap-3 rounded-lg border p-3 ${activeIndex === i ? 'border-primary ring-2 ring-primary/50' : 'border-border'} ${getConfidenceBgClass(card.confidence)}`}
                 >
-                  <Checkbox
-                    checked={card.selected}
-                    onCheckedChange={(checked) => toggleSelected(i, checked === true)}
-                    aria-label={`Select ${card.name}`}
-                    className="mt-2"
-                  />
+                  {!hideCardControls && (
+                    <Checkbox
+                      checked={card.selected}
+                      onCheckedChange={(checked) => toggleSelected(i, checked === true)}
+                      aria-label={`Select ${card.name}`}
+                      className="mt-2"
+                    />
+                  )}
                   <button
                     type="button"
                     onClick={() => { setActiveIndex(i); setReviewQuery(card.name) }}
@@ -172,13 +189,15 @@ export function CardReviewPanel({
                       )}
                     </div>
                   </button>
-                  <button
-                    onClick={() => removeCard(i)}
-                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-                    aria-label={`Remove ${card.name}`}
-                  >
-                    <Trash className="w-4 h-4" />
-                  </button>
+                  {!hideCardControls && (
+                    <button
+                      onClick={() => removeCard(i)}
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                      aria-label={`Remove ${card.name}`}
+                    >
+                      <Trash className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
@@ -217,23 +236,40 @@ export function CardReviewPanel({
               )}
               {!isSearching && reviewResults.length > 0 && (
                 <div className="space-y-2">
-                  {reviewResults.map(result => (
-                    <button
-                      type="button"
-                      key={result.id}
-                      onClick={() => activeIndex !== null && applyMatch(activeIndex, result)}
-                      className="flex w-full items-start gap-3 rounded-lg border border-border p-3 text-left transition-colors hover:border-primary hover:bg-muted/50"
-                    >
-                      <div className="h-28 w-20 shrink-0 overflow-hidden rounded-md border border-border bg-muted shadow-sm">
-                        <img src={result.images.small || result.images.large} alt={result.name} className="h-full w-full object-cover" />
+                  {reviewResults.map(result => {
+                    const isApplied = activeIndex !== null && cards[activeIndex]?.tcgCardId === result.id
+                    return (
+                      <div
+                        key={result.id}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => activeIndex !== null && applyMatch(activeIndex, result)}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activeIndex !== null && applyMatch(activeIndex, result) } }}
+                        className="flex w-full items-center gap-3 rounded-lg border border-border p-2 text-left transition-colors hover:border-primary hover:bg-muted/50 cursor-pointer"
+                      >
+                        <button
+                          type="button"
+                          className="h-28 w-20 shrink-0 overflow-hidden rounded-md border border-border bg-muted shadow-sm hover:ring-2 hover:ring-primary transition-shadow"
+                          onClick={(e) => { e.stopPropagation(); setZoomedImage({ src: result.images.large || result.images.small!, name: result.name }) }}
+                          aria-label={`Enlarge ${result.name}`}
+                        >
+                          <img src={result.images.small || result.images.large} alt={result.name} className="h-full w-full object-cover" />
+                        </button>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold">{result.name}</p>
+                          <p className="truncate text-xs text-muted-foreground">{result.set.name} · #{result.number}</p>
+                          <p className="text-xs text-muted-foreground">{result.rarity || 'Unknown rarity'} · {result.types?.[0] || result.supertype}</p>
+                        </div>
+                        {isApplied ? (
+                          <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" weight="fill" />
+                        ) : (
+                          <Button size="sm" variant="ghost" className="flex-shrink-0 text-xs h-7 px-2">
+                            Apply
+                          </Button>
+                        )}
                       </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-semibold">{result.name}</p>
-                        <p className="truncate text-xs text-muted-foreground">{result.set.name} · #{result.number}</p>
-                        <p className="text-xs text-muted-foreground">{result.rarity || 'Unknown rarity'} · {result.types?.[0] || result.supertype}</p>
-                      </div>
-                    </button>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
             </div>
@@ -248,10 +284,31 @@ export function CardReviewPanel({
           onClick={onConfirm}
         >
           <CheckCircle className="w-5 h-5 mr-2" />
-          Add {selectedCount} Card{selectedCount !== 1 ? 's' : ''} to Collection
+          {confirmLabel ?? `Add ${selectedCount} Card${selectedCount !== 1 ? 's' : ''} to Collection`}
         </Button>
       )}
       {bottomActions}
     </div>
+
+      <Dialog open={!!zoomedImage} onOpenChange={(open) => { if (!open) setZoomedImage(null) }}>
+        <DialogContent className="max-w-full w-full h-full p-0 border-0 bg-black/95 flex items-center justify-center">
+          <button
+            onClick={() => setZoomedImage(null)}
+            aria-label="Close"
+            className="absolute top-4 right-4 z-50 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
+          >
+            <X className="w-6 h-6" weight="bold" />
+          </button>
+          {zoomedImage && (
+            <div className="w-full max-w-sm px-4">
+              <div className="w-full aspect-[2.5/3.5] rounded-lg shadow-2xl relative overflow-hidden">
+                <img src={zoomedImage.src} alt={zoomedImage.name} className="w-full h-full object-contain" />
+              </div>
+              <p className="text-white text-center mt-3 text-sm font-medium">{zoomedImage.name}</p>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }

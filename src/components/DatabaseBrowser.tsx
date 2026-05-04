@@ -18,6 +18,7 @@ import { Package, SquaresFour, Warning, ArrowLeft, Plus, FolderPlus, DotsThreeVe
 import { CatalogSearchBar } from '@/components/shared/CatalogSearchBar'
 import { CatalogFilterControls } from '@/components/shared/CatalogFilterControls'
 import { CardDetailPresentation } from '@/components/shared/CardDetailPresentation'
+import { EvolutionChain } from '@/components/EvolutionChain'
 import { useTCGDatabase } from '@/lib/tcg-database'
 import { buildPricesFromTcgCard } from '@/lib/card-analysis'
 import { logger } from '@/lib/logger'
@@ -546,6 +547,11 @@ export function DatabaseBrowser({ open, onOpenChange, onAddCard, onAddToCollecti
                       )}
                     </div>
                   </div>
+
+                  <EvolutionChain
+                    card={selectedCard}
+                    onCardClick={(c) => setSelectedCard(c)}
+                  />
 
                   {selectedCard.attacks && selectedCard.attacks.length > 0 && (
                     <>

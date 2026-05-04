@@ -1,18 +1,20 @@
-import { useState, useEffect, useRef } from 'react'
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
-import { Dialog, DialogContent } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Plus, Minus, Trash, X, TrendUp, CurrencyDollar, ArrowSquareOut, MagnifyingGlass, ArrowsClockwise, CheckCircle, Warning } from '@phosphor-icons/react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Plus, Minus, Trash, X, TrendUp, CurrencyDollar, ArrowSquareOut, ArrowsClockwise } from '@phosphor-icons/react'
 import { CardDetailPresentation } from '@/components/shared/CardDetailPresentation'
+import { CardReviewPanel } from '@/components/CardReviewPanel'
+import { EvolutionChain } from '@/components/EvolutionChain'
 import { getFriendlySetName } from '@/lib/set-display'
 import { rarityColors, typeColors } from '@/lib/card-colors'
-import { useTCGDatabase, getCardById, type TCGCard } from '@/lib/tcg-database'
-import { buildPricesFromTcgCard } from '@/lib/card-analysis'
+import { getCardById } from '@/lib/tcg-database'
+import { buildPricesFromTcgCard, type ScannedCardDraft } from '@/lib/card-analysis'
 import { api } from '@/lib/collection-api'
 import type { PokemonCard, CardPrices } from '@/lib/types'
+import type { TCGCard } from '@/lib/tcg-database'
+import { toast } from '@/lib/toast'
 
 interface CardDetailsSheetProps {
   card: PokemonCard | null
@@ -34,100 +36,112 @@ export function CardDetailsSheet({
   openRematch,
 }: CardDetailsSheetProps) {
   const [zoomOpen, setZoomOpen] = useState(false)
-  const [zoomedRematchImage, setZoomedRematchImage] = useState<{ src: string; name: string } | null>(null)
   const [rematchOpen, setRematchOpen] = useState(false)
-  const [rematchQuery, setRematchQuery] = useState('')
-  const [rematchResults, setRematchResults] = useState<TCGCard[]>([])
-  const [rematchSearching, setRematchSearching] = useState(false)
-  const [rematchApplied, setRematchApplied] = useState<string | null>(null)
+  const [rematchCards, setRematchCards] = useState<ScannedCardDraft[]>([])
   const [dbPrices, setDbPrices] = useState<CardPrices | undefined>(undefined)
   const [pricesLoading, setPricesLoading] = useState(false)
-  const rematchInputRef = useRef<HTMLInputElement>(null)
-  const { searchCards } = useTCGDatabase()
+  const [fullTcgCard, setFullTcgCard] = useState<TCGCard | null>(null)
+  const [evoPreview, setEvoPreview] = useState<TCGCard | null>(null)
 
-  // Fetch prices from TCG database when card has no stored prices, then persist silently
+  // Fetch full TCGCard for prices (when missing) and evolution chain
   useEffect(() => {
-    if (!card?.tcgCardId || card.prices) { setDbPrices(undefined); setPricesLoading(false); return }
-    setPricesLoading(true)
+    if (!card?.tcgCardId || !open) { setFullTcgCard(null); setDbPrices(undefined); setPricesLoading(false); return }
+    if (!card.prices) setPricesLoading(true)
     const cardId = card.id
     const tcgCardId = card.tcgCardId
     let cancelled = false
     getCardById(tcgCardId).then(tcgCard => {
       if (cancelled) return
-      const fetched = buildPricesFromTcgCard(tcgCard) ?? undefined
-      setDbPrices(fetched)
-      setPricesLoading(false)
-      if (fetched) api.updateCard(cardId, { prices: fetched }).catch(() => {})
-    }).catch(() => { if (!cancelled) { setDbPrices(undefined); setPricesLoading(false) } })
-    return () => { cancelled = true }
-  }, [card?.tcgCardId, card?.prices, card?.id])
-
-  // Auto-open rematch panel when triggered from outside
-  useEffect(() => {
-    if (open && openRematch) setRematchOpen(true)
-  }, [open, openRematch])
-
-  // Seed search from current card name when panel opens
-  useEffect(() => {
-    if (rematchOpen && card) {
-      setRematchQuery(card.name)
-      setRematchResults([])
-      setRematchApplied(null)
-      setTimeout(() => rematchInputRef.current?.select(), 50)
-    }
-  }, [rematchOpen, card])
-
-  // Debounced search
-  useEffect(() => {
-    if (!rematchOpen) return
-    const q = rematchQuery.trim()
-    if (q.length < 2) { setRematchResults([]); return }
-    const timer = window.setTimeout(async () => {
-      setRematchSearching(true)
-      try {
-        setRematchResults(await searchCards(q, 12))
-      } catch {
-        setRematchResults([])
-      } finally {
-        setRematchSearching(false)
+      setFullTcgCard(tcgCard)
+      if (!card.prices) {
+        const fetched = buildPricesFromTcgCard(tcgCard) ?? undefined
+        setDbPrices(fetched)
+        setPricesLoading(false)
+        if (fetched) api.updateCard(cardId, { prices: fetched }).catch(() => {})
       }
-    }, 250)
-    return () => window.clearTimeout(timer)
-  }, [rematchQuery, rematchOpen, searchCards])
+    }).catch(() => { if (!cancelled) { setPricesLoading(false) } })
+    return () => { cancelled = true }
+  }, [card?.tcgCardId, card?.prices, card?.id, open]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const applyRematch = (tcgCard: TCGCard) => {
-    if (!card || !onCardUpdate) return
-    const patch: Partial<PokemonCard> = {
-      name: tcgCard.name,
-      set: tcgCard.set.name,
-      cardNumber: tcgCard.number,
-      pokedexNumber: tcgCard.nationalPokedexNumbers?.[0],
-      rarity: tcgCard.rarity || card.rarity,
-      type: tcgCard.types?.[0] || card.type,
-      supertype: tcgCard.supertype || card.supertype,
-      imageUrl: tcgCard.images.small || tcgCard.images.large || card.imageUrl,
-      largeImageUrl: tcgCard.images.large || undefined,
-      tcgCardId: tcgCard.id,
-    }
-    onCardUpdate(card.id, patch)
-    setRematchApplied(tcgCard.id)
+  // Auto-open rematch panel when triggered from outside; reset when sheet closes
+  useEffect(() => {
+    if (open && openRematch) openRematchPanel()
+    if (!open) setRematchOpen(false)
+  }, [open, openRematch]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const openRematchPanel = () => {
+    if (!card) return
+    setRematchCards([{
+      name: card.name,
+      set: card.set,
+      cardNumber: card.cardNumber,
+      pokedexNumber: card.pokedexNumber,
+      rarity: card.rarity,
+      type: card.type,
+      supertype: card.supertype,
+      imageUrl: card.imageUrl,
+      largeImageUrl: card.largeImageUrl,
+      prices: card.prices,
+      tcgCardId: card.tcgCardId,
+      confidence: 1,
+      previewImageUrl: card.imageUrl,
+      selected: true,
+    }])
+    setRematchOpen(true)
+  }
+
+  const handleRematchConfirm = () => {
+    const draft = rematchCards[0]
+    if (!draft || !onCardUpdate || !card) { setRematchOpen(false); return }
+    if (!card.id) { toast.error('Cannot update card: missing ID'); return }
+    onCardUpdate(card.id, {
+      name: draft.name,
+      set: draft.set,
+      cardNumber: draft.cardNumber,
+      pokedexNumber: draft.pokedexNumber,
+      rarity: draft.rarity,
+      type: draft.type,
+      supertype: draft.supertype,
+      imageUrl: draft.imageUrl,
+      largeImageUrl: draft.largeImageUrl,
+      tcgCardId: draft.tcgCardId,
+    })
+    setRematchOpen(false)
   }
 
   if (!card) return null
 
   return (
     <>
-      <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent side="bottom" className="h-[85vh] max-h-[85vh] min-h-0 flex flex-col p-0">
-          <SheetHeader className="px-4 pt-4 pb-2 shrink-0">
-            <SheetTitle className="font-display text-2xl">{card.name}</SheetTitle>
-          </SheetHeader>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="h-[85vh] max-h-[85vh] min-h-0 flex flex-col p-0 w-full max-w-2xl gap-0">
+          <DialogHeader className="px-4 pt-4 pb-2 shrink-0">
+            <DialogTitle className="font-display text-2xl">{card.name}</DialogTitle>
+          </DialogHeader>
 
           <div className="relative flex-1 min-h-0">
             <div
               className="absolute inset-0 overflow-y-auto overscroll-contain"
               style={{ touchAction: 'pan-y', WebkitOverflowScrolling: 'touch' }}
             >
+              {rematchOpen ? (
+                <div className="px-4 pb-6 pt-2">
+                  <CardReviewPanel
+                    cards={rematchCards}
+                    onCardsChange={setRematchCards}
+                    onConfirm={handleRematchConfirm}
+                    confirmLabel="Update Match"
+                    scannedCardsTitle="Card to Re-match"
+                    hideCardControls
+                    listMaxHeight="40vh"
+                    bottomActions={
+                      <Button variant="outline" className="w-full font-display font-semibold" onClick={() => setRematchOpen(false)}>
+                        ← Back to Card Details
+                      </Button>
+                    }
+                  />
+                </div>
+              ) : (
               <CardDetailPresentation
                 contentClassName="px-4 pb-24 space-y-6"
                 image={(
@@ -162,6 +176,12 @@ export function CardDetailsSheet({
               <div>
                 <h3 className="text-sm font-medium text-muted-foreground mb-2">Details</h3>
                 <div className="space-y-3">
+                  {card.supertype && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm">Supertype</span>
+                      <span className="font-medium">{card.supertype}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between items-center">
                     <span className="text-sm">Set</span>
                     <span className="font-medium">{getFriendlySetName(card.set)}</span>
@@ -194,8 +214,27 @@ export function CardDetailsSheet({
                       {new Date(card.dateAdded).toLocaleDateString()}
                     </span>
                   </div>
+                  {card.artist && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm">Artist</span>
+                      <span className="font-medium">{card.artist}</span>
+                    </div>
+                  )}
+                  {card.tcgCardId && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm">TCG Card ID</span>
+                      <span className="font-mono text-xs text-muted-foreground">{card.tcgCardId}</span>
+                    </div>
+                  )}
                 </div>
               </div>
+
+              {fullTcgCard && (
+                <EvolutionChain
+                  card={fullTcgCard}
+                  onCardClick={(c) => setEvoPreview(c)}
+                />
+              )}
 
               <Separator />
 
@@ -364,98 +403,15 @@ export function CardDetailsSheet({
 
               <Separator />
 
-              {/* Re-match panel */}
-              <div className="space-y-2">
-                <Button
-                  variant="outline"
-                  className="w-full font-display font-semibold"
-                  onClick={() => setRematchOpen(v => !v)}
-                >
-                  <ArrowsClockwise className="w-4 h-4 mr-2" />
-                  Re-match Card
-                </Button>
-
-                {rematchOpen && (
-                  <div className="border border-border rounded-lg p-3 space-y-3">
-                    <div className="relative">
-                      <MagnifyingGlass className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                      <Input
-                        ref={rematchInputRef}
-                        value={rematchQuery}
-                        onChange={e => setRematchQuery(e.target.value)}
-                        placeholder="Search card name…"
-                        className="pl-8 text-sm"
-                      />
-                    </div>
-
-                    {rematchSearching && (
-                      <div className="flex items-center justify-center gap-2 py-2 text-sm text-muted-foreground">
-                        <ArrowsClockwise className="w-4 h-4 animate-spin" />
-                        Searching…
-                      </div>
-                    )}
-
-                    {!rematchSearching && rematchResults.length === 0 && rematchQuery.trim().length >= 2 && (
-                      <div className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
-                        <Warning className="w-4 h-4" />
-                        No results found
-                      </div>
-                    )}
-
-                    {rematchResults.length > 0 && (
-                      <div className="space-y-1.5 max-h-64 overflow-y-auto pr-0.5">
-                        {rematchResults.map(tcgCard => (
-                          <div
-                            key={tcgCard.id}
-                            role="button"
-                            tabIndex={0}
-                            className="flex items-center gap-2 p-1.5 rounded-md hover:bg-accent/50 cursor-pointer transition-colors"
-                            onClick={() => applyRematch(tcgCard)}
-                            onKeyDown={(event) => {
-                              if (event.key === 'Enter' || event.key === ' ') {
-                                event.preventDefault()
-                                applyRematch(tcgCard)
-                              }
-                            }}
-                          >
-                            {tcgCard.images.small ? (
-                              <button
-                                type="button"
-                                onClick={(e) => { e.stopPropagation(); setZoomedRematchImage({ src: tcgCard.images.large || tcgCard.images.small!, name: tcgCard.name }) }}
-                                className="w-9 h-12 flex-shrink-0 rounded overflow-hidden hover:ring-2 hover:ring-primary transition-shadow"
-                                aria-label={`Enlarge ${tcgCard.name}`}
-                              >
-                                <img
-                                  src={tcgCard.images.small}
-                                  alt={tcgCard.name}
-                                  className="w-full h-full object-contain"
-                                  loading="lazy"
-                                />
-                              </button>
-                            ) : (
-                              <div className="w-9 h-12 bg-muted rounded flex-shrink-0" />
-                            )}
-                            <div className="flex-1 min-w-0">
-                              <div className="text-sm font-medium truncate">{tcgCard.name}</div>
-                              <div className="text-xs text-muted-foreground truncate">{tcgCard.set.name} · #{tcgCard.number}</div>
-                              {tcgCard.rarity && (
-                                <div className="text-xs text-muted-foreground">{tcgCard.rarity}</div>
-                              )}
-                            </div>
-                            {rematchApplied === tcgCard.id ? (
-                              <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" weight="fill" />
-                            ) : (
-                              <Button size="sm" variant="ghost" className="flex-shrink-0 text-xs h-7 px-2">
-                                Apply
-                              </Button>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
+              {/* Re-match */}
+              <Button
+                variant="outline"
+                className="w-full font-display font-semibold"
+                onClick={openRematchPanel}
+              >
+                <ArrowsClockwise className="w-4 h-4 mr-2" />
+                Re-match Card
+              </Button>
 
               <Button
                 variant="destructive"
@@ -469,10 +425,11 @@ export function CardDetailsSheet({
                 Remove from Collection
               </Button>
               </CardDetailPresentation>
+              )}
           </div>
           </div>
-      </SheetContent>
-    </Sheet>
+      </DialogContent>
+    </Dialog>
 
     <Dialog open={zoomOpen} onOpenChange={setZoomOpen}>
       <DialogContent className="max-w-full w-full h-full p-0 border-0 bg-black/95 flex items-center justify-center">
@@ -508,29 +465,63 @@ export function CardDetailsSheet({
       </DialogContent>
     </Dialog>
 
-    <Dialog open={!!zoomedRematchImage} onOpenChange={(open) => { if (!open) setZoomedRematchImage(null) }}>
-      <DialogContent className="max-w-full w-full h-full p-0 border-0 bg-black/95 flex items-center justify-center">
-        <button
-          onClick={() => setZoomedRematchImage(null)}
-          aria-label="Close"
-          className="absolute top-4 right-4 z-50 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
-        >
-          <X className="w-6 h-6" weight="bold" />
-        </button>
-        {zoomedRematchImage && (
-          <div className="w-full max-w-sm px-4">
-            <div className="w-full aspect-[2.5/3.5] rounded-lg shadow-2xl relative overflow-hidden">
-              <img
-                src={zoomedRematchImage.src}
-                alt={zoomedRematchImage.name}
-                className="w-full h-full object-contain"
-              />
+    {/* Evolution card preview */}
+    <Dialog open={!!evoPreview} onOpenChange={(o) => { if (!o) setEvoPreview(null) }}>
+      <DialogContent className="max-w-sm w-full gap-0 p-0 overflow-hidden">
+        {evoPreview && (
+          <>
+            <div className="w-full aspect-[2.5/3.5] bg-gradient-to-br from-blue-400 via-purple-400 to-pink-400 relative">
+              {(evoPreview.images?.large || evoPreview.images?.small) ? (
+                <img
+                  src={evoPreview.images.large || evoPreview.images.small}
+                  alt={evoPreview.name}
+                  className="w-full h-full object-contain absolute inset-0"
+                  loading="lazy"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center">
+                  <span className="text-white text-xl font-bold font-display">{evoPreview.name}</span>
+                </div>
+              )}
             </div>
-            <p className="text-white text-center mt-3 text-sm font-medium">{zoomedRematchImage.name}</p>
-          </div>
+            <div className="p-4 space-y-2">
+              <DialogHeader>
+                <DialogTitle className="font-display text-xl">{evoPreview.name}</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-1.5 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Set</span>
+                  <span className="font-medium">{evoPreview.set?.name}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Number</span>
+                  <span className="font-medium">#{evoPreview.number}</span>
+                </div>
+                {evoPreview.rarity && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Rarity</span>
+                    <span className="font-medium">{evoPreview.rarity}</span>
+                  </div>
+                )}
+                {evoPreview.types && evoPreview.types.length > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Type</span>
+                    <span className="font-medium">{evoPreview.types.join(', ')}</span>
+                  </div>
+                )}
+                {evoPreview.artist && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Artist</span>
+                    <span className="font-medium">{evoPreview.artist}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
         )}
       </DialogContent>
     </Dialog>
+
   </>
   )
 }

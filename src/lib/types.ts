@@ -42,6 +42,7 @@ export interface PokemonCard {
   rarity: string
   type: string
   supertype?: string
+  artist?: string
   imageUrl: string
   largeImageUrl?: string
   quantity: number

@@ -7,9 +7,12 @@ export const api = {
   addCard:       (card: PokemonCard)       => apiFetch<PokemonCard>('/api/collection', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(card),
   }),
-  updateCard: (id: string, patch: Partial<PokemonCard>) => apiFetch<PokemonCard>(`/api/collection/${encodeURIComponent(id)}`, {
-    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch),
-  }),
+  updateCard: (id: string, patch: Partial<PokemonCard>) => {
+    if (!id) return Promise.reject(new Error('Card ID is required'))
+    return apiFetch<PokemonCard>(`/api/collection/${encodeURIComponent(id)}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch),
+    })
+  },
   deleteCard: (id: string) => apiFetch<{ ok: boolean }>(`/api/collection/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 
   // -- Named collections (folders) ------------------------------------------

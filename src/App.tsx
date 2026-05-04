@@ -148,6 +148,7 @@ function MainApp() {
       rarity:       tcgCard.rarity || 'Common',
       type:         tcgCard.types?.[0] || 'Colorless',
       supertype:    tcgCard.supertype,
+      artist:       tcgCard.artist,
       imageUrl:     tcgCard.images?.small || tcgCard.images?.large || `https://placehold.co/400x560/88ccee/ffffff?text=${encodeURIComponent(tcgCard.name)}`,
       largeImageUrl:tcgCard.images?.large,
       quantity:     1,

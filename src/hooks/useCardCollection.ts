@@ -83,6 +83,7 @@ export function useCardCollection(isDatabaseLoaded: boolean) {
               largeImageUrl: dbCard.images.large || undefined,
               tcgCardId:     dbCard.id,
               supertype:     dbCard.supertype || undefined,
+              artist:        dbCard.artist || undefined,
               pokedexNumber: typeof dex === 'number' ? dex : card.pokedexNumber,
             })
           }
@@ -234,10 +235,10 @@ export function useCardCollection(isDatabaseLoaded: boolean) {
     try {
       await api.updateCard(cardId, patch)
       toast.success('Card updated')
-    } catch {
+    } catch (err) {
       setCards(prev => prev.map(c => c.id === cardId ? original : c))
       if (selectedCard?.id === cardId) setSelectedCard(original)
-      toast.error('Failed to update card')
+      toast.error('Failed to update card', { description: err instanceof Error ? err.message : String(err) })
     }
   }
 
@@ -348,6 +349,7 @@ export function useCardCollection(isDatabaseLoaded: boolean) {
           rarity:       tcgCard.rarity || 'Common',
           type:         tcgCard.types?.[0] || 'Colorless',
           supertype:    tcgCard.supertype,
+          artist:       tcgCard.artist,
           imageUrl:     tcgCard.images?.small || tcgCard.images?.large || `https://placehold.co/400x560/88ccee/ffffff?text=${encodeURIComponent(tcgCard.name)}`,
           largeImageUrl:tcgCard.images?.large,
           quantity:     1,

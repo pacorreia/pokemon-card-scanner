@@ -89,14 +89,13 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react-swc": "^4.3.0",
     "@vitest/coverage-v8": "^4.1.4",
-    "canvas": "^3.2.3",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
     "globals": "^17.4.0",
     "tailwindcss": "^4.2.4",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.58.0",
-    "vite": "^8.0.8",
+    "vite": "^7.3.2",
     "vitest": "^4.1.4"
   },
   "engines": {

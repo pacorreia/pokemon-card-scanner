@@ -10,8 +10,6 @@ import { assessImageQuality } from '@/lib/image-processing'
 import {
   analyzeBestSingleCard,
   draftToPokemonCard,
-  isAutoAddEligible,
-  AUTO_ADD_CONFIDENCE_THRESHOLD,
   type ScannedCardDraft,
   type ScanQueueItem,
 } from '@/lib/card-analysis'
@@ -46,16 +44,11 @@ export function ScanQueueDialog({
   const [reviewMode, setReviewMode] = useState(false)
   const [reviewCards, setReviewCards] = useState<ScannedCardDraft[]>([])
 
-  // Stop processing and reset on close
+  // Reset review UI on close; processing continues in background
   useEffect(() => {
     if (!open) {
-      cancelRef.current = true
-      const timer = window.setTimeout(() => {
-        setIsProcessingQueue(false)
-        setReviewMode(false)
-        setReviewCards([])
-      }, 0)
-      return () => window.clearTimeout(timer)
+      setReviewMode(false)
+      setReviewCards([])
     }
   }, [open])
 
@@ -103,14 +96,14 @@ export function ScanQueueDialog({
 
   // Auto-start processing whenever the dialog is open and pending items exist
   useEffect(() => {
-    if (!open || isProcessingQueue || reviewMode) return
+    if (isProcessingQueue || reviewMode) return
     const hasPending = queue.some(i => i.status === 'pending')
     if (!hasPending) return
     const timer = window.setTimeout(() => {
       processQueue()
     }, 0)
     return () => window.clearTimeout(timer)
-  }, [open, queue, isProcessingQueue, reviewMode, processQueue])
+  }, [queue, isProcessingQueue, reviewMode, processQueue])
 
   // Auto-clear successfully processed (done) items after 30 seconds
   useEffect(() => {
@@ -133,36 +126,11 @@ export function ScanQueueDialog({
       return
     }
 
-    // Auto-add high-confidence cards
-    const autoAdd = allDrafts.filter(d => isAutoAddEligible(d.confidence))
-    const needsReview = allDrafts.filter(d => !isAutoAddEligible(d.confidence))
-
-    if (autoAdd.length > 0) {
-      const newCards = autoAdd.map(draftToPokemonCard)
-      if (onCardsScanned) {
-        onCardsScanned(newCards)
-      } else {
-        newCards.forEach(c => onCardScanned(c))
-      }
-
-      if (needsReview.length === 0) {
-        toast.success(`${newCards.length} card${newCards.length !== 1 ? 's' : ''} added!`, {
-          description: `All scanned above ${Math.round(AUTO_ADD_CONFIDENCE_THRESHOLD * 100)}% confidence.`,
-        })
-        for (const id of queueItemIds) queueApi.remove(id).catch(() => {})
-        onQueueChange(() => [])
-        onOpenChange(false)
-        return
-      }
-
-      toast.success(`${newCards.length} card${newCards.length !== 1 ? 's' : ''} added automatically`, {
-        description: `${needsReview.length} card(s) need manual review.`,
-      })
-    }
-
+    // Always show review UI so the user can verify all matches.
+    // Auto-eligible cards are pre-selected; low-confidence ones are also shown.
     for (const id of queueItemIds) queueApi.remove(id).catch(() => {})
     onQueueChange(() => [])
-    setReviewCards(needsReview.map(d => ({ ...d, selected: true })))
+    setReviewCards(allDrafts.map(d => ({ ...d, selected: true })))
     setReviewMode(true)
   }, [queue, onCardScanned, onCardsScanned, onQueueChange, onOpenChange])
 

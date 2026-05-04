@@ -699,6 +699,11 @@ const requestHandler = async (req, res) => {
   const pathname = url.pathname
   const method   = req.method
 
+  // Log all mutating API requests to aid debugging
+  if (method !== 'GET' && method !== 'OPTIONS' && pathname.startsWith('/api/')) {
+    logger.info('server', `${method} ${pathname}`)
+  }
+
   // CORS preflight
   if (method === 'OPTIONS') {
     res.writeHead(204, getCorsHeaders(req))
@@ -1102,6 +1107,14 @@ const requestHandler = async (req, res) => {
     // ── All sets ────────────────────────────────────────────────────────────
     if (pathname === '/api/sets' && method === 'GET') {
       writeJson(res, 200, db.getAllSets(), req)
+      return
+    }
+
+    // ── Cards that evolve from a given Pokémon name ─────────────────────────
+    if (pathname === '/api/cards/evolves-from' && method === 'GET') {
+      const name = url.searchParams.get('name') ?? ''
+      if (!name) { writeJson(res, 200, [], req); return }
+      writeJson(res, 200, db.findCardsEvolvingFrom(name), req)
       return
     }
 
