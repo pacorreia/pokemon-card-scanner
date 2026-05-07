@@ -145,9 +145,3 @@ export function EvolutionChain({ card, onCardClick }: EvolutionChainProps) {
     </>
   )
 }
-
-        </div>
-      </div>
-    </>
-  )
-}
