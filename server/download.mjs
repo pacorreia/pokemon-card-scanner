@@ -27,6 +27,11 @@ export async function runDownload(onProgress) {
   }).then(r => { if (!r.ok) throw new Error(`GitHub API ${r.status}`); return r.json() })
 
   const tag = release.tag_name
+  // Validate the tag from the GitHub API response before using it in further URLs.
+  // A compromised or unexpected response could otherwise inject path segments.
+  if (!tag || typeof tag !== 'string' || !/^[a-zA-Z0-9._-]{1,100}$/.test(tag)) {
+    throw new Error(`Unexpected release tag format: ${String(tag).slice(0, 40)}`)
+  }
   logger.info('download', `Latest release: ${tag}`)
 
   // ── 2. Sets (single file) ───────────────────────────────────────────────
@@ -45,7 +50,7 @@ export async function runDownload(onProgress) {
   }).then(r => { if (!r.ok) throw new Error(`Card list ${r.status}`); return r.json() })
 
   const cardFiles = contents
-    .filter(f => f.type === 'file' && f.name.endsWith('.json'))
+    .filter(f => f.type === 'file' && f.name.endsWith('.json') && /^[a-zA-Z0-9-]+\.json$/.test(f.name))
     .map(f => f.name)
 
   logger.info('download', `${cardFiles.length} card files`)

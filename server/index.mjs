@@ -1145,6 +1145,12 @@ const requestHandler = async (req, res) => {
     const cardByIdMatch = pathname.match(/^\/api\/cards\/(.+)$/)
     if (cardByIdMatch && method === 'GET') {
       const tcgId = decodeURIComponent(cardByIdMatch[1])
+      // Validate format before using in an outbound URL: Pokemon TCG IDs are
+      // alphanumeric + hyphens only (e.g. "swsh1-1", "base1-4", "xyp-XY1").
+      if (!/^[a-zA-Z0-9-]{1,64}$/.test(tcgId)) {
+        writeJson(res, 400, { error: 'Invalid card ID' }, req)
+        return
+      }
       let card = db.getCardById(tcgId)
       if (card && !card.tcgplayer && !card.cardmarket) {
         const lastFailed = priceFetchFailedAt.get(tcgId)
