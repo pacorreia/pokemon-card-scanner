@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+      <url>
+        <loc>https://pacorreia.github.io/pokemon-card-scanner/</loc>
+      </url>
+      <url>
+        <loc>https://pacorreia.github.io/pokemon-card-scanner/getting-started/</loc>
+      </url>
+      <url>
+        <loc>https://pacorreia.github.io/pokemon-card-scanner/getting-started/quick-start/</loc>
+      </url>
+      <url>
+        <loc>https://pacorreia.github.io/pokemon-card-scanner/getting-started/installation/</loc>
+      </url>
+      <url>
+        <loc>https://pacorreia.github.io/pokemon-card-scanner/getting-started/requirements/</loc>
+      </url>
+      <url>
+        <loc>https://pacorreia.github.io/pokemon-card-scanner/configuration/</loc>
+      </url>
+      <url>
+        <loc>https://pacorreia.github.io/pokemon-card-scanner/configuration/ai-providers/</loc>
+      </url>
+      <url>
+        <loc>https://pacorreia.github.io/pokemon-card-scanner/configuration/environment/</loc>
+      </url>
+      <url>
+        <loc>https://pacorreia.github.io/pokemon-card-scanner/guides/docker/</loc>
+      </url>
+      <url>
+        <loc>https://pacorreia.github.io/pokemon-card-scanner/development/</loc>
+      </url>
+</urlset>
