@@ -274,10 +274,16 @@ function writeJson(res, statusCode, payload, req = null, extraHeaders = {}) {
   res.end(JSON.stringify(payload))
 }
 
+// Use the direct socket address for rate-limiting to prevent X-Forwarded-For spoofing.
+// getClientAddress() trusts X-Forwarded-For which non-browser clients can forge.
+function getSocketAddress(req) {
+  return String(req.socket?.remoteAddress || 'unknown')
+}
+
 const clientLogRateWindows = new Map()
 
 function isClientLogRateLimited(req) {
-  const key = getClientAddress(req)
+  const key = getSocketAddress(req)
   const now = Date.now()
   const state = clientLogRateWindows.get(key)
 
@@ -289,6 +295,22 @@ function isClientLogRateLimited(req) {
   state.count += 1
   if (state.count <= CLIENT_LOG_RATE_LIMIT_MAX) return false
   return true
+}
+
+const LOGIN_RATE_WINDOW_MS = 15 * 60 * 1000 // 15 minutes
+const LOGIN_RATE_MAX = 10 // max attempts per window per IP
+const loginRateWindows = new Map()
+
+function isLoginRateLimited(req) {
+  const key = getSocketAddress(req)
+  const now = Date.now()
+  const state = loginRateWindows.get(key)
+  if (!state || now - state.start >= LOGIN_RATE_WINDOW_MS) {
+    loginRateWindows.set(key, { start: now, count: 1 })
+    return false
+  }
+  state.count += 1
+  return state.count > LOGIN_RATE_MAX
 }
 
 function signClientLogToken(payload) {
@@ -783,6 +805,7 @@ const requestHandler = async (req, res) => {
 
     if (pathname === '/api/auth/login' && method === 'POST') {
       if (!API_SECRET) { writeJson(res, 200, { ok: true }, req); return }
+      if (isLoginRateLimited(req)) { writeJson(res, 429, { error: 'Too many login attempts. Try again later.' }, req); return }
       let body
       try { body = await readJsonBody(req, 4096) } catch { writeJson(res, 400, { error: 'Invalid JSON' }, req); return }
       const password = String(body?.password ?? '')
@@ -1233,7 +1256,10 @@ const requestHandler = async (req, res) => {
   } catch (error) {
     const status = typeof error?.status === 'number' ? error.status : 500
     if (status >= 500) logger.error('server', 'Unhandled error:', error)
-    writeJson(res, status, { error: error?.message || 'Internal server error' }, req)
+    // Only forward the error message for client errors (4xx); for 5xx return a
+    // generic message to avoid leaking internal file paths or DB error strings.
+    const message = status < 500 ? (error?.message || 'Bad request') : 'Internal server error'
+    writeJson(res, status, { error: message }, req)
   }
 }
 
