@@ -36,7 +36,7 @@ export async function runDownload(onProgress) {
 
   // ── 2. Sets (single file) ───────────────────────────────────────────────
   onProgress(10, 100, 'Fetching sets...')
-  const setsData = await fetch(`${GITHUB_RAW}/${tag}/sets/en.json`)
+  const setsData = await fetch(`${GITHUB_RAW}/${encodeURIComponent(tag)}/sets/en.json`)
     .then(r => { if (!r.ok) throw new Error(`sets/en.json ${r.status}`); return r.json() })
 
   if (!Array.isArray(setsData)) throw new Error('Unexpected sets format')
@@ -45,7 +45,7 @@ export async function runDownload(onProgress) {
 
   // ── 3. Card file list (GitHub contents API) ─────────────────────────────
   onProgress(15, 100, `Found ${validSets.length} sets, fetching card file list...`)
-  const contents = await fetch(`${GITHUB_API}/contents/cards/en?ref=${tag}`, {
+  const contents = await fetch(`${GITHUB_API}/contents/cards/en?ref=${encodeURIComponent(tag)}`, {
     headers: { Accept: 'application/vnd.github+json' },
   }).then(r => { if (!r.ok) throw new Error(`Card list ${r.status}`); return r.json() })
 
@@ -68,7 +68,7 @@ export async function runDownload(onProgress) {
     const batch = cardFiles.slice(i, i + CARD_BATCH_SIZE)
     const results = await Promise.all(
       batch.map(file =>
-        fetch(`${GITHUB_RAW}/${tag}/cards/en/${file}`)
+        fetch(`${GITHUB_RAW}/${encodeURIComponent(tag)}/cards/en/${encodeURIComponent(file)}`)
           .then(r => r.ok ? r.json() : [])
           .catch(() => [])
       )

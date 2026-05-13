@@ -66,28 +66,6 @@ async function findRoot(card: TCGCard, depth = 0): Promise<TCGCard> {
   return findRoot(parent, depth + 1)
 }
 
-// BFS: build all stages from the root card down
-async function buildStages(root: TCGCard): Promise<TCGCard[][]> {
-  const stages: TCGCard[][] = [[root]]
-  for (let depth = 0; depth < 4; depth++) {
-    const currentStage = stages[stages.length - 1]
-    const nextNames = new Set<string>()
-    const nextCards: TCGCard[] = []
-    for (const stageCard of currentStage) {
-      const evos = await findCardsEvolvingFrom(stageCard.name)
-      for (const c of dedupByName(evos)) {
-        if (!nextNames.has(c.name)) {
-          nextNames.add(c.name)
-          nextCards.push(c)
-        }
-      }
-    }
-    if (nextCards.length === 0) break
-    stages.push(nextCards)
-  }
-  return stages
-}
-
 export function EvolutionChain({ card, onCardClick }: EvolutionChainProps) {
   const [stages, setStages] = useState<TCGCard[][]>([])
   const [loading, setLoading] = useState(true)
@@ -101,10 +79,36 @@ export function EvolutionChain({ card, onCardClick }: EvolutionChainProps) {
       try {
         const root = await findRoot(card)
         if (cancelled) return
-        const built = await buildStages(root)
-        if (cancelled) return
-        // Only show if there's more than 1 stage (i.e. there's actually an evolution)
-        setStages(built.length > 1 ? built : [])
+
+        const built: TCGCard[][] = [[root]]
+
+        for (let depth = 0; depth < 4; depth++) {
+          const currentStage = built[built.length - 1]
+
+          // Fetch evolutions for all cards in the current stage in parallel
+          const evoResults = await Promise.all(
+            currentStage.map(stageCard => findCardsEvolvingFrom(stageCard.name))
+          )
+          if (cancelled) return
+
+          const nextNames = new Set<string>()
+          const nextCards: TCGCard[] = []
+          for (const evos of evoResults) {
+            for (const c of dedupByName(evos)) {
+              if (!nextNames.has(c.name)) {
+                nextNames.add(c.name)
+                nextCards.push(c)
+              }
+            }
+          }
+          if (nextCards.length === 0) break
+          built.push(nextCards)
+          // Render each stage as it resolves instead of waiting for the full chain
+          setStages([...built])
+        }
+
+        // If only root was found (no evolutions), clear
+        if (built.length <= 1 && !cancelled) setStages([])
       } catch {
         // ignore
       } finally {
