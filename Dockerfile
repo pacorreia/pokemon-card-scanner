@@ -26,7 +26,10 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/server ./server
 COPY --from=builder /app/node_modules ./node_modules
 
-RUN mkdir -p /data
+# Create data directory and give ownership to the built-in non-root 'node' user
+RUN mkdir -p /data && chown -R node:node /data /app
+
+USER node
 
 EXPOSE 8787 8443
 
