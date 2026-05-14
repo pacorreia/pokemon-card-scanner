@@ -10,7 +10,7 @@ COPY package.json package-lock.json ./
 RUN npm ci
 
 COPY . .
-RUN npm run build
+RUN npm run build && npm prune --omit=dev
 
 # Stage 2: Runtime image (Node server serves both static frontend and API proxy)
 FROM node:22-alpine AS runner
