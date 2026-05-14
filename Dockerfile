@@ -26,8 +26,10 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/server ./server
 COPY --from=builder /app/node_modules ./node_modules
 
-# Create data directory and give ownership to the built-in non-root 'node' user
-RUN mkdir -p /data && chown -R node:node /data /app
+# Create data directory and give ownership to the built-in non-root 'node' user.
+# Remove npm (build tool, not needed at runtime) — eliminates its bundled deps from the image.
+RUN mkdir -p /data && chown -R node:node /data /app \
+    && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
 USER node
 
