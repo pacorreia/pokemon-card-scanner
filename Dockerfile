@@ -10,7 +10,7 @@ COPY package.json package-lock.json ./
 RUN npm ci
 
 COPY . .
-RUN npm run build
+RUN npm run build && npm prune --omit=dev
 
 # Stage 2: Runtime image (Node server serves both static frontend and API proxy)
 FROM node:22-alpine AS runner
@@ -26,7 +26,12 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/server ./server
 COPY --from=builder /app/node_modules ./node_modules
 
-RUN mkdir -p /data
+# Create data directory and give ownership to the built-in non-root 'node' user.
+# Remove npm (build tool, not needed at runtime) — eliminates its bundled deps from the image.
+RUN mkdir -p /data && chown -R node:node /data /app \
+    && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
+
+USER node
 
 EXPOSE 8787 8443
 
