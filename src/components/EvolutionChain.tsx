@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Fragment } from 'react'
 import { ArrowRight } from '@phosphor-icons/react'
 import { Separator } from '@/components/ui/separator'
 import { searchCards, findCardsEvolvingFrom } from '@/lib/tcg-database'
@@ -48,75 +48,101 @@ function EvolutionCardChip({
   )
 }
 
+// One representative TCGCard per unique Pokémon name
+function dedupByName(cards: TCGCard[]): TCGCard[] {
+  const seen = new Map<string, TCGCard>()
+  for (const c of cards) {
+    if (!seen.has(c.name)) seen.set(c.name, c)
+  }
+  return Array.from(seen.values())
+}
+
+// Walk up via evolvesFrom chain to find the root card
+async function findRoot(card: TCGCard, depth = 0): Promise<TCGCard> {
+  if (!card.evolvesFrom || depth >= 4) return card
+  const results = await searchCards(card.evolvesFrom, 30)
+  const parent = results.find(c => c.name === card.evolvesFrom) ?? results[0]
+  if (!parent) return card
+  return findRoot(parent, depth + 1)
+}
+
 export function EvolutionChain({ card, onCardClick }: EvolutionChainProps) {
-  const [evolvesFromCard, setEvolvesFromCard] = useState<TCGCard | null>(null)
-  const [evolvesToCards, setEvolvesToCards] = useState<TCGCard[]>([])
+  const [stages, setStages] = useState<TCGCard[][]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     let cancelled = false
-    setEvolvesFromCard(null)
-    setEvolvesToCards([])
+    setStages([])
     setLoading(true)
 
-    const tasks: Promise<void>[] = []
-
-    if (card.evolvesFrom) {
-      tasks.push(
-        searchCards(card.evolvesFrom, 30).then(results => {
-          if (cancelled) return
-          const exact = results.find(c => c.name === card.evolvesFrom)
-          setEvolvesFromCard(exact ?? results[0] ?? null)
-        }).catch(() => {})
-      )
-    }
-
-    tasks.push(
-      findCardsEvolvingFrom(card.name).then(results => {
+    ;(async () => {
+      try {
+        const root = await findRoot(card)
         if (cancelled) return
-        // One representative per unique Pokémon name
-        const seen = new Map<string, TCGCard>()
-        for (const c of results) {
-          if (!seen.has(c.name)) seen.set(c.name, c)
-        }
-        setEvolvesToCards(Array.from(seen.values()))
-      }).catch(() => {})
-    )
 
-    Promise.all(tasks).finally(() => { if (!cancelled) setLoading(false) })
+        const built: TCGCard[][] = [[root]]
+
+        for (let depth = 0; depth < 4; depth++) {
+          const currentStage = built[built.length - 1]
+
+          // Fetch evolutions for all cards in the current stage in parallel
+          const evoResults = await Promise.all(
+            currentStage.map(stageCard => findCardsEvolvingFrom(stageCard.name))
+          )
+          if (cancelled) return
+
+          const nextNames = new Set<string>()
+          const nextCards: TCGCard[] = []
+          for (const evos of evoResults) {
+            for (const c of dedupByName(evos)) {
+              if (!nextNames.has(c.name)) {
+                nextNames.add(c.name)
+                nextCards.push(c)
+              }
+            }
+          }
+          if (nextCards.length === 0) break
+          built.push(nextCards)
+          // Render each stage as it resolves instead of waiting for the full chain
+          setStages([...built])
+        }
+
+        // If only root was found (no evolutions), clear
+        if (built.length <= 1 && !cancelled) setStages([])
+      } catch {
+        // ignore
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
 
     return () => { cancelled = true }
   }, [card.id, card.name, card.evolvesFrom])
 
-  if (loading || (!evolvesFromCard && evolvesToCards.length === 0)) return null
+  if (loading || stages.length === 0) return null
 
   return (
     <>
       <Separator />
       <div>
         <h3 className="text-sm font-medium text-muted-foreground mb-3">Evolution Path</h3>
-        <div className="flex items-center gap-1 flex-wrap">
-          {evolvesFromCard && (
-            <>
-              <EvolutionCardChip
-                card={evolvesFromCard}
-                onClick={() => onCardClick(evolvesFromCard)}
-              />
-              <ArrowRight className="w-4 h-4 text-muted-foreground shrink-0" />
-            </>
-          )}
-
-          <EvolutionCardChip card={card} isCurrent />
-
-          {evolvesToCards.map((evoCard) => (
-            <>
-              <ArrowRight key={`arrow-${evoCard.id}`} className="w-4 h-4 text-muted-foreground shrink-0" />
-              <EvolutionCardChip
-                key={evoCard.id}
-                card={evoCard}
-                onClick={() => onCardClick(evoCard)}
-              />
-            </>
+        <div className="flex items-start gap-1 flex-wrap">
+          {stages.map((stage, stageIdx) => (
+            <Fragment key={stageIdx}>
+              {stageIdx > 0 && (
+                <ArrowRight className="w-4 h-4 text-muted-foreground shrink-0 mt-4" />
+              )}
+              <div className="flex flex-col gap-1">
+                {stage.map((stageCard) => (
+                  <EvolutionCardChip
+                    key={stageCard.id}
+                    card={stageCard}
+                    isCurrent={stageCard.name === card.name}
+                    onClick={() => onCardClick(stageCard)}
+                  />
+                ))}
+              </div>
+            </Fragment>
           ))}
         </div>
       </div>
