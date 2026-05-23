@@ -117,7 +117,8 @@ export function EvolutionChain({ card, onCardClick }: EvolutionChainProps) {
     })()
 
     return () => { cancelled = true }
-  }, [card.id, card.name, card.evolvesFrom])
+  // Rebuild chain only when card identity/evolution metadata changes.
+  }, [card.id, card.name, card.evolvesFrom]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading || stages.length === 0) return null
 
