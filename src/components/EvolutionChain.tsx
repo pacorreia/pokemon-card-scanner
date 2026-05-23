@@ -117,7 +117,7 @@ export function EvolutionChain({ card, onCardClick }: EvolutionChainProps) {
     })()
 
     return () => { cancelled = true }
-  }, [card])
+  }, [card.id, card.name, card.evolvesFrom]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading || stages.length === 0) return null
 
