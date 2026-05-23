@@ -27,11 +27,16 @@ export async function runDownload(onProgress) {
   }).then(r => { if (!r.ok) throw new Error(`GitHub API ${r.status}`); return r.json() })
 
   const tag = release.tag_name
+  // Validate the tag from the GitHub API response before using it in further URLs.
+  // A compromised or unexpected response could otherwise inject path segments.
+  if (!tag || typeof tag !== 'string' || !/^[a-zA-Z0-9._-]{1,100}$/.test(tag)) {
+    throw new Error(`Unexpected release tag format: ${String(tag).slice(0, 40)}`)
+  }
   logger.info('download', `Latest release: ${tag}`)
 
   // ── 2. Sets (single file) ───────────────────────────────────────────────
   onProgress(10, 100, 'Fetching sets...')
-  const setsData = await fetch(`${GITHUB_RAW}/${tag}/sets/en.json`)
+  const setsData = await fetch(`${GITHUB_RAW}/${encodeURIComponent(tag)}/sets/en.json`)
     .then(r => { if (!r.ok) throw new Error(`sets/en.json ${r.status}`); return r.json() })
 
   if (!Array.isArray(setsData)) throw new Error('Unexpected sets format')
@@ -40,12 +45,12 @@ export async function runDownload(onProgress) {
 
   // ── 3. Card file list (GitHub contents API) ─────────────────────────────
   onProgress(15, 100, `Found ${validSets.length} sets, fetching card file list...`)
-  const contents = await fetch(`${GITHUB_API}/contents/cards/en?ref=${tag}`, {
+  const contents = await fetch(`${GITHUB_API}/contents/cards/en?ref=${encodeURIComponent(tag)}`, {
     headers: { Accept: 'application/vnd.github+json' },
   }).then(r => { if (!r.ok) throw new Error(`Card list ${r.status}`); return r.json() })
 
   const cardFiles = contents
-    .filter(f => f.type === 'file' && f.name.endsWith('.json'))
+    .filter(f => f.type === 'file' && f.name.endsWith('.json') && /^[a-zA-Z0-9-]+\.json$/.test(f.name))
     .map(f => f.name)
 
   logger.info('download', `${cardFiles.length} card files`)
@@ -63,7 +68,7 @@ export async function runDownload(onProgress) {
     const batch = cardFiles.slice(i, i + CARD_BATCH_SIZE)
     const results = await Promise.all(
       batch.map(file =>
-        fetch(`${GITHUB_RAW}/${tag}/cards/en/${file}`)
+        fetch(`${GITHUB_RAW}/${encodeURIComponent(tag)}/cards/en/${encodeURIComponent(file)}`)
           .then(r => r.ok ? r.json() : [])
           .catch(() => [])
       )
