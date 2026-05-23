@@ -244,7 +244,14 @@ export function CardReviewPanel({
                         role="button"
                         tabIndex={0}
                         onClick={() => activeIndex !== null && applyMatch(activeIndex, result)}
-                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activeIndex !== null && applyMatch(activeIndex, result) } }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            if (activeIndex !== null) {
+                              applyMatch(activeIndex, result)
+                            }
+                          }
+                        }}
                         className="flex w-full items-center gap-3 rounded-lg border border-border p-2 text-left transition-colors hover:border-primary hover:bg-muted/50 cursor-pointer"
                       >
                         <button
