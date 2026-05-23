@@ -117,7 +117,7 @@ export function EvolutionChain({ card, onCardClick }: EvolutionChainProps) {
     })()
 
     return () => { cancelled = true }
-  }, [card.id, card.name, card.evolvesFrom])
+  }, [card])
 
   if (loading || stages.length === 0) return null
 
