@@ -132,7 +132,7 @@ export function ScanQueueDialog({
     onQueueChange(() => [])
     setReviewCards(allDrafts.map(d => ({ ...d, selected: true })))
     setReviewMode(true)
-  }, [queue, onCardScanned, onCardsScanned, onQueueChange, onOpenChange])
+  }, [queue, onQueueChange])
 
   const handleReviewDone = useCallback(() => {
     const selected = reviewCards.filter(c => c.selected)
