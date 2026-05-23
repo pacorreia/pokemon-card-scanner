@@ -72,7 +72,7 @@ export function CardDetailsSheet({
     if (!open) { setRematchOpen(false); setEvoCard(null) }
   }, [open, openRematch]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const openRematchPanel = () => {
+  function openRematchPanel() {
     if (!card) return
     setRematchCards([{
       name: card.name,

@@ -30,7 +30,10 @@ function normalizePokedexNumber(value) {
   return Math.trunc(number)
 }
 
+const ALLOWED_TABLE_NAMES = new Set(['collection_cards', 'tcg_cards', 'tcg_sets', 'card_collections', 'collection_memberships', 'scan_queue', 'tcg_metadata'])
+
 function hasColumn(tableName, columnName) {
+  if (!ALLOWED_TABLE_NAMES.has(tableName)) throw new Error(`Unknown table: ${tableName}`)
   const rows = db.prepare(`PRAGMA table_info(${tableName})`).all()
   return rows.some(row => row.name === columnName)
 }
@@ -443,7 +446,9 @@ export function findCard(name, setName, cardNumber) {
   let matches = nameRows.map(r => JSON.parse(r.data))
 
   if (matches.length === 0) {
-    nameRows = db.prepare('SELECT data FROM tcg_cards WHERE name LIKE ? COLLATE NOCASE').all(`%${name}%`)
+    // Escape LIKE special characters in user input to prevent wildcard injection
+    const escapedName = name.replace(/[\\%_]/g, '\\$&')
+    nameRows = db.prepare('SELECT data FROM tcg_cards WHERE name LIKE ? ESCAPE ? COLLATE NOCASE').all(`%${escapedName}%`, '\\')
     matches = nameRows.map(r => JSON.parse(r.data))
   }
 
@@ -527,8 +532,10 @@ function _buildCardWhereClause(q, supertype, setId) {
   let sql = ' WHERE 1=1'
   const params = []
   if (q) {
-    sql += ' AND (name LIKE ? OR number LIKE ? OR EXISTS (SELECT 1 FROM tcg_sets s WHERE s.id = tcg_cards.set_id AND s.name LIKE ?))'
-    params.push(`%${q}%`, `%${q}%`, `%${q}%`)
+    // Escape LIKE special characters to prevent wildcard injection
+    const escaped = q.replace(/[\\%_]/g, '\\$&')
+    sql += ' AND (name LIKE ? ESCAPE ? OR number LIKE ? ESCAPE ? OR EXISTS (SELECT 1 FROM tcg_sets s WHERE s.id = tcg_cards.set_id AND s.name LIKE ? ESCAPE ?))'
+    params.push(`%${escaped}%`, '\\', `%${escaped}%`, '\\', `%${escaped}%`, '\\')
   }
   if (supertype) { sql += ' AND supertype = ?'; params.push(supertype) }
   if (setId)     { sql += ' AND set_id = ?';    params.push(setId) }
