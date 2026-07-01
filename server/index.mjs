@@ -895,8 +895,10 @@ const requestHandler = async (req, res) => {
       // Token validation: skip for ollama (no auth required)
       const providerCfg = getActiveProviderConfig()
       if (providerCfg.tokenEnvVar !== null) {
+        const providerName = runtimeAISettings.provider ?? AI_PROVIDER
+        const runtimeToken = runtimeAISettings.apiKeys[providerName]
         const envToken = process.env[providerCfg.tokenEnvVar]
-        const hasToken = Boolean(runtimeAISettings.apiKey || envToken)
+        const hasToken = Boolean(runtimeToken || envToken)
         if (!hasToken) {
           writeJson(res, 500, { error: `${providerCfg.tokenEnvVar} not set on server.` }, req)
           return
