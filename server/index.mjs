@@ -905,7 +905,10 @@ const requestHandler = async (req, res) => {
       const cfg = PROVIDER_CONFIG[providerName] ?? PROVIDER_CONFIG.github
 
       // Resolve the key: body > runtime cache > env var
-      const testKey = body?.apiKey || runtimeAISettings.apiKeys[providerName] || (cfg.tokenEnvVar ? process.env[cfg.tokenEnvVar] : null) || null
+      const keyFromBody    = body?.apiKey || null
+      const keyFromRuntime = runtimeAISettings.apiKeys[providerName] || null
+      const keyFromEnv     = (cfg.tokenEnvVar ? process.env[cfg.tokenEnvVar] : null) || null
+      const testKey        = keyFromBody ?? keyFromRuntime ?? keyFromEnv
 
       if (cfg.tokenEnvVar !== null && !testKey) {
         const hint = cfg.tokenEnvVar === 'GITHUB_MODELS_TOKEN' ? " Ensure your PAT has the 'models:read' permission." : ''
