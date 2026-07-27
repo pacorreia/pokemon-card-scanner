@@ -46,7 +46,11 @@ const AI_PROVIDER = process.env.AI_PROVIDER || 'github' // 'github' | 'openai' |
 const PROVIDER_CONFIG = {
   github: {
     url: 'https://models.github.ai/inference/chat/completions',
-    extraHeaders: (key) => ({ Authorization: `Bearer ${key || process.env.GITHUB_MODELS_TOKEN || ''}` }),
+    extraHeaders: (key) => ({
+      Authorization: `Bearer ${key || process.env.GITHUB_MODELS_TOKEN || ''}`,
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2026-03-10',
+    }),
     tokenEnvVar: 'GITHUB_MODELS_TOKEN',
   },
   openai: {
@@ -888,6 +892,90 @@ const requestHandler = async (req, res) => {
       return
     }
 
+    // ── AI key test (no-save) ───────────────────────────────────────────────
+    if (pathname === '/api/settings/ai/test' && method === 'POST') {
+      if (!isAuthorized(req)) { writeJson(res, 401, { error: 'Unauthorized' }, req); return }
+      let body
+      try { body = await readJsonBody(req, 4096) } catch { writeJson(res, 400, { error: 'Invalid JSON' }, req); return }
+
+      const allowedProviders = Object.keys(PROVIDER_CONFIG)
+      const providerName = (body?.provider && allowedProviders.includes(body.provider))
+        ? body.provider
+        : (runtimeAISettings.provider ?? AI_PROVIDER)
+      const cfg = PROVIDER_CONFIG[providerName] ?? PROVIDER_CONFIG.github
+
+      // Resolve the key: body > runtime cache > env var
+      const keyFromBody    = body?.apiKey || null
+      const keyFromRuntime = runtimeAISettings.apiKeys[providerName] || null
+      const keyFromEnv     = (cfg.tokenEnvVar ? process.env[cfg.tokenEnvVar] : null) || null
+      const testKey        = keyFromBody ?? keyFromRuntime ?? keyFromEnv
+
+      if (cfg.tokenEnvVar !== null && !testKey) {
+        const hint = cfg.tokenEnvVar === 'GITHUB_MODELS_TOKEN' ? " Ensure your PAT has the 'models:read' permission." : ''
+        writeJson(res, 200, { ok: false, error: `No API key provided and ${cfg.tokenEnvVar} is not set on the server.${hint}` }, req)
+        return
+      }
+
+      // Resolve the provider URL the same way getActiveProviderConfig does
+      let testUrl = cfg.url
+      if (providerName === 'ollama') {
+        const baseUrl = process.env.OLLAMA_BASE_URL || 'http://localhost:11434'
+        try {
+          const parsed = new URL(baseUrl)
+          if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+            testUrl = parsed.origin + parsed.pathname.replace(/\/$/, '') + '/v1/chat/completions'
+          }
+        } catch { /* keep cfg.url */ }
+      } else if (providerName === 'azure') {
+        const azureUrl = process.env.AZURE_OPENAI_URL || ''
+        if (azureUrl) {
+          try {
+            const parsed = new URL(azureUrl)
+            if (parsed.protocol === 'https:') {
+              testUrl = parsed.origin + parsed.pathname + parsed.search
+            }
+          } catch { /* keep cfg.url */ }
+        }
+      }
+
+      // Minimal chat payload
+      const modelOverride = (body?.model || '').trim() || runtimeAISettings.model || null
+      const minimalRequest = {
+        messages: [{ role: 'user', content: 'Hi' }],
+        max_tokens: 5,
+        temperature: 0,
+        ...(modelOverride ? { model: modelOverride }
+          : providerName === 'github' ? { model: 'meta/llama-4-maverick-17b-128e-instruct-fp8' }
+          : {}),
+      }
+      const requestBody = cfg.transformRequest
+        ? JSON.stringify(cfg.transformRequest(minimalRequest))
+        : JSON.stringify(minimalRequest)
+
+      try {
+        const upstream = await fetch(testUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...cfg.extraHeaders(testKey) },
+          body: requestBody,
+          signal: AbortSignal.timeout(15000),
+        })
+        const text = await upstream.text()
+        if (!upstream.ok) {
+          let errMsg = `Provider returned ${upstream.status}`
+          try {
+            const parsed = JSON.parse(text)
+            errMsg = parsed.error?.message || parsed.error || errMsg
+          } catch { /* keep default */ }
+          writeJson(res, 200, { ok: false, error: errMsg }, req)
+          return
+        }
+        writeJson(res, 200, { ok: true }, req)
+      } catch (error) {
+        writeJson(res, 200, { ok: false, error: error?.message || 'Connection failed' }, req)
+      }
+      return
+    }
+
     // ── AI chat proxy ───────────────────────────────────────────────────────
     if ((pathname === '/api/ai/chat' || pathname === '/api/github-models') && method === 'POST') {
       if (!isAuthorized(req)) { writeJson(res, 401, { error: 'Unauthorized' }, req); return }
@@ -896,9 +984,13 @@ const requestHandler = async (req, res) => {
       const providerCfg = getActiveProviderConfig()
       if (providerCfg.tokenEnvVar !== null) {
         const envToken = process.env[providerCfg.tokenEnvVar]
-        const hasToken = Boolean(runtimeAISettings.apiKey || envToken)
+        const activeProvider = runtimeAISettings.provider ?? AI_PROVIDER
+        const hasToken = Boolean(runtimeAISettings.apiKeys[activeProvider] || envToken)
         if (!hasToken) {
-          writeJson(res, 500, { error: `${providerCfg.tokenEnvVar} not set on server.` }, req)
+          const hint = providerCfg.tokenEnvVar === 'GITHUB_MODELS_TOKEN'
+            ? " Ensure your PAT has the 'models:read' permission."
+            : ''
+          writeJson(res, 500, { error: `${providerCfg.tokenEnvVar} not set on server.${hint}` }, req)
           return
         }
       }
