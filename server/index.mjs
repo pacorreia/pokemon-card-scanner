@@ -46,7 +46,11 @@ const AI_PROVIDER = process.env.AI_PROVIDER || 'github' // 'github' | 'openai' |
 const PROVIDER_CONFIG = {
   github: {
     url: 'https://models.github.ai/inference/chat/completions',
-    extraHeaders: (key) => ({ Authorization: `Bearer ${key || process.env.GITHUB_MODELS_TOKEN || ''}` }),
+    extraHeaders: (key) => ({
+      Authorization: `Bearer ${key || process.env.GITHUB_MODELS_TOKEN || ''}`,
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2026-03-10',
+    }),
     tokenEnvVar: 'GITHUB_MODELS_TOKEN',
   },
   openai: {
@@ -896,9 +900,13 @@ const requestHandler = async (req, res) => {
       const providerCfg = getActiveProviderConfig()
       if (providerCfg.tokenEnvVar !== null) {
         const envToken = process.env[providerCfg.tokenEnvVar]
-        const hasToken = Boolean(runtimeAISettings.apiKey || envToken)
+        const activeProvider = runtimeAISettings.provider ?? AI_PROVIDER
+        const hasToken = Boolean(runtimeAISettings.apiKeys[activeProvider] || envToken)
         if (!hasToken) {
-          writeJson(res, 500, { error: `${providerCfg.tokenEnvVar} not set on server.` }, req)
+          const hint = providerCfg.tokenEnvVar === 'GITHUB_MODELS_TOKEN'
+            ? " Ensure your PAT has the 'models:read' permission."
+            : ''
+          writeJson(res, 500, { error: `${providerCfg.tokenEnvVar} not set on server.${hint}` }, req)
           return
         }
       }
