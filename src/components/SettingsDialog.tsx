@@ -48,6 +48,8 @@ export function SettingsDialog({
   const [aiSaving, setAiSaving] = useState(false)
   const [aiSaveError, setAiSaveError] = useState<string | null>(null)
   const [aiSaveSuccess, setAiSaveSuccess] = useState(false)
+  const [aiTesting, setAiTesting] = useState(false)
+  const [aiTestResult, setAiTestResult] = useState<{ ok: boolean; error?: string } | null>(null)
 
   const updateCameraPreferences = (patch: Partial<CameraPreferences>) => {
     onCameraPreferencesChange({ ...cameraPreferences, ...patch })
@@ -75,6 +77,7 @@ export function SettingsDialog({
         setAiApiKey('')  // never pre-fill the key; show placeholder when already set
         setAiSaveError(null)
         setAiSaveSuccess(false)
+        setAiTestResult(null)
       })
       .catch(() => { /* non-fatal */ })
   }, [open])
@@ -83,6 +86,7 @@ export function SettingsDialog({
     setAiSaving(true)
     setAiSaveError(null)
     setAiSaveSuccess(false)
+    setAiTestResult(null)
     try {
       const updated = await apiFetch<AISettings>('/api/settings/ai', {
         method: 'POST',
@@ -106,6 +110,35 @@ export function SettingsDialog({
       }
     } finally {
       setAiSaving(false)
+    }
+  }
+
+  const handleAiTest = async () => {
+    setAiTesting(true)
+    setAiTestResult(null)
+    setAiSaveError(null)
+    setAiSaveSuccess(false)
+    try {
+      const result = await apiFetch<{ ok: boolean; error?: string }>('/api/settings/ai/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: aiProvider || null,
+          model:    aiModel.trim() || null,
+          apiKey:   aiApiKey.trim() || null,
+        }),
+      })
+      setAiTestResult(result)
+    } catch (err) {
+      const raw = err instanceof Error ? err.message : 'Test request failed'
+      try {
+        const parsed = JSON.parse(raw) as { error?: string }
+        setAiTestResult({ ok: false, error: parsed.error ?? raw })
+      } catch {
+        setAiTestResult({ ok: false, error: raw })
+      }
+    } finally {
+      setAiTesting(false)
     }
   }
 
@@ -266,10 +299,20 @@ export function SettingsDialog({
 
             {aiSaveError && <p className="text-xs text-destructive">{aiSaveError}</p>}
             {aiSaveSuccess && <p className="text-xs text-green-600">AI settings saved.</p>}
+            {aiTestResult && (
+              <p className={`text-xs ${aiTestResult.ok ? 'text-green-600' : 'text-destructive'}`}>
+                {aiTestResult.ok ? '✓ Connection successful' : `✗ ${aiTestResult.error ?? 'Test failed'}`}
+              </p>
+            )}
 
-            <Button size="sm" onClick={handleAiSave} disabled={aiSaving}>
-              {aiSaving ? 'Saving…' : 'Save AI Settings'}
-            </Button>
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={handleAiTest} disabled={aiTesting || aiSaving}>
+                {aiTesting ? 'Testing…' : 'Test'}
+              </Button>
+              <Button size="sm" onClick={handleAiSave} disabled={aiSaving || aiTesting}>
+                {aiSaving ? 'Saving…' : 'Save AI Settings'}
+              </Button>
+            </div>
           </div>
 
           <div className="space-y-3 rounded-md border border-border p-3">
