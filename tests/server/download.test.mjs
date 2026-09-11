@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isSafeGitRef } from '../../server/download.mjs'
+import { isSafeGitRef } from '../../server/git-ref.mjs'
 
 describe('isSafeGitRef', () => {
   it.each([

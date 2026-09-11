@@ -8,19 +8,13 @@
  */
 
 import { insertSets, insertCards, clearTcgData, setTcgMetadata } from './db.mjs'
+import { isSafeGitRef } from './git-ref.mjs'
 import { logger } from './logger.mjs'
 
 const GITHUB_API = 'https://api.github.com/repos/PokemonTCG/pokemon-tcg-data'
 const GITHUB_RAW = 'https://raw.githubusercontent.com/PokemonTCG/pokemon-tcg-data'
 const CARD_BATCH_SIZE = 15   // concurrent HTTP requests for card files
 const DB_INSERT_BATCH  = 500 // rows per SQLite transaction
-
-export function isSafeGitRef(ref) {
-  if (typeof ref !== 'string') return false
-  if (!/^[a-zA-Z0-9._/-]{1,100}$/.test(ref)) return false
-  if (ref.startsWith('/') || ref.endsWith('/') || ref.includes('//') || ref.includes('..')) return false
-  return ref.split('/').every(segment => segment && segment !== '.' && segment !== '..')
-}
 
 /**
  * @param {(current: number, total: number, message: string) => void} onProgress
