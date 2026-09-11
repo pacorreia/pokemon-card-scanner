@@ -15,6 +15,13 @@ const GITHUB_RAW = 'https://raw.githubusercontent.com/PokemonTCG/pokemon-tcg-dat
 const CARD_BATCH_SIZE = 15   // concurrent HTTP requests for card files
 const DB_INSERT_BATCH  = 500 // rows per SQLite transaction
 
+export function isSafeGitRef(ref) {
+  if (typeof ref !== 'string') return false
+  if (!/^[a-zA-Z0-9._/-]{1,100}$/.test(ref)) return false
+  if (ref.startsWith('/') || ref.endsWith('/') || ref.includes('//') || ref.includes('..')) return false
+  return ref.split('/').every(segment => segment && segment !== '.' && segment !== '..')
+}
+
 /**
  * @param {(current: number, total: number, message: string) => void} onProgress
  * @returns {{ cardCount: number, setCount: number }}
@@ -28,7 +35,7 @@ export async function runDownload(onProgress) {
 
   const defaultBranch = repoInfo.default_branch
   // Validate branch name from API response before using it in URL path/query.
-  if (!defaultBranch || typeof defaultBranch !== 'string' || !/^[a-zA-Z0-9._/-]{1,100}$/.test(defaultBranch)) {
+  if (!isSafeGitRef(defaultBranch)) {
     throw new Error(`Unexpected default branch format: ${String(defaultBranch).slice(0, 40)}`)
   }
   const branchTip = await fetch(`${GITHUB_API}/commits/${encodeURIComponent(defaultBranch)}`, {
