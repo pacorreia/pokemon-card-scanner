@@ -41,7 +41,7 @@ The app uses a **vision-capable language model** to read the card from the image
 
 ### Offline Card Database
 
-Card artwork and metadata come from a **local SQLite database** downloaded from the Pokémon TCG Data GitHub release. This means:
+Card artwork and metadata come from a **local SQLite database** downloaded from the Pokémon TCG Data GitHub repository. This means:
 
 - No per-lookup API calls after the initial download
 - Card lookups are instant (<100 ms)

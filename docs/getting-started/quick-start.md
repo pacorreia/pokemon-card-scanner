@@ -49,7 +49,7 @@ Open **<http://localhost:5173>** in your browser.
 
 ## 4. Download the card database
 
-On first launch the app will display a banner asking you to download the Pokémon TCG database. Click **Download** and wait for it to complete (the app downloads the latest dataset files directly, and the total size may vary by release). This only needs to be done once per data directory.
+On first launch the app will display a banner asking you to download the Pokémon TCG database. Click **Download** and wait for it to complete (the app downloads the latest dataset files directly from the Pokémon TCG Data repository, and the total size may vary as upstream data changes). This only needs to be done once per data directory.
 
 ## 5. Scan your first card
 
