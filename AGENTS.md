@@ -14,7 +14,7 @@ Single-user, self-hosted, Docker deployed.
 - `src/lib/` — `card-analysis`, `collection-api`, `tcg-database`, `api-fetch`, `types`, `image-processing`
 - `server/index.mjs` — HTTP/HTTPS server, all endpoints, AI proxy, auth
 - `server/db.mjs` — SQLite schema and all DB operations
-- `server/download.mjs` — downloads `PokemonTCG/pokemon-tcg-data` from GitHub releases
+- `server/download.mjs` — downloads `PokemonTCG/pokemon-tcg-data` from the default-branch tip commit
 - `data/pokedex.db` — SQLite DB (owned by root when Docker writes it)
 
 ## Build and Test
