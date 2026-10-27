@@ -945,7 +945,7 @@ const requestHandler = async (req, res) => {
         max_tokens: 5,
         temperature: 0,
         ...(modelOverride ? { model: modelOverride }
-          : providerName === 'github' ? { model: 'meta/llama-4-maverick-17b-128e-instruct-fp8' }
+          : providerName === 'github' ? { model: 'openai/gpt-4o' }
           : {}),
       }
       const requestBody = cfg.transformRequest
