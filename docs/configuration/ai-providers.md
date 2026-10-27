@@ -17,7 +17,7 @@ PokéDex Scanner supports multiple AI providers for card image recognition. All 
 
 | Provider | Default model |
 |---|---|
-| GitHub Models | `meta/llama-4-maverick-17b-128e-instruct-fp8` |
+| GitHub Models | `openai/gpt-4o` |
 | OpenAI | `gpt-4o` |
 | Groq | `meta-llama/llama-4-scout-17b-16e-instruct` |
 | Ollama | `llava` |
