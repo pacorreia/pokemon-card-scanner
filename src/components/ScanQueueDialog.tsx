@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { Camera, CheckCircle, X, Sparkle, Timer, Trash } from '@phosphor-icons/react'
+import { ArrowClockwise, Camera, CheckCircle, X, Sparkle, Timer, Trash } from '@phosphor-icons/react'
 import { motion } from 'framer-motion'
 import { toast } from '@/lib/toast'
 import type { PokemonCard } from '@/lib/types'
@@ -60,6 +60,13 @@ export function ScanQueueDialog({
   const removeItem = (id: string) => {
     onQueueChange(prev => prev.filter(i => i.id !== id))
     queueApi.remove(id).catch(() => {})
+  }
+
+  // Re-queue failed items; the auto-process effect below picks them up.
+  const retryItems = (ids: string[]) => {
+    if (ids.length === 0) return
+    onQueueChange(prev => prev.map(i => ids.includes(i.id) ? { ...i, status: 'pending', error: undefined } : i))
+    for (const id of ids) queueApi.patch(id, { status: 'pending', error: null }).catch(() => {})
   }
 
   // ── Process queue ─────────────────────────────────────────────────────────
@@ -149,6 +156,7 @@ export function ScanQueueDialog({
   }, [reviewCards, onCardScanned, onCardsScanned, onOpenChange])
 
   const pendingCount = queue.filter(i => i.status === 'pending').length
+  const errorCount = queue.filter(i => i.status === 'error').length
   const doneCount = queue.filter(i => i.status === 'done').length
   const identifiedCount = queue.flatMap(i => i.drafts ?? []).length
 
@@ -183,7 +191,7 @@ export function ScanQueueDialog({
                 <div className="rounded-xl border border-border bg-muted/10 overflow-hidden">
                   <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
                     <span className="text-sm font-semibold font-display">Captured Shots</span>
-                    <span className="text-xs text-muted-foreground">{pendingCount} pending · {doneCount} identified</span>
+                    <span className="text-xs text-muted-foreground">{pendingCount} pending · {doneCount} identified{errorCount > 0 ? ` · ${errorCount} failed` : ''}</span>
                   </div>
                   <div className="max-h-64 overflow-y-auto divide-y divide-border">
                     {queue.map((item, idx) => (
@@ -216,9 +224,16 @@ export function ScanQueueDialog({
                             )}
                             {item.status === 'done' && <CheckCircle className="w-4 h-4 text-green-500" weight="fill" />}
                             {(item.status === 'pending' || item.status === 'error') && !isProcessingQueue && (
-                              <button onClick={() => removeItem(item.id)} className="rounded p-0.5 text-muted-foreground hover:text-destructive" aria-label="Remove">
-                                <X className="w-4 h-4" />
-                              </button>
+                              <>
+                                {item.status === 'error' && (
+                                  <button onClick={() => retryItems([item.id])} className="rounded p-0.5 text-muted-foreground hover:text-primary" aria-label="Retry">
+                                    <ArrowClockwise className="w-4 h-4" />
+                                  </button>
+                                )}
+                                <button onClick={() => removeItem(item.id)} className="rounded p-0.5 text-muted-foreground hover:text-destructive" aria-label="Remove">
+                                  <X className="w-4 h-4" />
+                                </button>
+                              </>
                             )}
                           </div>
                         </div>
@@ -244,6 +259,17 @@ export function ScanQueueDialog({
                     >
                       <Sparkle className="w-5 h-5 mr-2" weight="fill" />
                       {isProcessingQueue ? 'Processing…' : `Process ${pendingCount} Shot${pendingCount !== 1 ? 's' : ''}`}
+                    </Button>
+                  )}
+                  {errorCount > 0 && !isProcessingQueue && (
+                    <Button
+                      size="lg"
+                      variant="outline"
+                      className="w-full font-display font-semibold"
+                      onClick={() => retryItems(queue.filter(i => i.status === 'error').map(i => i.id))}
+                    >
+                      <ArrowClockwise className="w-5 h-5 mr-2" />
+                      {`Retry ${errorCount} Failed Shot${errorCount !== 1 ? 's' : ''}`}
                     </Button>
                   )}
                   {isProcessingQueue && (
