@@ -41,7 +41,9 @@ const HTTPS_PORT        = Number(process.env.HTTPS_PORT || 8443)
 const HTTPS_ENABLED     = process.env.HTTPS_ENABLED !== 'false'
 const GITHUB_PROXY_BASE = 'https://github.com'
 
-const AI_PROVIDER = process.env.AI_PROVIDER || 'github' // 'github' | 'openai' | 'groq' | 'ollama' | 'azure' | 'anthropic'
+const AI_PROVIDER = process.env.AI_PROVIDER || 'github' // 'github' | 'openai' | 'groq' | 'openrouter' | 'ollama' | 'azure' | 'anthropic'
+// Persistent model default (runtime settings are in-memory and lost on restart); must support image input.
+const AI_MODEL = (process.env.AI_MODEL || '').trim() || null
 
 const PROVIDER_CONFIG = {
   github: {
@@ -62,6 +64,14 @@ const PROVIDER_CONFIG = {
     url: 'https://api.groq.com/openai/v1/chat/completions',
     extraHeaders: (key) => ({ Authorization: `Bearer ${key || process.env.GROQ_API_KEY || ''}` }),
     tokenEnvVar: 'GROQ_API_KEY',
+  },
+  openrouter: {
+    url: 'https://openrouter.ai/api/v1/chat/completions',
+    extraHeaders: (key) => ({
+      Authorization: `Bearer ${key || process.env.OPENROUTER_API_KEY || ''}`,
+      'X-OpenRouter-Title': 'pokemon-card-scanner',
+    }),
+    tokenEnvVar: 'OPENROUTER_API_KEY',
   },
   ollama: {
     url: (process.env.OLLAMA_BASE_URL || 'http://localhost:11434') + '/v1/chat/completions',
@@ -485,11 +495,12 @@ async function fetchAIWithRetry(body) {
   // the provider can apply its own default instead of receiving a GitHub-specific model name.
   let effectiveBody = body
   const activeProvider = runtimeAISettings.provider ?? AI_PROVIDER
-  if (runtimeAISettings.model || activeProvider !== 'github') {
+  const modelOverride = runtimeAISettings.model || AI_MODEL
+  if (modelOverride || activeProvider !== 'github') {
     try {
       const parsed = JSON.parse(body)
-      if (runtimeAISettings.model) {
-        parsed.model = runtimeAISettings.model
+      if (modelOverride) {
+        parsed.model = modelOverride
       } else {
         // Non-github provider with no override: remove the client-supplied model so the
         // provider uses its own default rather than rejecting a GitHub-specific model name.
@@ -939,7 +950,7 @@ const requestHandler = async (req, res) => {
       }
 
       // Minimal chat payload
-      const modelOverride = (body?.model || '').trim() || runtimeAISettings.model || null
+      const modelOverride = (body?.model || '').trim() || runtimeAISettings.model || AI_MODEL
       const minimalRequest = {
         messages: [{ role: 'user', content: 'Hi' }],
         max_tokens: 5,

@@ -28,6 +28,7 @@ const PROVIDERS = [
   { value: 'github',    label: 'GitHub Models' },
   { value: 'openai',   label: 'OpenAI' },
   { value: 'groq',     label: 'Groq' },
+  { value: 'openrouter', label: 'OpenRouter' },
   { value: 'ollama',   label: 'Ollama (local)' },
   { value: 'azure',    label: 'Azure OpenAI' },
   { value: 'anthropic', label: 'Anthropic Claude' },

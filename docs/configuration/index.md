@@ -6,10 +6,12 @@ PokéDex Scanner is configured entirely through environment variables. There are
 
 | Variable | Default | Description |
 |---|---|---|
-| `AI_PROVIDER` | `github` | Which AI provider to use for card recognition (`github` \| `openai` \| `groq` \| `ollama` \| `azure` \| `anthropic`) |
+| `AI_PROVIDER` | `github` | Which AI provider to use for card recognition (`github` \| `openai` \| `groq` \| `openrouter` \| `ollama` \| `azure` \| `anthropic`) |
 | `GITHUB_MODELS_TOKEN` | *(required when `AI_PROVIDER=github`)* | GitHub Personal Access Token |
 | `OPENAI_API_KEY` | *(required when `AI_PROVIDER=openai`)* | OpenAI API key |
 | `GROQ_API_KEY` | *(required when `AI_PROVIDER=groq`)* | Groq API key |
+| `OPENROUTER_API_KEY` | *(required when `AI_PROVIDER=openrouter`)* | OpenRouter API key |
+| `AI_MODEL` | *(provider default)* | Model sent to the provider; must support image input. Persists across restarts. |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server URL *(used when `AI_PROVIDER=ollama`)* |
 | `AZURE_OPENAI_URL` | *(required when `AI_PROVIDER=azure`)* | Azure OpenAI deployment URL |
 | `AZURE_OPENAI_API_KEY` | *(required when `AI_PROVIDER=azure`)* | Azure OpenAI API key |

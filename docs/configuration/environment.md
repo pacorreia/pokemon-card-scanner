@@ -8,10 +8,12 @@ If you want to keep local settings in a file, you can copy `.env.example` to `.e
 
 | Variable | Default | Description |
 |---|---|---|
-| `AI_PROVIDER` | `github` | AI provider to use. One of: `github`, `openai`, `groq`, `ollama`, `azure`, `anthropic` |
+| `AI_PROVIDER` | `github` | AI provider to use. One of: `github`, `openai`, `groq`, `openrouter`, `ollama`, `azure`, `anthropic` |
 | `GITHUB_MODELS_TOKEN` | — | GitHub PAT for the `github` provider |
 | `OPENAI_API_KEY` | — | API key for the `openai` provider |
 | `GROQ_API_KEY` | — | API key for the `groq` provider |
+| `OPENROUTER_API_KEY` | — | API key for the `openrouter` provider |
+| `AI_MODEL` | *(provider default)* | Model forwarded to the provider on every request. Must support image input. Unlike the Settings UI override, it survives restarts. |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Base URL for the local Ollama instance |
 | `AZURE_OPENAI_URL` | — | Full Azure OpenAI deployment URL |
 | `AZURE_OPENAI_API_KEY` | — | API key for Azure OpenAI |

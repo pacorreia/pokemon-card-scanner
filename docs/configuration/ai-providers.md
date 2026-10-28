@@ -9,6 +9,7 @@ PokéDex Scanner supports multiple AI providers for card image recognition. All 
 | **GitHub Models** (default) | `github` | `GITHUB_MODELS_TOKEN` | Free GitHub PAT, no extra scopes |
 | **OpenAI** | `openai` | `OPENAI_API_KEY` | |
 | **Groq** | `groq` | `GROQ_API_KEY` | Free tier available |
+| **OpenRouter** | `openrouter` | `OPENROUTER_API_KEY`, `AI_MODEL` | Must set `AI_MODEL` to a vision-capable model; `:free` models are rate limited |
 | **Ollama** | `ollama` | *(none)* | Runs locally, no API key needed |
 | **Azure OpenAI** | `azure` | `AZURE_OPENAI_URL`, `AZURE_OPENAI_API_KEY` | |
 | **Anthropic Claude** | `anthropic` | `ANTHROPIC_API_KEY` | Request/response format translated server-side |
@@ -56,6 +57,17 @@ Override with `VITE_CARD_ANALYSIS_MODEL=<model-name>` when running the frontend 
     export VITE_CARD_ANALYSIS_MODEL=meta-llama/llama-4-scout-17b-16e-instruct
     npm run dev:server
     ```
+
+=== "OpenRouter"
+
+    ```bash
+    export AI_PROVIDER=openrouter
+    export OPENROUTER_API_KEY="sk-or-..."
+    export AI_MODEL=nvidia/nemotron-3.5-super-vl:free
+    npm run dev:server
+    ```
+
+    The model must accept image input. Free (`:free`) models allow 20 requests/minute and 50 requests/day (1000/day with at least $10 of credits purchased); each scan makes two requests.
 
 === "Ollama (local)"
 
