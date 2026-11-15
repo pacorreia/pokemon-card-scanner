@@ -1,7 +1,9 @@
 # Stage 1: Build the Vite React application
-FROM node:22-alpine AS builder
+FROM node:22-alpine@sha256:1314fb30ec37592d5845e5a160d522c0e680972aa534549940b8d73bde88481a AS builder
 
 WORKDIR /app
+
+RUN apk upgrade --no-cache
 
 # canvas is an optionalDependency (used only for tests). It has no musl prebuilts and requires
 # native compilation — without build tools present it fails gracefully and is silently skipped.
@@ -13,7 +15,7 @@ COPY . .
 RUN npm run build && npm prune --omit=dev
 
 # Stage 2: Runtime image (Node server serves both static frontend and API proxy)
-FROM node:22-alpine AS runner
+FROM node:22-alpine@sha256:1314fb30ec37592d5845e5a160d522c0e680972aa534549940b8d73bde88481a AS runner
 
 WORKDIR /app
 
@@ -28,7 +30,8 @@ COPY --from=builder /app/node_modules ./node_modules
 
 # Create data directory and give ownership to the built-in non-root 'node' user.
 # Remove npm (build tool, not needed at runtime) — eliminates its bundled deps from the image.
-RUN mkdir -p /data && chown -R node:node /data /app \
+RUN apk upgrade --no-cache \
+    && mkdir -p /data && chown -R node:node /data /app \
     && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
 USER node
